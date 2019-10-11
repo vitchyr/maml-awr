@@ -1,13 +1,15 @@
-from envs import PointMass1DEnv
-from maml_rawr import MAMLRAWR
 import argparse
 import gym
+
+
+from src.envs import PointMass1DEnv
+from src.maml_rawr import MAMLRAWR
 
 
 def get_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument('--train_steps', type=int, default=100000)
-    parser.add_argument('--device', type=str, default='cuda:0')
+    parser.add_argument('--device', type=str, default='cpu')
     return parser.parse_args()
 
 

@@ -9,9 +9,9 @@ import torch.nn as nn
 import torch.optim as O
 from torch.distributions import Normal
 
-from envs import Env
-from nn import MLP
-from utils import ReplayBuffer, Experience
+from src.envs import Env
+from src.nn import MLP
+from src.utils import ReplayBuffer, Experience
 
 
 def copy_model_with_grads(from_model: nn.Module, to_model: nn.Module = None) -> nn.Module:

@@ -1,9 +1,9 @@
 #
 # Toy environments for testing maml-rawr
 #
-from typing import Optional, Tuple
-import numpy as np
 from gym.spaces import Box
+import numpy as np
+from typing import Optional, Tuple
 
 
 class Env(object):
