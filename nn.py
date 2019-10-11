@@ -13,10 +13,10 @@ class MLP(nn.Module):
         self.seq = nn.Sequential()
         for idx in range(len(layer_widths) - 1):
             self.seq.add_module(f'fc_{idx}', nn.Linear(layer_widths[idx], layer_widths[idx + 1]))
-            if idx < len(layer_widths) - 1:
+            if idx < len(layer_widths) - 2:
                 self.seq.add_module(f'relu_{idx}', nn.ReLU())
 
-    def forward(self, x):
+    def forward(self, x: torch.tensor):
         return self.seq(x)
 
 
