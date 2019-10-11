@@ -8,12 +8,13 @@ class Experience(NamedTuple):
     action: np.ndarray
     next_state: np.ndarray
     reward: float
-
+    done: bool
+    
 
 class ReplayBuffer(object):
     def __init__(self, trajectory_length: int, state_dim: int, action_dim: int, max_trajectories: int = 10000,
                  discount_factor: float = 0.99):
-        self._trajectories = np.empty((max_trajectories, trajectory_length, state_dim + action_dim + state_dim + 1 + 1), dtype=np.float32)
+        self._trajectories = np.empty((max_trajectories, trajectory_length, state_dim + action_dim + state_dim + state_dim + 1 + 1 + 1 + 1), dtype=np.float32)
         self._stored_trajectories = 0
         self._new_trajectory_idx = 0
         self._max_trajectories = max_trajectories
@@ -30,7 +31,12 @@ class ReplayBuffer(object):
             raise ValueError(f'Invalid trajectory length: {len(trajectory)}')
 
         mc_reward = 0
+        terminal_state = None
+        terminal_factor = 1
         for idx, experience in enumerate(trajectory[::-1]):
+            if terminal_state is None:
+                terminal_state = experience.next_state
+
             slice_idx = 0
             self._trajectories[self._new_trajectory_idx, -(idx + 1), slice_idx:slice_idx + self._state_dim] = experience.state
             slice_idx += self._state_dim
@@ -40,6 +46,16 @@ class ReplayBuffer(object):
 
             self._trajectories[self._new_trajectory_idx, -(idx + 1), slice_idx:slice_idx + self._state_dim] = experience.next_state
             slice_idx += self._state_dim
+            
+            self._trajectories[self._new_trajectory_idx, -(idx + 1), slice_idx:slice_idx + self._state_dim] = terminal_state
+            slice_idx += self._state_dim
+
+            terminal_factor *= self._discount_factor
+            self._trajectories[self._new_trajectory_idx, -(idx + 1), slice_idx:slice_idx + 1] = terminal_factor
+            slice_idx += 1
+            
+            self._trajectories[self._new_trajectory_idx, -(idx + 1), slice_idx:slice_idx + 1] = experience.done
+            slice_idx += 1
 
             self._trajectories[self._new_trajectory_idx, -(idx + 1), slice_idx:slice_idx + 1] = experience.reward
             slice_idx += 1
