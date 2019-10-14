@@ -1,6 +1,6 @@
 import argparse
 import gym
-
+import numpy as np
 
 from src.envs import PointMass1DEnv
 from src.maml_rawr import MAMLRAWR
@@ -12,13 +12,14 @@ def get_args() -> argparse.Namespace:
     parser.add_argument('--device', type=str, default='cpu')
     parser.add_argument('--vis_interval', type=int, default=10)
     parser.add_argument('--log_dir', type=str, default='log')
+    parser.add_argument('--task_idx', type=int, default=None)
     parser.add_argument('name', type=str)
     return parser.parse_args()
 
 
 def run(args: argparse.Namespace):
     # envs = [PointMass1DEnv(0), PointMass1DEnv(1)]
-    envs = [PointMass1DEnv(0)]
+    envs = [PointMass1DEnv(args.task_idx, fix_random_task=True)]
     maml_rawr = MAMLRAWR(envs, training_iterations=args.train_steps, device=args.device)
 
     maml_rawr.train(args)

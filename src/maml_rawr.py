@@ -39,7 +39,7 @@ def env_action_dim(env):
 class MAMLRAWR(object):
     def __init__(self, envs: List[Env], policy_hidden_layers: List[int] = [32, 32],
                  value_function_hidden_layers: List[int] = [32, 32],
-                 training_iterations: int = 100000, rollouts_per_iteration: int = 1, batch_size: int = 128,
+                 training_iterations: int = 100000, rollouts_per_iteration: int = 1, batch_size: int = 64,
                  alpha1: float = 0.0, alpha2: float = 1e-4, eta1: float = 0.0, eta2: float = 1e-4, mu: float = 1e-4,
                  adaptation_temperature: float = 1.0, exploration_temperature: float = 1.0,
                  initial_trajectories: int = 15, device: str = 'cuda:0',
@@ -196,18 +196,16 @@ class MAMLRAWR(object):
                     
                     meta_advantages = ((1 / self._adaptation_temperature) * (
                                 meta_mc_value_estimates - meta_value_estimates))
+                    meta_advantages = (meta_advantages - meta_advantages.mean()) / meta_advantages.std()
                     meta_weights = meta_advantages.clamp(max=self._advantage_clamp).exp()
-                    print(meta_weights.mean().item(), meta_weights.std().item())
-                    # if meta_weights.std().item() < 0.01:
-                    #     import pdb; pdb.set_trace()
+                    # print(meta_weights.mean().item(), meta_weights.std().item())
                     meta_action_mu = f_adaptation_policy_j(meta_batch[:,:self._observation_dim])
                     meta_action_sigma = torch.empty_like(meta_action_mu).fill_(self._action_sigma)
                     meta_action_distribution = Normal(meta_action_mu, meta_action_sigma)
                     meta_action_log_probs = meta_action_distribution.log_prob(meta_batch[:, self._observation_dim:self._observation_dim + self._action_dim])
                     meta_policy_loss = -(meta_action_log_probs * meta_weights.detach()).mean()
                     meta_policy_grad_j = A.grad(meta_policy_loss, f_adaptation_policy_j.parameters(time=0))
-                    # if np.random.uniform() < 0.01:
-                    #     import pdb; pdb.set_trace()
+
                     # Collect grads for the adaptation policy update in the outer loop [L15],
                     #  which is not actually performed here
                     meta_policy_losses.append(meta_policy_loss.item())
@@ -223,8 +221,8 @@ class MAMLRAWR(object):
 
             # Sample adapted policy trajectory, add to replay buffer i [L12]
             train_trajectory, train_reward = self._rollout_policy(adaptation_policies_i[0], env, test=False)
-            test_trajectory, test_reward = self._rollout_policy(adaptation_policies_i[0], env, test=True)
             buffer.add_trajectory(train_trajectory)
+            test_trajectory, test_reward = self._rollout_policy(adaptation_policies_i[0], env, test=True)
             rollouts.append(test_trajectory)
             rewards.append(test_reward)
 
