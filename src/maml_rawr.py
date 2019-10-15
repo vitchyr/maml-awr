@@ -37,15 +37,17 @@ def env_action_dim(env):
 
 
 class MAMLRAWR(object):
-    def __init__(self, envs: List[Env], policy_hidden_layers: List[int] = [32, 32],
-                 value_function_hidden_layers: List[int] = [32, 32],
-                 training_iterations: int = 100000, rollouts_per_iteration: int = 1, batch_size: int = 64,
+    def __init__(self, envs: List[Env], log_dir: str, name: str = None,
+                 policy_hidden_layers: List[int] = [32, 32], value_function_hidden_layers: List[int] = [32, 32],
+                 training_iterations: int = 20000, rollouts_per_iteration: int = 1, batch_size: int = 64,
                  alpha1: float = 0.0, alpha2: float = 1e-4, eta1: float = 0.0, eta2: float = 1e-4, mu: float = 1e-4,
                  adaptation_temperature: float = 1.0, exploration_temperature: float = 1.0,
-                 initial_trajectories: int = 15, device: str = 'cuda:0',
-                 maml_steps: int = 1, test_samples: int = 10, weight_clamp: float = 10.0,
-                 action_sigma: float = 0.2):
+                 initial_trajectories: int = 15, device: str = 'cuda:0', maml_steps: int = 1,
+                 test_samples: int = 10, weight_clamp: float = 10.0, action_sigma: float = 0.2,
+                 visualization_interval: int = 100, silent: bool = False):
         self._envs = envs
+        self._log_dir = log_dir
+        self._name = name if name is not None else 'throwaway_test_run'
 
         example_env = self._envs[0]
 
@@ -77,6 +79,8 @@ class MAMLRAWR(object):
         self._test_samples = test_samples
         self._advantage_clamp = np.log(weight_clamp)
         self._action_sigma = action_sigma
+        self._visualization_interval = visualization_interval
+        self._silent = silent
         
     def _rollout_policy(self, policy: MLP, env: Env, test: bool = False) -> List[Experience]:
         trajectory = []
@@ -281,8 +285,8 @@ class MAMLRAWR(object):
 
         return rollouts, rewards, meta_value_losses, meta_policy_losses
 
-    def train(self, args: argparse.Namespace):
-        log_path = f'{args.log_dir}/{args.name}'
+    def train(self):
+        log_path = f'{self._log_dir}/{self._name}'
         if not os.path.exists(log_path):
             os.makedirs(log_path)
 
@@ -294,8 +298,9 @@ class MAMLRAWR(object):
         for t in range(self._training_iterations):
             #with A.detect_anomaly():
             rollouts, rewards, value, policy = self.train_step()
-            print(f'{t}: {rewards}, {np.mean(value)}, {np.mean(policy)}')
+            if not self._silent:
+                print(f'{t}: {rewards}, {np.mean(value)}, {np.mean(policy)}')
 
-            if t % args.vis_interval == 0:
+            if t % self._visualization_interval == 0:
                 for idx, (env, rollout) in enumerate(zip(self._envs, rollouts)):
                     image = env.render(rollout, f'{log_path}/{t}_{idx}.png')

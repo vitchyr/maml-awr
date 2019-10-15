@@ -18,9 +18,6 @@ class Env(object):
 
     def n_tasks() -> int:
         raise NotImplementedError()
-    
-    # def show(self, rollout: List[Experience]) -> np.ndarray:
-    #     raise NotImplementedError()
 
 
 class PointMass1DEnv(Env):
@@ -32,11 +29,11 @@ class PointMass1DEnv(Env):
             np.array([1.])
         )
         self.observation_space = Box(
-            np.array([-10., -1.]),
-            np.array([10., 1.])
+            np.array([-1., -1.]),
+            np.array([1., 1.])
         )
 
-        self._dt = 0.1
+        self._mass = 10
         self._t = 0
         self._x = 0
         self._v = 0
@@ -61,7 +58,7 @@ class PointMass1DEnv(Env):
         padding = self._max_episode_steps
         image = np.zeros((self._max_episode_steps, resolution * 2, 3))
         for idx, experience in enumerate(rollout):
-            path_column = resolution + int(np.tanh(experience.state[0]) * (resolution - 1))
+            path_column = resolution + int(experience.state[0] * (resolution - 1))
             image[idx, path_column] = GREEN
             if idx % 2 == 0:
                 column = resolution + int(resolution * np.tanh(self._task_target))
@@ -79,15 +76,15 @@ class PointMass1DEnv(Env):
     def _compute_state(self) -> np.ndarray:
         # return np.array([np.tanh(self._x), self._v, self._t/float(self._max_episode_steps)], dtype=np.float32)
         # return np.array([(self._x), self._v, self._t/float(self._max_episode_steps)], dtype=np.float32)
-        return np.array([(self._x), self._v], dtype=np.float32)
+        return np.array([np.tanh(self._x), self._v], dtype=np.float32)
 
     def reset(self) -> np.ndarray:
         if self._task_idx is None:
             self._this_task_idx = np.random.choice(self.n_tasks())
             self._task_target = self._targets[self._this_task_idx]
 
-        self._x = np.random.normal() * 0.
-        self._v = np.random.normal() * 0.
+        self._x = np.random.normal() * 0.1
+        self._v = np.random.normal() * 0.1
         self._t = 0
 
         return self._compute_state()
@@ -99,13 +96,13 @@ class PointMass1DEnv(Env):
         self._t += 1
 
         # Update velocity with action and compute new position
-        self._v += 0.1 * action[0]
+        self._v += action[0] / self._mass
         self._x += self._dt * self._v
         
         done = self._t == self._max_episode_steps
 
-        effort_penalty = -0.01 * np.abs(action[0]) ** 2
-        proximity_reward = -0.1 * np.abs(self._x - self._task_target)
+        effort_penalty = -0.01 * np.abs(action[0])
+        proximity_reward = -0.1 * np.abs(self._x - self._task_target) ** 2
         reward = proximity_reward + effort_penalty
 
         return self._compute_state(), reward, done, {'task_idx': self._this_task_idx}
