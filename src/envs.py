@@ -34,6 +34,7 @@ class PointMass1DEnv(Env):
         )
 
         self._mass = 10
+        self._dt = 0.1
         self._t = 0
         self._x = 0
         self._v = 0
