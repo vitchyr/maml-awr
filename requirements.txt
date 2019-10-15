@@ -3,3 +3,4 @@ numpy
 git+git://github.com/facebookresearch/higher.git@59537fa#egg=higher
 gym
 imageio
+mujoco_py

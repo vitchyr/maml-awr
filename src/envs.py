@@ -53,7 +53,7 @@ class PointMass1DEnv(Env):
     def n_tasks(self) -> int:
         return len(self._targets)
         
-    def render(self, rollout: List[Experience], path: Optional[str] = None) -> np.ndarray:
+    def render_rollout(self, rollout: List[Experience], path: Optional[str] = None) -> np.ndarray:
         RED, GREEN, BLUE = np.array([1., 0., 0.]), np.array([0., 1., 0.]), np.array([0., 0., 1.])
         resolution = 300
         padding = self._max_episode_steps

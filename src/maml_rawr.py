@@ -44,7 +44,7 @@ class MAMLRAWR(object):
                  adaptation_temperature: float = 1.0, exploration_temperature: float = 1.0,
                  initial_trajectories: int = 15, device: str = 'cuda:0', maml_steps: int = 1,
                  test_samples: int = 10, weight_clamp: float = 10.0, action_sigma: float = 0.2,
-                 visualization_interval: int = 100, silent: bool = False):
+                 visualization_interval: int = 100, silent: bool = False, replay_buffer_length: int = 100):
         self._envs = envs
         self._log_dir = log_dir
         self._name = name if name is not None else 'throwaway_test_run'
@@ -65,7 +65,8 @@ class MAMLRAWR(object):
         self._value_function_optimizer = O.Adam(self._value_function.parameters(), lr=eta2)
         self._exploration_policy_optimizer = O.Adam(self._adaptation_policy.parameters(), lr=mu)
 
-        self._buffers = [ReplayBuffer(env._max_episode_steps, env.observation_space.shape[0], env_action_dim(env), max_trajectories=100)
+        self._buffers = [ReplayBuffer(env._max_episode_steps, env.observation_space.shape[0], env_action_dim(env),
+                                      max_trajectories=replay_buffer_length)
                          for env in self._envs]
 
         self._training_iterations, self._rollouts_per_iteration = training_iterations, rollouts_per_iteration
@@ -82,6 +83,10 @@ class MAMLRAWR(object):
         self._visualization_interval = visualization_interval
         self._silent = silent
         
+
+    #################################################################
+    ################# SUBROUTINES FOR TRAINING ######################
+    #################################################################
     def _rollout_policy(self, policy: MLP, env: Env, test: bool = False) -> List[Experience]:
         trajectory = []
 
@@ -104,6 +109,39 @@ class MAMLRAWR(object):
 
         return trajectory, total_reward
 
+    def mc_value_estimates_on_batch(self, value_function, batch):
+        with torch.no_grad():
+            terminal_state_value_estimates = value_function(batch[:,self._observation_dim * 2 + self._action_dim:self._observation_dim * 3 + self._action_dim])
+            terminal_factors = batch[:, -4:-3] # I know this magic number indexing is heinous... I'm sorry
+            mc_value_estimates = batch[:,-1:] + terminal_factors * terminal_state_value_estimates
+
+        return mc_value_estimates
+    
+    def value_function_loss_on_batch(self, value_function, batch):
+        value_estimates = value_function(batch[:,:self._observation_dim])
+        mc_value_estimates = self.mc_value_estimates_on_batch(value_function, batch)
+
+        return (value_estimates - mc_value_estimates).pow(2).mean()
+
+    def adaptation_policy_loss_on_batch(self, policy, value_function, batch):
+        with torch.no_grad():
+            value_estimates = value_function(batch[:,:self._observation_dim])
+            mc_value_estimates = self.mc_value_estimates_on_batch(value_function, batch)
+            
+            advantages = ((1 / self._adaptation_temperature) * (mc_value_estimates - value_estimates))
+            normalized_advantages = (advantages - advantages.mean()) / advantages.std()
+            weights = normalized_advantages.clamp(max=self._advantage_clamp).exp()
+
+        action_mu = policy(batch[:,:self._observation_dim])
+        action_sigma = torch.empty_like(action_mu).fill_(self._action_sigma)
+        action_distribution = Normal(action_mu, action_sigma)
+        action_log_probs = action_distribution.log_prob(batch[:,self._observation_dim:self._observation_dim + self._action_dim])
+
+        return -(action_log_probs * weights).mean()
+
+    #################################################################
+    #################################################################
+    
     # This function is the body of the main training loop [L4]
     # At every iteration, it adds rollouts from the exploration policy and one of the adapted policies
     #  to the replay buffer. It also updates the adaptation value function, adaptation policy, and
@@ -144,70 +182,35 @@ class MAMLRAWR(object):
                 with higher.innerloop_ctx(value_function_j, opt) as (f_value_function_j, diff_value_opt):
                     if self._eta1 > 0:
                         for batch in pyt_batch[j]:
-                            value_estimates = f_value_function_j(batch[:,:self._observation_dim])
-                            mc_value_estimates = batch[:,-1:]
-                            
                             # Compute loss and adapt value function [L9]
-                            loss = (value_estimates - mc_value_estimates).pow(2).mean()
+                            loss = self.value_function_loss_on_batch(f_value_function_j, batch)
                             diff_value_opt.step(loss)
-
-                    meta_value_estimates = f_value_function_j(meta_batch[:,:self._observation_dim])
-                    # next_meta_value_estimates = f_value_function_j(meta_batch[:,self._observation_dim + self._action_dim:self._observation_dim * 2 + self._action_dim]).detach()
-                    # rewards_ = meta_batch[:,-2]
-                    
-                    with torch.no_grad():
-                        terminal_state_meta_value_estimates = f_value_function_j(meta_batch[:,self._observation_dim * 2 + self._action_dim:self._observation_dim * 3 + self._action_dim])
-                        terminal_factors = meta_batch[:,-4:-3]
-                        meta_mc_value_estimates = meta_batch[:,-1:] + terminal_factors * terminal_state_meta_value_estimates
-
-                    meta_value_function_loss = (meta_value_estimates - meta_mc_value_estimates).pow(2).mean()
-                    # meta_value_function_loss = (meta_value_estimates - (rewards_ + next_meta_value_estimates)).pow(2).mean()
-                    meta_value_grad_j = A.grad(meta_value_function_loss, f_value_function_j.parameters(time=0))
 
                     # Collect grads for the value function update in the outer loop [L14],
                     #  which is not actually performed here
+                    meta_value_function_loss = self.value_function_loss_on_batch(f_value_function_j, meta_batch)
+                    meta_value_grad_j = A.grad(meta_value_function_loss, f_value_function_j.parameters(time=0))
+
                     meta_value_losses.append(meta_value_function_loss.item())
                     meta_value_grads_i.append(meta_value_grad_j)
                     copy_model_with_grads(f_value_function_j, value_function_j)
-                    value_functions_i.append(deepcopy(value_function_j))
+                    value_functions_i.append(value_function_j)
                 ##################################################################################################
 
                 ##################################################################################################
                 # Adapt policy and collect meta-gradients [
                 ##################################################################################################
+                adapted_value_function = value_functions_i[0]
                 adaptation_policy_j = deepcopy(self._adaptation_policy)
                 opt = O.SGD(adaptation_policy_j.parameters(), lr=self._alpha1)
                 with higher.innerloop_ctx(adaptation_policy_j, opt) as (f_adaptation_policy_j, diff_policy_opt):
                     if self._alpha1 > 0:
                         for batch in pyt_batch[j]:
-                            value_estimates = f_value_function_j(batch[:,:self._observation_dim])
-                            mc_value_estimates = batch[:,-1:]
-                            advantages = ((1 / self._adaptation_temperature) * (mc_value_estimates - value_estimates))
-                            weights = advantages.clamp(max=self._advantage_clamp).exp()
-                            action_mu = f_adaptation_policy_j(batch[:,:self._observation_dim])
-                            action_sigma = torch.empty_like(action_mu).fill_(self._action_sigma)
-                            action_distribution = Normal(action_mu, action_sigma)
-                            action_log_probs = action_distribution.log_prob(batch[:,self._observation_dim:self._observation_dim + self._action_dim])
-
                             # Compute loss and adapt policy [L10]
-                            loss = -(action_log_probs * weights.detach()).mean()
+                            loss = self.adaptation_policy_loss_on_batch(f_adaptation_policy_j, adapted_value_function, batch)
                             diff_policy_opt.step(loss)
 
-                    meta_value_estimates = value_function_j(meta_batch[:,:self._observation_dim])
-                    terminal_state_meta_value_estimates = value_function_j(meta_batch[:,self._observation_dim * 2 + self._action_dim:self._observation_dim * 3 + self._action_dim]).detach()
-                    terminal_factors = meta_batch[:,-4:-3]
-                    meta_mc_value_estimates = meta_batch[:, -1:] + terminal_factors * terminal_state_meta_value_estimates
-                    
-                    meta_advantages = ((1 / self._adaptation_temperature) * (
-                                meta_mc_value_estimates - meta_value_estimates))
-                    meta_advantages = (meta_advantages - meta_advantages.mean()) / meta_advantages.std()
-                    meta_weights = meta_advantages.clamp(max=self._advantage_clamp).exp()
-                    # print(meta_weights.mean().item(), meta_weights.std().item())
-                    meta_action_mu = f_adaptation_policy_j(meta_batch[:,:self._observation_dim])
-                    meta_action_sigma = torch.empty_like(meta_action_mu).fill_(self._action_sigma)
-                    meta_action_distribution = Normal(meta_action_mu, meta_action_sigma)
-                    meta_action_log_probs = meta_action_distribution.log_prob(meta_batch[:, self._observation_dim:self._observation_dim + self._action_dim])
-                    meta_policy_loss = -(meta_action_log_probs * meta_weights.detach()).mean()
+                    meta_policy_loss = self.adaptation_policy_loss_on_batch(f_adaptation_policy_j, adapted_value_function, meta_batch)
                     meta_policy_grad_j = A.grad(meta_policy_loss, f_adaptation_policy_j.parameters(time=0))
 
                     # Collect grads for the adaptation policy update in the outer loop [L15],
@@ -215,7 +218,7 @@ class MAMLRAWR(object):
                     meta_policy_losses.append(meta_policy_loss.item())
                     meta_policy_grads_i.append(meta_policy_grad_j)
                     copy_model_with_grads(f_adaptation_policy_j, adaptation_policy_j)
-                    adaptation_policies_i.append(deepcopy(adaptation_policy_j))
+                    adaptation_policies_i.append(adaptation_policy_j)
                 ##################################################################################################
 
             value_functions.append(value_functions_i)
@@ -239,8 +242,6 @@ class MAMLRAWR(object):
                 for j in range(len(meta_value_grads[i])):
                     grads.append(meta_value_grads[i][j][idx])
             parameter.grad = sum(grads) / len(grads)
-        # grad_norm = torch.nn.utils.clip_grad_norm_(self._value_function.parameters(), 100)
-        # print(f'value grad norm: {grad_norm}')
         self._value_function_optimizer.step()
         self._value_function_optimizer.zero_grad()
         ############################################################################3
@@ -254,7 +255,6 @@ class MAMLRAWR(object):
                 for j in range(len(meta_policy_grads[i])):
                     grads.append(meta_policy_grads[i][j][idx])
             parameter.grad = sum(grads) / len(grads)
-        # grad_norm = torch.nn.utils.clip_grad_norm_(self._adaptation_policy.parameters(), 100)
         self._adaptation_policy_optimizer.step()
         self._adaptation_policy_optimizer.zero_grad()
         ############################################################################3
@@ -266,9 +266,7 @@ class MAMLRAWR(object):
             for j, batch_ij in enumerate(batches_i):
                 batch = batch_ij.view(self._maml_steps * self._batch_size // self._rollouts_per_iteration, -1)
                 value_estimates = value_functions[i][j](batch[:,:self._observation_dim])
-                terminal_state_value_estimates = value_functions[i][j](batch[:,self._observation_dim * 2 + self._action_dim:self._observation_dim * 3 + self._action_dim]).detach()
-                terminal_factors = batch[:,-4:-3]
-                mc_value_estimates = batch[:,-1:] + terminal_factors * terminal_state_value_estimates
+                mc_value_estimates = self.mc_value_estimates_on_batch(value_functions[i][j], batch)
                 
                 advantages = ((1 / self._exploration_temperature) * (mc_value_estimates - value_estimates))
                 weight = advantages.mean().clamp(max=self._advantage_clamp).exp()
@@ -296,11 +294,13 @@ class MAMLRAWR(object):
                 [self._rollout_policy(self._exploration_policy, env)[0] for _ in range(self._initial_trajectories)])
 
         for t in range(self._training_iterations):
-            #with A.detect_anomaly():
             rollouts, rewards, value, policy = self.train_step()
             if not self._silent:
                 print(f'{t}: {rewards}, {np.mean(value)}, {np.mean(policy)}')
 
             if t % self._visualization_interval == 0:
-                for idx, (env, rollout) in enumerate(zip(self._envs, rollouts)):
-                    image = env.render(rollout, f'{log_path}/{t}_{idx}.png')
+                try:
+                    for idx, (env, rollout) in enumerate(zip(self._envs, rollouts)):
+                        image = env.render_rollout(rollout, f'{log_path}/{t}_{idx}.png')
+                except Exception as e:
+                    pass

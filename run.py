@@ -23,7 +23,8 @@ def run(args: argparse.Namespace):
     for instance_idx in range(args.instances):
         # envs = [PointMass1DEnv(0), PointMass1DEnv(1)]
         envs = [PointMass1DEnv(args.task_idx, fix_random_task=True)]
-
+        # envs = [gym.make('HalfCheetah-v2')]
+        
         if args.name is None:
             args.name = 'throwaway_test_run'
         if instance_idx == 0:
