@@ -16,14 +16,21 @@ def get_args() -> argparse.Namespace:
     parser.add_argument('--task_idx', type=int, default=None)
     parser.add_argument('--instances', type=int, default=1)
     parser.add_argument('--name', type=str, default=None)
+    parser.add_argument('--inline_render', action='store_true')
+    parser.add_argument('--gym_env', type=str, default=None)
+    parser.add_argument('--gradient_steps_per_iteration', type=int, default=1)
+    parser.add_argument('--profile', action='store_true')
     return parser.parse_args()
 
 
 def run(args: argparse.Namespace):
     for instance_idx in range(args.instances):
-        # envs = [PointMass1DEnv(0), PointMass1DEnv(1)]
-        envs = [PointMass1DEnv(args.task_idx, fix_random_task=True)]
-        # envs = [gym.make('HalfCheetah-v2')]
+        if args.gym_env is None:
+            envs = [PointMass1DEnv(0), PointMass1DEnv(-1)]
+            # envs = [PointMass1DEnv(task_idx) for task_idx in range(PointMass1DEnv.n_tasks())]
+            # envs = [PointMass1DEnv(args.task_idx, fix_random_task=True)]
+        else:
+            envs = [gym.make(args.gym_env)]
         
         if args.name is None:
             args.name = 'throwaway_test_run'
@@ -33,10 +40,18 @@ def run(args: argparse.Namespace):
             name = f'{args.name}_{instance_idx}'
         
         maml_rawr = MAMLRAWR(envs, args.log_dir, name, training_iterations=args.train_steps, device=args.device,
-                             visualization_interval=args.vis_interval, silent=args.instances > 1)        
+                             visualization_interval=args.vis_interval, silent=args.instances > 1,
+                             inline_render=args.inline_render, gradient_steps_per_iteration=args.gradient_steps_per_iteration)
 
-        subprocess = Process(target=maml_rawr.train)
-        subprocess.start()
+        if args.instances > 1:
+            subprocess = Process(target=maml_rawr.train)
+            subprocess.start()
+        else:
+            if args.profile:
+                import cProfile
+                cProfile.runctx('maml_rawr.train()', sort='cumtime', locals=locals(), globals=globals())
+            else:
+                maml_rawr.train()
 
 
 if __name__ == '__main__':
