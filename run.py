@@ -19,6 +19,7 @@ def get_args() -> argparse.Namespace:
     parser.add_argument('--inline_render', action='store_true')
     parser.add_argument('--gym_env', type=str, default=None)
     parser.add_argument('--gradient_steps_per_iteration', type=int, default=1)
+    parser.add_argument('--replay_buffer_size', type=int, default=1000)
     parser.add_argument('--profile', action='store_true')
     return parser.parse_args()
 
@@ -41,7 +42,8 @@ def run(args: argparse.Namespace):
         
         maml_rawr = MAMLRAWR(envs, args.log_dir, name, training_iterations=args.train_steps, device=args.device,
                              visualization_interval=args.vis_interval, silent=args.instances > 1,
-                             inline_render=args.inline_render, gradient_steps_per_iteration=args.gradient_steps_per_iteration)
+                             inline_render=args.inline_render, gradient_steps_per_iteration=args.gradient_steps_per_iteration,
+                             replay_buffer_length=args.replay_buffer_size)
 
         if args.instances > 1:
             subprocess = Process(target=maml_rawr.train)

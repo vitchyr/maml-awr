@@ -1,6 +1,6 @@
 import argparse
 from copy import deepcopy
-from typing import List
+from typing import List, Optional
 import os
 
 import higher
@@ -10,6 +10,7 @@ import torch.autograd as A
 import torch.nn as nn
 import torch.optim as O
 from torch.distributions import Normal
+from torch.utils.tensorboard import SummaryWriter
 
 from src.envs import Env
 from src.nn import MLP
@@ -41,12 +42,12 @@ class MAMLRAWR(object):
     def __init__(self, envs: List[Env], log_dir: str, name: str = None,
                  policy_hidden_layers: List[int] = [32, 32], value_function_hidden_layers: List[int] = [32, 32],
                  training_iterations: int = 20000, rollouts_per_iteration: int = 1, batch_size: int = 64,
-                 alpha1: float = 0.05, alpha2: float = 1e-4, eta1: float = 0.05, eta2: float = 1e-4, mu: float = 1e-4,
+                 alpha1: float = 0.01, alpha2: float = 1e-4, eta1: float = 0.01, eta2: float = 1e-4, mu: float = 1e-4,
                  adaptation_temperature: float = 1.0, exploration_temperature: float = 1.0,
-                 initial_trajectories: int = 15, device: str = 'cuda:0', maml_steps: int = 1,
+                 initial_trajectories: int = 40, device: str = 'cuda:0', maml_steps: int = 1,
                  test_samples: int = 10, weight_clamp: float = 10.0, action_sigma: float = 0.4,
-                 visualization_interval: int = 100, silent: bool = False, replay_buffer_length: int = 10,
-                 inline_render: bool = False, gradient_steps_per_iteration: int = 10):
+                 visualization_interval: int = 100, silent: bool = False, replay_buffer_length: int = 1000,
+                 inline_render: bool = False, gradient_steps_per_iteration: int = 1):
         self._envs = envs
         self._log_dir = log_dir
         self._name = name if name is not None else 'throwaway_test_run'
@@ -92,7 +93,7 @@ class MAMLRAWR(object):
         self._silent = silent
         self._inline_render = inline_render
         self._gradient_steps_per_iteration = gradient_steps_per_iteration
-        
+       
     #################################################################
     ################# SUBROUTINES FOR TRAINING ######################
     #################################################################
@@ -148,7 +149,9 @@ class MAMLRAWR(object):
             advantages = ((1 / self._adaptation_temperature) * (mc_value_estimates - value_estimates))
             normalized_advantages = (advantages - advantages.mean()) / advantages.std()
             weights = normalized_advantages.clamp(max=self._advantage_clamp).exp()
-
+            # weights = advantages.clamp(max=self._advantage_clamp).exp()
+            # normalized_weights = (weights - weights.mean()) / weights.std()
+            
         action_mu = policy(batch[:,:self._observation_dim])
         action_sigma = torch.empty_like(action_mu).fill_(self._action_sigma)
         action_distribution = Normal(action_mu, action_sigma)
@@ -158,12 +161,12 @@ class MAMLRAWR(object):
 
     #################################################################
     #################################################################
-    
+
     # This function is the body of the main training loop [L4]
     # At every iteration, it adds rollouts from the exploration policy and one of the adapted policies
     #  to the replay buffer. It also updates the adaptation value function, adaptation policy, and
     #  exploration policy
-    def train_step(self, train_step_idx: int):
+    def train_step(self, train_step_idx: int, writer: Optional[SummaryWriter] = None):
         batches = []
         value_functions = []
         adaptation_policies = []
@@ -186,7 +189,9 @@ class MAMLRAWR(object):
             adaptation_policies_i = []
             meta_value_grads_i = []
             meta_policy_grads_i = []
+            inner_value_losses = []
             meta_value_losses = []
+            inner_policy_losses = []
             meta_policy_losses = []
             for j, batch in enumerate(pyt_batch):
                 ##################################################################################################
@@ -200,6 +205,7 @@ class MAMLRAWR(object):
                             # Compute loss and adapt value function [L9]
                             loss = self.value_function_loss_on_batch(f_value_function_j, inner_batch)
                             diff_value_opt.step(loss)
+                            inner_value_losses.append(loss.item())
 
                     # Collect grads for the value function update in the outer loop [L14],
                     #  which is not actually performed here
@@ -225,7 +231,8 @@ class MAMLRAWR(object):
                             # Compute loss and adapt policy [L10]
                             loss = self.adaptation_policy_loss_on_batch(f_adaptation_policy_j, adapted_value_function, inner_batch)
                             diff_policy_opt.step(loss)
-
+                            inner_policy_losses.append(loss.item())
+                            
                     meta_policy_loss = self.adaptation_policy_loss_on_batch(f_adaptation_policy_j, adapted_value_function, meta_batch)
                     meta_policy_grad_j = A.grad(meta_policy_loss, f_adaptation_policy_j.parameters(time=0))
 
@@ -253,6 +260,17 @@ class MAMLRAWR(object):
                 rollouts.append(test_trajectory)
                 rewards.append(test_reward)
 
+            if writer is not None:
+                if len(inner_value_losses):
+                    writer.add_scalar(f'Loss_Value_Inner/Task_{i}', np.mean(inner_value_losses), train_step_idx)
+                    writer.add_scalar(f'Loss_Policy_Inner/Task_{i}', np.mean(inner_policy_losses), train_step_idx)
+                writer.add_scalar(f'Loss_Value_Outer/Task_{i}', np.mean(meta_value_losses), train_step_idx)
+                writer.add_scalar(f'Loss_Policy_Outer/Task_{i}', np.mean(meta_policy_losses), train_step_idx)
+                if train_step_idx % self._visualization_interval == 0:
+                    writer.add_scalar(f'Reward_Test/Task_{i}', test_reward, train_step_idx)
+                if train_step_idx % self._gradient_steps_per_iteration == 0:
+                    writer.add_scalar(f'Reward_Train/Task_{i}', train_reward, train_step_idx)
+                
         ############################################################################3
         # Meta-update value function [L14]
         ############################################################################3
@@ -311,13 +329,18 @@ class MAMLRAWR(object):
         if not os.path.exists(log_path):
             os.makedirs(log_path)
 
+        tensorboard_log_path = f'{log_path}/tb'
+        if not os.path.exists(tensorboard_log_path):
+            os.makedirs(tensorboard_log_path)
+        summary_writer = SummaryWriter(tensorboard_log_path)
+            
         # Gather initial trajectory rollouts
         for i, (env, buffer) in enumerate(zip(self._envs, self._buffers)):
             buffer.add_trajectories(
                 [self._rollout_policy(self._adaptation_policy, env)[0] for _ in range(self._initial_trajectories)])
 
         for t in range(self._training_iterations):
-            rollouts, rewards, value, policy = self.train_step(t)
+            rollouts, rewards, value, policy = self.train_step(t, summary_writer)
 
             if not self._silent:
                 if len(rewards):
