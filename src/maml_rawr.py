@@ -45,9 +45,9 @@ class MAMLRAWR(object):
                  alpha1: float = 0.01, alpha2: float = 1e-4, eta1: float = 0.01, eta2: float = 1e-4, mu: float = 1e-4,
                  adaptation_temperature: float = 1.0, exploration_temperature: float = 1.0,
                  initial_trajectories: int = 40, device: str = 'cuda:0', maml_steps: int = 1,
-                 test_samples: int = 10, weight_clamp: float = 10.0, action_sigma: float = 0.4,
+                 test_samples: int = 10, weight_clamp: float = 10.0, action_sigma: float = 0.2,
                  visualization_interval: int = 100, silent: bool = False, replay_buffer_length: int = 1000,
-                 inline_render: bool = False, gradient_steps_per_iteration: int = 1):
+                 inline_render: bool = False, gradient_steps_per_iteration: int = 1, discount_factor: float = 0.99):
         self._envs = envs
         self._log_dir = log_dir
         self._name = name if name is not None else 'throwaway_test_run'
@@ -75,7 +75,7 @@ class MAMLRAWR(object):
         self._exploration_policy_optimizer = O.Adam(self._adaptation_policy.parameters(), lr=mu)
 
         self._buffers = [ReplayBuffer(env._max_episode_steps, env.observation_space.shape[0], env_action_dim(env),
-                                      max_trajectories=replay_buffer_length)
+                                      max_trajectories=replay_buffer_length, discount_factor=discount_factor)
                          for env in self._envs]
 
         self._training_iterations, self._rollouts_per_iteration = training_iterations, rollouts_per_iteration
@@ -93,22 +93,23 @@ class MAMLRAWR(object):
         self._silent = silent
         self._inline_render = inline_render
         self._gradient_steps_per_iteration = gradient_steps_per_iteration
-       
+
     #################################################################
     ################# SUBROUTINES FOR TRAINING ######################
     #################################################################
     def _rollout_policy(self, policy: MLP, env: Env, test: bool = False, random: bool = False, render: bool = False) -> List[Experience]:
         trajectory = []
-
+        cpu_policy = deepcopy(policy).to(self._cpu)
         state = env.reset()
         if render:
             env.render()
         done = False
         total_reward = 0
+        episode_t = 0
         while not done:
             if not random:
                 with torch.no_grad():
-                    mu = policy(torch.tensor(state).to(self._device).unsqueeze(0).float()).squeeze().to(self._cpu).numpy()
+                    mu = cpu_policy(torch.tensor(state).unsqueeze(0).float()).squeeze().numpy()
                     if test:
                         action = mu
                     else:
@@ -123,7 +124,10 @@ class MAMLRAWR(object):
             trajectory.append(Experience(state, action, next_state, reward, done))
             state = next_state
             total_reward += reward
-
+            episode_t += 1
+            if episode_t >= env._max_episode_steps:
+                break
+            
         return trajectory, total_reward
 
     def mc_value_estimates_on_batch(self, value_function, batch):
@@ -352,4 +356,10 @@ class MAMLRAWR(object):
                         image = env.render_rollout(rollout, f'{log_path}/{t}_{idx}.png')
                 except Exception as e:
                     pass
-            
+
+                torch.save(self._value_function.state_dict(), f'{log_path}/vf_LATEST.pt')
+                torch.save(self._value_function.state_dict(), f'{log_path}/vf_LATEST_.pt')
+                torch.save(self._adaptation_policy.state_dict(), f'{log_path}/ap_LATEST.pt')
+                torch.save(self._adaptation_policy.state_dict(), f'{log_path}/ap_LATEST_.pt')
+                torch.save(self._exploration_policy.state_dict(), f'{log_path}/ep_LATEST.pt')
+                torch.save(self._exploration_policy.state_dict(), f'{log_path}/ep_LATEST_.pt')

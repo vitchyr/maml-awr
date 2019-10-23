@@ -1,6 +1,7 @@
 #
 # Toy environments for testing maml-rawr
 #
+import gym
 from gym.spaces import Box
 import imageio
 import numpy as np
@@ -107,3 +108,46 @@ class PointMass1DEnv(Env):
 
         return self._compute_state(), reward, done, {'task_idx': self._this_task_idx}
 
+
+class HalfCheetahDirEnv(Env):
+    def __init__(self, task_idx: Optional[int] = None, fix_random_task: bool = False):
+        self.env = gym.make('HalfCheetah-v2')
+        if task_idx is None:
+            task_idx = np.random.randint(self.n_tasks())
+
+        self._task_idx = task_idx
+        
+    @staticmethod
+    def n_tasks():
+        return 2
+
+    @property
+    def observation_space(self):
+        return self.env.observation_space
+
+    @property
+    def action_space(self):
+        return self.env.action_space
+
+    @property
+    def _max_episode_steps(self):
+        return self.env._max_episode_steps
+    
+    def reset(self) -> np.ndarray:
+        return self.env.reset()
+
+    def step(self, action: np.ndarray) -> Tuple[np.ndarray, float, bool, dict]:
+        xposbefore = self.env.sim.data.qpos[0]
+        self.env.do_simulation(action, self.env.frame_skip)
+        xposafter = self.env.sim.data.qpos[0]
+        ob = self.env.env._get_obs()
+        reward_ctrl = -0.1 * np.square(action).sum()
+
+        if self._task_idx == 0:
+            reward_run = (xposafter - xposbefore)/self.env.dt
+        else:
+            reward_run = -(xposafter - xposbefore)/self.env.dt
+
+        reward = reward_ctrl + reward_run
+        done = False
+        return ob, reward, done, dict(reward_run=reward_run, reward_ctrl=reward_ctrl)
