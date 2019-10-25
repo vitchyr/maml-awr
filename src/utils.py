@@ -13,7 +13,7 @@ class Experience(NamedTuple):
 
 class ReplayBuffer(object):
     def __init__(self, trajectory_length: int, state_dim: int, action_dim: int, max_trajectories: int = 10000,
-                 discount_factor: float = 0.99):
+                 discount_factor: float = 0.99, immutable: bool = False):
         self._trajectories = np.empty((max_trajectories, trajectory_length, state_dim + action_dim + state_dim + state_dim + 1 + 1 + 1 + 1), dtype=np.float32)
         self._stored_trajectories = 0
         self._new_trajectory_idx = 0
@@ -22,11 +22,17 @@ class ReplayBuffer(object):
         self._state_dim = state_dim
         self._action_dim = action_dim
         self._discount_factor = discount_factor
+        self._immutable = immutable
+        if self._immutable:
+            print('Creating immutable replay buffer')
         
     def __len__(self):
         return self._stored_trajectories
 
-    def add_trajectory(self, trajectory: List[Experience]):
+    def add_trajectory(self, trajectory: List[Experience], force: bool = False):
+        if self._immutable and not force:
+            raise ValueError('Cannot add trajectory to immutable replay buffer')
+
         if len(trajectory) != self._trajectory_length:
             raise ValueError(f'Invalid trajectory length: {len(trajectory)}')
 
@@ -70,9 +76,9 @@ class ReplayBuffer(object):
         if self._stored_trajectories < self._max_trajectories:
             self._stored_trajectories += 1
 
-    def add_trajectories(self, trajectories: List[List[Experience]]):
+    def add_trajectories(self, trajectories: List[List[Experience]], force: bool = False):
         for trajectory in trajectories:
-            self.add_trajectory(trajectory)
+            self.add_trajectory(trajectory, force)
 
     def sample(self, batch_size):
         idxs = np.random.choice(np.arange(self._stored_trajectories * self._trajectory_length), batch_size)
