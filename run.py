@@ -2,6 +2,8 @@ import argparse
 import gym
 import numpy as np
 from multiprocessing import Process
+import random
+import torch
 
 from src.envs import PointMass1DEnv, HalfCheetahDirEnv
 from src.maml_rawr import MAMLRAWR
@@ -12,6 +14,8 @@ def get_args() -> argparse.Namespace:
     parser.add_argument('--train_steps', type=int, default=100000)
     parser.add_argument('--batch_size', type=int, default=256)
     parser.add_argument('--inner_batch_size', type=int, default=256)
+    parser.add_argument('--alpha1', type=float, default=0.1)
+    parser.add_argument('--eta1', type=float, default=0.1)
     parser.add_argument('--device', type=str, default='cpu')
     parser.add_argument('--vis_interval', type=int, default=200)
     parser.add_argument('--log_dir', type=str, default='log')
@@ -34,6 +38,7 @@ def get_args() -> argparse.Namespace:
     parser.add_argument('--maml_steps', type=int, default=1)
     parser.add_argument('--adaptation_temp', type=float, default=0.05)
     parser.add_argument('--bias_linear', action='store_true')
+    parser.add_argument('--advantage_head_coef', type=float, default=None)
     return parser.parse_args()
 
 
@@ -58,28 +63,22 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
     else:
         network_shape = [64, 64, 32, 32]
 
-    maml_rawr = MAMLRAWR(envs, args.log_dir, name, network_shape, network_shape, batch_size=args.batch_size, training_iterations=args.train_steps,
+    random.seed(instance_idx)
+    np.random.seed(instance_idx)
+    torch.manual_seed(instance_idx)
+    torch.cuda.manual_seed(instance_idx)
+
+    maml_rawr = MAMLRAWR(args, envs, args.log_dir, name, network_shape, network_shape, batch_size=args.batch_size, training_iterations=args.train_steps,
                          device=args.device, visualization_interval=args.vis_interval, silent=args.instances > 1,
                          inline_render=args.inline_render, gradient_steps_per_iteration=args.gradient_steps_per_iteration,
                          replay_buffer_length=args.replay_buffer_size, discount_factor=args.discount_factor, eta2=args.eta2,
                          initial_trajectories=args.initial_rollouts, offline_inner_loop=args.offline_inner, grad_clip=args.grad_clip,
                          inner_batch_size=args.inner_batch_size, maml_steps=args.maml_steps,
-                         adaptation_temperature=args.adaptation_temp, bias_linear=args.bias_linear)
+                         adaptation_temperature=args.adaptation_temp, bias_linear=args.bias_linear, eta1=args.eta1, alpha1=args.alpha1)
 
     maml_rawr.train()
 
-    '''
-    if args.instances > 1:
-        subprocess = Process(target=maml_rawr.train)
-        subprocess.start()
-    else:
-        if args.profile:
-            import cProfile
-            cProfile.runctx('maml_rawr.train()', sort='cumtime', locals=locals(), globals=globals())
-        else:
-            maml_rawr.train()
-    '''
-    
+
 if __name__ == '__main__':
     args = get_args()
     if args.instances == 1:

@@ -19,7 +19,7 @@ class BiasLinear(nn.Module):
 
 
 class MLP(nn.Module):
-    def __init__(self, layer_widths: List[int], final_activation: Callable = lambda x: x, bias_linear: bool = False):
+    def __init__(self, layer_widths: List[int], final_activation: Callable = lambda x: x, bias_linear: bool = False, extra_head_layers: List[int] = None):
         super().__init__()
 
         if len(layer_widths) < 2:
@@ -27,14 +27,34 @@ class MLP(nn.Module):
 
         self._final_activation = final_activation
         self.seq = nn.Sequential()
+        self._head = extra_head_layers is not None
+
         linear = BiasLinear if bias_linear else nn.Linear
+        print(f'Using Linear class {linear}')
         for idx in range(len(layer_widths) - 1):
             self.seq.add_module(f'fc_{idx}', linear(layer_widths[idx], layer_widths[idx + 1]))
             if idx < len(layer_widths) - 2:
                 self.seq.add_module(f'relu_{idx}', nn.ReLU())
 
-    def forward(self, x: torch.tensor):
-        return self._final_activation(self.seq(x))
+        if extra_head_layers is not None:
+            self.pre_seq = self.seq[:-2]
+            self.post_seq = self.seq[-2:]
+
+            self.head_seq = nn.Sequential()
+            extra_head_layers = [layer_widths[-2] + layer_widths[-1]] + extra_head_layers
+
+            for idx, (infc, outfc) in enumerate(zip(extra_head_layers[:-1], extra_head_layers[1:])):
+                self.head_seq.add_module(f'fc_{idx}', linear(extra_head_layers[idx], extra_head_layers[idx + 1]))
+                if idx < len(extra_head_layers) - 2:
+                    self.seq.add_module(f'relu_{idx}', nn.ReLU())
+                
+    def forward(self, x: torch.tensor, acts: Optional[torch.tensor] = None):
+        if self._head and acts is not None:
+            h = self.pre_seq(x)
+            head_input = torch.cat((h,acts), -1)
+            return self._final_activation(self.post_seq(h)), self.head_seq(head_input)
+        else:
+            return self._final_activation(self.seq(x))
         
 
 if __name__ == '__main__':
