@@ -30,7 +30,7 @@ class MLP(nn.Module):
         self._head = extra_head_layers is not None
 
         linear = BiasLinear if bias_linear else nn.Linear
-        print(f'Using Linear class {linear}')
+
         for idx in range(len(layer_widths) - 1):
             self.seq.add_module(f'fc_{idx}', linear(layer_widths[idx], layer_widths[idx + 1]))
             if idx < len(layer_widths) - 2:

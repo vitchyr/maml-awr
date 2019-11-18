@@ -40,16 +40,16 @@ class MiniBatch(object):
         return self._samples[:,-5]
 
     def terminal_factor(self):
-        return self._samples[:,:-4]
+        return self._samples[:,-4]
 
     def done(self):
-        return self._samples[:,:-3]
+        return self._samples[:,-3]
 
     def reward(self):
-        return self._samples[:,:-2]
+        return self._samples[:,-2]
 
     def reward(self):
-        return self._samples[:,:-1]
+        return self._samples[:,-1]
 
 
 class ReplayBuffer(object):
