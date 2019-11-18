@@ -40,6 +40,7 @@ def get_args() -> argparse.Namespace:
     parser.add_argument('--grad_clip', type=float, default=None)
     parser.add_argument('--maml_steps', type=int, default=1)
     parser.add_argument('--adaptation_temp', type=float, default=0.05)
+    parser.add_argument('--exploration_temp', type=float, default=0.2)
     parser.add_argument('--bias_linear', action='store_true')
     parser.add_argument('--advantage_head_coef', type=float, default=None)
     parser.add_argument('--eval', action='store_true')
@@ -81,8 +82,7 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
                          inline_render=args.inline_render, gradient_steps_per_iteration=args.gradient_steps_per_iteration,
                          replay_buffer_length=args.replay_buffer_size, discount_factor=args.discount_factor, eta2=args.eta2,
                          initial_trajectories=args.initial_rollouts, offline_inner_loop=args.offline_inner, grad_clip=args.grad_clip,
-                         inner_batch_size=args.inner_batch_size, maml_steps=args.maml_steps,
-                         adaptation_temperature=args.adaptation_temp, bias_linear=args.bias_linear, eta1=args.eta1, alpha1=args.alpha1)
+                         inner_batch_size=args.inner_batch_size, maml_steps=args.maml_steps, bias_linear=args.bias_linear, eta1=args.eta1, alpha1=args.alpha1)
 
     maml_rawr.train()
 

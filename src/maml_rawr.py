@@ -3,6 +3,7 @@ from copy import deepcopy
 from typing import List, Optional
 import os
 import itertools
+import math
 
 import higher
 import numpy as np
@@ -45,7 +46,6 @@ class MAMLRAWR(object):
                  policy_hidden_layers: List[int] = [32, 32], value_function_hidden_layers: List[int] = [32, 32],
                  training_iterations: int = 20000, batch_size: int = 64,
                  alpha1: float = 0.1, alpha2: float = 2.5e-4, eta1: float = 0.1, eta2: float = 1e-4, mu: float = 1e-4,
-                 adaptation_temperature: float = 0.05, exploration_temperature: float = 0.05,
                  initial_trajectories: int = 40, device: str = 'cuda:0', maml_steps: int = 1,
                  test_samples: int = 10, weight_clamp: float = 20.0, action_sigma: float = 0.2,
                  visualization_interval: int = 100, silent: bool = False, replay_buffer_length: int = 1000,
@@ -84,7 +84,7 @@ class MAMLRAWR(object):
         
         self._adaptation_policy_optimizer = O.Adam(self._adaptation_policy.parameters(), lr=alpha2)
         self._value_function_optimizer = O.Adam(self._value_function.parameters(), lr=eta2)
-        self._exploration_policy_optimizer = O.Adam(self._adaptation_policy.parameters(), lr=mu)
+        self._exploration_policy_optimizer = O.Adam(self._exploration_policy.parameters(), lr=mu)
         self._advantage_coef_opt = O.SGD([self._advantage_coef], lr=1e-4, momentum=0.9)
         
         if args.vf_archive is not None:
@@ -108,7 +108,7 @@ class MAMLRAWR(object):
         self._training_iterations = training_iterations
         self._batch_size = batch_size
         self._alpha1, self._alpha2, self._eta1, self._eta2, self._mu = alpha1, alpha2, eta1, eta2, mu
-        self._adaptation_temperature, self._exploration_temperature = adaptation_temperature, exploration_temperature
+        self._adaptation_temperature, self._exploration_temperature = args.adaptation_temp, args.exploration_temp
         self._device = torch.device(device)
         self._initial_trajectories = initial_trajectories
         self._maml_steps = maml_steps
@@ -149,7 +149,7 @@ class MAMLRAWR(object):
                     action = action.squeeze().numpy().clip(min=env.action_space.low, max=env.action_space.high)
             else:
                 action = env.action_space.sample()
-                log_prob = 1 / 2 ** env.action_space.shape[0]
+                log_prob = math.log(1 / 2 ** env.action_space.shape[0])
 
             next_state, reward, done, info_dict = env.step(action)
             if render:
@@ -190,8 +190,8 @@ class MAMLRAWR(object):
             mc_value_estimates = self.mc_value_estimates_on_batch(value_function, batch)
             
             advantages = (mc_value_estimates - value_estimates)
-            #normalized_advantages = (1 / self._adaptation_temperature) * (advantages - advantages.mean()) / advantages.std()
-            weights = advantages.clamp(max=self._advantage_clamp).exp()
+            normalized_advantages = (1 / self._adaptation_temperature) * (advantages - advantages.mean()) / advantages.std()
+            weights = normalized_advantages.clamp(max=self._advantage_clamp).exp()
 
         original_action = batch[:,self._observation_dim:self._observation_dim + self._action_dim]
         if self._args.advantage_head_coef is not None:
@@ -422,10 +422,10 @@ class MAMLRAWR(object):
                 weights.append(weight.detach())
 
             weights = torch.tensor(weights)
-            print('before', i, train_step_idx, weights)
-            weights = (weights - weights.mean()) / weights.std()
-            weights = weights.exp()
-            print('after', i, train_step_idx, weights)
+            weights = (1 / self._exploration_temperature) * (weights - weights.mean()) / weights.std()
+            weights = weights.clamp(max=self._advantage_clamp).exp()
+            #weights = weights.softmax(0)
+            print(i, train_step_idx, weights)
             
             for j, batch in enumerate(pyt_batch):
                 batch = batch.view(-1, batch.shape[-1])
@@ -434,7 +434,7 @@ class MAMLRAWR(object):
                 action = self._exploration_policy(original_obs)
                 log_probs = D.Normal(action, torch.empty_like(action).fill_(self._action_sigma)).log_prob(original_action).sum(-1)
 
-                loss = log_probs.mean() * weights[j] / (pyt_batch.shape[0] * len(batches))
+                loss = -log_probs.mean() * weights[j]
                 loss.backward()
 
         grad = torch.nn.utils.clip_grad_norm_(self._exploration_policy.parameters(), 1000)
