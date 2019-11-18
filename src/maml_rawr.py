@@ -139,13 +139,13 @@ class MAMLRAWR(object):
         while not done:
             if not random:
                 with torch.no_grad():
-                    mu = cpu_policy(torch.tensor(state).unsqueeze(0).float())#.squeeze().numpy()
+                    mu = cpu_policy(torch.tensor(state).unsqueeze(0).float()).squeeze()#.numpy()
                     if test:
                         action = mu
                     else:
-                        action = mu + torch.empty_like(mu).normal_() * sigma
+                        action = mu + torch.empty_like(mu).normal_() * self._action_sigma
 
-                    log_prob = torch.distributions.MultivariateNormal(mu, torch.empty_like(mu).fill_(self._action_sigma)).log_prob(action).numpy()
+                    log_prob = torch.distributions.Normal(mu, torch.empty_like(mu).fill_(self._action_sigma)).log_prob(action).numpy().sum()
                     action = action.squeeze().numpy().clip(min=env.action_space.low, max=env.action_space.high)
             else:
                 action = env.action_space.sample()
@@ -210,6 +210,35 @@ class MAMLRAWR(object):
                 losses = losses + F.softplus(self._advantage_coef) * self._args.advantage_head_coef * (advantage_prediction - advantages) ** 2
 
         return losses.mean()
+
+    def update_model_with_grads(self, model: nn.Module, grads: list, optimizer: torch.optim.Optimizer, clip: float, step: bool = True):
+        for idx, parameter in enumerate(model.parameters()):
+            grads_ = []
+            for i in range(len(grads)):
+                for j in range(len(grads[i])):
+                    grads_.append(grads[i][j][idx])
+            parameter.grad = sum(grads_) / len(grads_)
+
+        if self._grad_clip is not None:
+            grad = torch.nn.utils.clip_grad_norm_(model.parameters(), clip)
+        else:
+            grad = None
+
+        if step:
+            optimizer.step()
+            optimizer.zero_grad()
+        
+        return grad
+
+    def policy_advantage_on_batch(self, policy: nn.Module, value_function: nn.Module, batch: torch.tensor):
+        with torch.no_grad():
+            value_estimates = value_function(batch[:,:self._observation_dim])
+            mc_value_estimates = self.mc_value_estimates_on_batch(value_function, batch)
+            
+            advantages = (mc_value_estimates - value_estimates)
+
+        original_action = batch[:,self._observation_dim:self._observation_dim + self._action_dim]
+        original_log_probs = batch[:,-5]
 
     #################################################################
     #################################################################
@@ -357,33 +386,17 @@ class MAMLRAWR(object):
         ############################################################################3
         # Meta-update value function [L14]
         ############################################################################3
-        for idx, parameter in enumerate(self._value_function.parameters()):
-            grads = []
-            for i in range(len(meta_value_grads)):
-                for j in range(len(meta_value_grads[i])):
-                    grads.append(meta_value_grads[i][j][idx])
-            parameter.grad = sum(grads) / len(grads)
-        if self._grad_clip is not None:
-            grad = torch.nn.utils.clip_grad_norm_(self._value_function.parameters(), self._grad_clip)
+        grad = self.update_model_with_grads(self._value_function, meta_value_grads, self._value_function_optimizer, self._grad_clip)
+        if grad is not None:
             writer.add_scalar(f'Value_Outer_Grad', grad, train_step_idx)
-        self._value_function_optimizer.step()
-        self._value_function_optimizer.zero_grad()
         ############################################################################3
 
         ############################################################################3
         # Meta-update adaptation policy [L15]
         ############################################################################3
-        for idx, parameter in enumerate(self._adaptation_policy.parameters()):
-            grads = []
-            for i in range(len(meta_policy_grads)):
-                for j in range(len(meta_policy_grads[i])):
-                    grads.append(meta_policy_grads[i][j][idx])
-            parameter.grad = sum(grads) / len(grads)
-        if self._grad_clip is not None:
-            grad = torch.nn.utils.clip_grad_norm_(self._adaptation_policy.parameters(), self._grad_clip)
+        grad = self.update_model_with_grads(self._adaptation_policy, meta_policy_grads, self._adaptation_policy_optimizer, self._grad_clip)
+        if grad is not None:
             writer.add_scalar(f'Policy_Outer_Grad', grad, train_step_idx)
-        self._adaptation_policy_optimizer.step()
-        self._adaptation_policy_optimizer.zero_grad()
         ############################################################################3
 
         ###################
