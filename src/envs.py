@@ -200,11 +200,14 @@ class HalfCheetahVelEnv(HalfCheetahEnv):
         model-based control", 2012 
         (https://homes.cs.washington.edu/~todorov/papers/TodorovIROS12.pdf)
     """
-    def __init__(self, task={}):
-        self._task = task
-        self._goal_vel = task.get('velocity', 0.0)
+    def __init__(self, task_idx: Optional[int] = None, fix_random_task = False):
+        if task_idx is None:
+            task_idx = np.random.randint(5)
+        self._task_idx = task_idx
+        self._goal_vel = np.linspace(0,2,5)[task_idx]
         super(HalfCheetahVelEnv, self).__init__()
-
+        self._max_episode_steps = 1000
+        
     def step(self, action):
         xposbefore = self.sim.data.qpos[0]
         self.do_simulation(action, self.frame_skip)
@@ -218,7 +221,7 @@ class HalfCheetahVelEnv(HalfCheetahEnv):
         reward = forward_reward - ctrl_cost
         done = False
         infos = dict(reward_forward=forward_reward,
-            reward_ctrl=-ctrl_cost, task=self._task)
+                     reward_ctrl=-ctrl_cost, task=self._goal_vel)
         return (observation, reward, done, infos)
 
     def sample_tasks(self, num_tasks):

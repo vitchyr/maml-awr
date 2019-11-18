@@ -5,12 +5,14 @@ from multiprocessing import Process
 import random
 import torch
 
-from src.envs import PointMass1DEnv, HalfCheetahDirEnv
+from src.envs import PointMass1DEnv, HalfCheetahDirEnv, HalfCheetahVelEnv
 from src.maml_rawr import MAMLRAWR
 
 
 def get_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
+    parser.add_argument('--n_adaptations', type=int, default=1)
+    parser.add_argument('--pre_adapted', action='store_true')
     parser.add_argument('--train_steps', type=int, default=100000)
     parser.add_argument('--batch_size', type=int, default=256)
     parser.add_argument('--inner_batch_size', type=int, default=256)
@@ -39,6 +41,7 @@ def get_args() -> argparse.Namespace:
     parser.add_argument('--adaptation_temp', type=float, default=0.05)
     parser.add_argument('--bias_linear', action='store_true')
     parser.add_argument('--advantage_head_coef', type=float, default=None)
+    parser.add_argument('--eval', action='store_true')
     return parser.parse_args()
 
 
@@ -48,6 +51,8 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
             envs = [PointMass1DEnv(0), PointMass1DEnv(-1)]
         elif args.env == 'cheetah_dir':
             envs = [HalfCheetahDirEnv(0), HalfCheetahDirEnv(1)]
+        elif args.env == 'cheetah_vel':
+            envs = [HalfCheetahVelEnv(i) for i in range(4)]
     else:
         envs = [gym.make(args.gym_env)]
 

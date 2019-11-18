@@ -9,12 +9,52 @@ class Experience(NamedTuple):
     next_state: np.ndarray
     reward: float
     done: bool
-    
+    log_prob: float
+
+
+class MiniBatch(object):
+    def __init__(self, samples: np.ndarray, action_dim: int, observation_dim: int):
+        self._samples = torch.tensor(samples).float()
+        self._observation_dim = observation_dim
+        self._action_dim = action_dim
+        
+    def to(self, device: torch.device):
+        self._samples = self._samples.to(device)
+
+        return self
+
+    def obs(self):
+        return self._samples[:,:self._observation_dim]
+
+    def act(self):
+        return self._samples[:,self._observation_dim:self._observation_dim + self._action_dim]
+
+    def next_obs(self):
+        return self._samples[:,self._observation_dim + self._action_dim:self._observation_dim * 2 + self._action_dim]
+
+    def terminal_obs(self):
+        return self._samples[:,self._observation_dim * 2 + self._action_dim:self._observation_dim * 3 + self._action_dim]
+
+    def log_prob(self):
+        return self._samples[:,-5]
+
+    def terminal_factor(self):
+        return self._samples[:,:-4]
+
+    def done(self):
+        return self._samples[:,:-3]
+
+    def reward(self):
+        return self._samples[:,:-2]
+
+    def reward(self):
+        return self._samples[:,:-1]
+
 
 class ReplayBuffer(object):
     def __init__(self, trajectory_length: int, state_dim: int, action_dim: int, max_trajectories: int = 10000,
                  discount_factor: float = 0.99, immutable: bool = False):
-        self._trajectories = np.empty((max_trajectories, trajectory_length, state_dim + action_dim + state_dim + state_dim + 1 + 1 + 1 + 1), dtype=np.float32)
+        self._trajectories = np.empty((max_trajectories, trajectory_length, state_dim + action_dim + state_dim + state_dim + 1 + 1 + 1 + 1 + 1), dtype=np.float32)
         self._stored_trajectories = 0
         self._new_trajectory_idx = 0
         self._max_trajectories = max_trajectories
@@ -56,6 +96,9 @@ class ReplayBuffer(object):
             self._trajectories[self._new_trajectory_idx, -(idx + 1), slice_idx:slice_idx + self._state_dim] = terminal_state
             slice_idx += self._state_dim
 
+            self._trajectories[self._new_trajectory_idx, -(idx + 1), slice_idx:slice_idx + 1] = experience.log_prob
+            slice_idx += 1
+            
             terminal_factor *= self._discount_factor
             self._trajectories[self._new_trajectory_idx, -(idx + 1), slice_idx:slice_idx + 1] = terminal_factor
             slice_idx += 1
