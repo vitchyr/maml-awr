@@ -45,21 +45,16 @@ class MAMLRAWR(object):
     def __init__(self, args: argparse.Namespace, envs: List[Env], log_dir: str, name: str = None,
                  policy_hidden_layers: List[int] = [32, 32], value_function_hidden_layers: List[int] = [32, 32],
                  training_iterations: int = 20000, batch_size: int = 64,
-                 alpha1: float = 0.1, alpha2: float = 2.5e-4, eta1: float = 0.1, eta2: float = 1e-4, mu: float = 1e-4,
                  initial_trajectories: int = 40, device: str = 'cuda:0', maml_steps: int = 1,
-                 test_samples: int = 10, weight_clamp: float = 100.0, action_sigma: float = 0.2,
+                 test_samples: int = 10, action_sigma: float = 0.2,
                  visualization_interval: int = 100, silent: bool = False, replay_buffer_length: int = 1000,
                  inline_render: bool = False, gradient_steps_per_iteration: int = 1, discount_factor: float = 0.99,
-                 offline_inner_loop: bool = False, grad_clip: float = 100., inner_batch_size: int = 256, bias_linear: bool = False):
+                 grad_clip: float = 100., inner_batch_size: int = 256, bias_linear: bool = False):
         self._envs = envs
         self._log_dir = log_dir
         self._name = name if name is not None else 'throwaway_test_run'
         self._args = args
         
-        if len(envs) == 1:
-            alpha1 = 0
-            eta1 = 0
-            
         example_env = self._envs[0]
 
         self._observation_dim = example_env.observation_space.shape[0]
@@ -82,9 +77,9 @@ class MAMLRAWR(object):
 
         self._advantage_coef = nn.Parameter(torch.ones(1).to(device))
         
-        self._adaptation_policy_optimizer = O.Adam(self._adaptation_policy.parameters(), lr=alpha2)
-        self._value_function_optimizer = O.Adam(self._value_function.parameters(), lr=eta2)
-        self._exploration_policy_optimizer = O.Adam(self._exploration_policy.parameters(), lr=mu)
+        self._adaptation_policy_optimizer = O.Adam(self._adaptation_policy.parameters(), lr=args.outer_policy_lr)
+        self._value_function_optimizer = O.Adam(self._value_function.parameters(), lr=args.outer_value_lr)
+        self._exploration_policy_optimizer = O.Adam(self._exploration_policy.parameters(), lr=args.exploration_lr)
         self._advantage_coef_opt = O.SGD([self._advantage_coef], lr=1e-4, momentum=0.9)
         
         if args.vf_archive is not None:
@@ -95,32 +90,30 @@ class MAMLRAWR(object):
             self._adaptation_policy.load_state_dict(torch.load(args.ap_archive, map_location=device))
         
         self._adapted_buffers = [ReplayBuffer(env._max_episode_steps, env.observation_space.shape[0], env_action_dim(env),
-                                            max_trajectories=replay_buffer_length, discount_factor=discount_factor, immutable=offline_inner_loop or args.eval)
+                                            max_trajectories=replay_buffer_length, discount_factor=discount_factor)
                                for env in self._envs]
-
-        self._buffers = [ReplayBuffer(env._max_episode_steps, env.observation_space.shape[0], env_action_dim(env),
-                                      max_trajectories=replay_buffer_length, discount_factor=discount_factor)
-                         for env in self._envs]
-        self._pre_adapted_buffers = [ReplayBuffer(env._max_episode_steps, env.observation_space.shape[0], env_action_dim(env),
+        self._offline_buffers = [ReplayBuffer(env._max_episode_steps, env.observation_space.shape[0], env_action_dim(env),
+                                              max_trajectories=replay_buffer_length, discount_factor=discount_factor, immutable=True)
+                                 for env in self._envs]        
+        self._exploration_buffers = [ReplayBuffer(env._max_episode_steps, env.observation_space.shape[0], env_action_dim(env),
                                                   max_trajectories=replay_buffer_length, discount_factor=discount_factor)
                                      for env in self._envs]
         
         self._training_iterations = training_iterations
         self._batch_size = batch_size
-        self._alpha1, self._alpha2, self._eta1, self._eta2, self._mu = alpha1, alpha2, eta1, eta2, mu
+        self._inner_policy_lr, self._inner_value_lr = args.inner_policy_lr, args.inner_value_lr
         self._adaptation_temperature, self._exploration_temperature = args.adaptation_temp, args.exploration_temp
         self._device = torch.device(device)
         self._initial_trajectories = initial_trajectories
         self._maml_steps = maml_steps
         self._cpu = torch.device('cpu')
         self._test_samples = test_samples
-        self._advantage_clamp = np.log(weight_clamp)
+        self._advantage_clamp = np.log(args.exp_advantage_clip)
         self._action_sigma = action_sigma
         self._visualization_interval = visualization_interval
         self._silent = silent
         self._inline_render = inline_render
         self._gradient_steps_per_iteration = gradient_steps_per_iteration
-        self._offline_inner_loop = offline_inner_loop
         self._grad_clip = grad_clip
         self._inner_batch_size = inner_batch_size
         
@@ -181,15 +174,14 @@ class MAMLRAWR(object):
             advantages = (mc_value_estimates - value_estimates)
             original_action = batch[:,self._observation_dim:self._observation_dim + self._action_dim]
 
-        # return (value_estimates - mc_value_estimates).pow(2).mean() / (mc_value_estimates.var() + 1e-3), mc_value_estimates.mean(), mc_value_estimates.std()
         return losses.mean(), mc_value_estimates.mean(), mc_value_estimates.std()
 
     def adaptation_policy_loss_on_batch(self, policy, value_function, batch, inner: bool = False):
         with torch.no_grad():
             value_estimates = value_function(batch[:,:self._observation_dim])
             mc_value_estimates = self.mc_value_estimates_on_batch(value_function, batch)
-            
-            advantages = (mc_value_estimates - value_estimates)
+
+            advantages = (mc_value_estimates - value_estimates).squeeze(-1)
             normalized_advantages = (1 / self._adaptation_temperature) * (advantages - advantages.mean()) / advantages.std()
             weights = normalized_advantages.clamp(max=self._advantage_clamp).exp()
 
@@ -200,7 +192,7 @@ class MAMLRAWR(object):
             action_mu = policy(batch[:,:self._observation_dim])
         action_sigma = torch.empty_like(action_mu).fill_(self._action_sigma)
         action_distribution = D.Normal(action_mu, action_sigma)
-        action_log_probs = action_distribution.log_prob(batch[:,self._observation_dim:self._observation_dim + self._action_dim])
+        action_log_probs = action_distribution.log_prob(batch[:,self._observation_dim:self._observation_dim + self._action_dim]).sum(-1)
 
         losses = -(action_log_probs * weights)
 
@@ -235,7 +227,7 @@ class MAMLRAWR(object):
             value_estimates = value_function(batch[:,:self._observation_dim])
             mc_value_estimates = self.mc_value_estimates_on_batch(value_function, batch)
             
-            clipped_advantages = (mc_value_estimates - value_estimates).clamp(max=self._advantage_clamp)
+            exp_clipped_advantages = (mc_value_estimates - value_estimates).squeeze(-1).clamp(max=self._advantage_clamp).exp()
             
             original_obs = batch[:,:self._observation_dim]
             original_action = batch[:,self._observation_dim:self._observation_dim + self._action_dim]
@@ -243,12 +235,13 @@ class MAMLRAWR(object):
             
             action = policy(original_obs)
             log_probs = D.Normal(action, torch.empty_like(action).fill_(self._action_sigma)).log_prob(original_action).sum(-1)
-            log_ratio = log_probs - original_log_probs
+            ratio = (log_probs - original_log_probs).exp()
+            clipped_ratio = ratio.clamp(min=1-self._args.ratio_clip, max=1+self._args.ratio_clip)
 
-        assert log_ratio.dim() == 1
-        assert clipped_advantages.dim() == 1
+        if clipped_ratio.dim() > 1 or exp_clipped_advantages.dim() > 1:
+            raise RuntimeError()
 
-        return (log_ratio + clipped_advantages).exp().mean()
+        return (clipped_ratio * exp_clipped_advantages).mean().item()
 
     #################################################################
     #################################################################
@@ -267,17 +260,23 @@ class MAMLRAWR(object):
         test_rewards = []
         train_rewards = []
         rollouts = []
-        for i, (env, adapted_buffer, buffer, pre_adapted_buffer) in enumerate(zip(self._envs, self._adapted_buffers, self._buffers, self._pre_adapted_buffers)):
-            # Sample an exploration trajectory and add to buffer i [L6]
-            # buffer.add_trajectory(self._rollout_policy(self._exploration_policy, env)[0])
-
+        for i, (env, adapted_buffer, exploration_buffer, offline_buffer) in enumerate(zip(self._envs, self._adapted_buffers,
+                                                                                          self._exploration_buffers, self._offline_buffers)):
             # Sample J training batches for independent adaptations [L7]
-            inner_buffer = pre_adapted_buffer if self._args.pre_adapted else adapted_buffer
+            if self._args.offline:
+                inner_buffer = offline_buffer
+            else:
+                if self._args.pre_adapted:
+                    inner_buffer = exploration_buffer
+                else:
+                    inner_buffer = adapted_buffer
+
             np_batch = inner_buffer.sample(self._inner_batch_size * self._maml_steps).reshape(
                 (self._args.n_adaptations, self._maml_steps, self._inner_batch_size // self._args.n_adaptations, -1))
             pyt_batch = torch.tensor(np_batch, requires_grad=False).to(self._device)
             batches.append(pyt_batch)
-            meta_batch = torch.tensor(buffer.sample(self._batch_size), requires_grad=False).to(self._device)
+
+            meta_batch = torch.tensor(adapted_buffer.sample(self._batch_size), requires_grad=False).to(self._device)
             meta_batches.append(meta_batch)
             
             value_functions_i = []
@@ -296,9 +295,9 @@ class MAMLRAWR(object):
                 # Adapt value function and collect meta-gradients
                 ##################################################################################################
                 value_function_j = deepcopy(self._value_function)
-                opt = O.SGD(value_function_j.parameters(), lr=self._eta1)
+                opt = O.SGD(value_function_j.parameters(), lr=self._inner_value_lr)
                 with higher.innerloop_ctx(value_function_j, opt) as (f_value_function_j, diff_value_opt):
-                    if self._eta1 > 0:
+                    if self._inner_value_lr > 0 and len(self._envs) > 1:
                         for inner_batch in batch:
                             # Compute loss and adapt value function [L9]
                             loss, mc_inner, mc_std_inner = self.value_function_loss_on_batch(f_value_function_j, inner_batch, inner=True)
@@ -326,9 +325,9 @@ class MAMLRAWR(object):
                 ##################################################################################################
                 adapted_value_function = value_functions_i[-1]
                 adaptation_policy_j = deepcopy(self._adaptation_policy)
-                opt = O.SGD(adaptation_policy_j.parameters(), lr=self._alpha1)
+                opt = O.SGD(adaptation_policy_j.parameters(), lr=self._inner_policy_lr)
                 with higher.innerloop_ctx(adaptation_policy_j, opt) as (f_adaptation_policy_j, diff_policy_opt):
-                    if self._alpha1 > 0:
+                    if self._inner_policy_lr > 0 and len(self._envs) > 1:
                         for inner_batch in batch:
                             # Compute loss and adapt policy [L10]
                             loss = self.adaptation_policy_loss_on_batch(f_adaptation_policy_j, adapted_value_function, inner_batch, inner=True)
@@ -354,18 +353,14 @@ class MAMLRAWR(object):
 
             # Sample adapted policy trajectory, add to replay buffer i [L12]
             if train_step_idx % self._gradient_steps_per_iteration == 0:
-                train_trajectory, train_reward = self._rollout_policy(adaptation_policies_i[0], env, test=False)
-                if not (self._offline_inner_loop or self._args.eval):
-                    adapted_buffer.add_trajectory(train_trajectory)
-                buffer.add_trajectory(train_trajectory)
+                adapted_trajectory, adapted_reward = self._rollout_policy(adaptation_policies_i[0], env, test=False)
+                adapted_buffer.add_trajectory(adapted_trajectory)
 
-                if self._args.pre_adapted:
-                    pre_adapted_policy = self._adaptation_policy if not self._args.explore else self._exploration_policy
-                    train_trajectory, _ = self._rollout_policy(pre_adapted_policy, env, test=False)
-                    if not (self._offline_inner_loop or self._args.eval):
-                        pre_adapted_buffer.add_trajectory(train_trajectory)
+                exploration_policy = self._adaptation_policy if not self._args.explore else self._exploration_policy
+                exploration_trajectory, _ = self._rollout_policy(exploration_policy, env, test=False)
+                exploration_buffer.add_trajectory(exploration_trajectory)
 
-                train_rewards.append(train_reward)
+                train_rewards.append(adapted_reward)
             
             if train_step_idx % self._visualization_interval == 0:
                 if self._inline_render:
@@ -388,7 +383,7 @@ class MAMLRAWR(object):
                 if train_step_idx % self._visualization_interval == 0:
                     writer.add_scalar(f'Reward_Test/Task_{i}', test_reward, train_step_idx)
                 if train_step_idx % self._gradient_steps_per_iteration == 0:
-                    writer.add_scalar(f'Reward_Train/Task_{i}', train_reward, train_step_idx)
+                    writer.add_scalar(f'Reward_Train/Task_{i}', adapted_reward, train_step_idx)
 
                 if self._args.advantage_head_coef is not None:
                     writer.add_scalar(f'Advantage_Coef', F.softplus(self._advantage_coef), train_step_idx)
@@ -417,15 +412,13 @@ class MAMLRAWR(object):
         # Update exploration policy [WIP] [L16]
         ############################################################################3
         if self._args.explore:
+            exploration_loss = 0
             for i, (meta_batch, pyt_batch) in enumerate(zip(meta_batches, batches)):
                 weights = []
                 for policy, vf in zip(adaptation_policies[i], value_functions[i]):
                     weight = self.policy_advantage_on_batch(policy, vf, meta_batch)
-                    weights.append(weight.detach())
+                    weights.append(weight)
 
-                weights = torch.tensor(weights)
-                #weights = (1 / self._exploration_temperature) * (weights - weights.mean()) / weights.std()
-                #weights = weights.clamp(max=self._advantage_clamp).exp()
                 print(i, train_step_idx, weights)
 
                 for j, batch in enumerate(pyt_batch):
@@ -436,10 +429,12 @@ class MAMLRAWR(object):
                     log_probs = D.Normal(action, torch.empty_like(action).fill_(self._action_sigma)).log_prob(original_action).sum(-1)
 
                     loss = -log_probs.mean() * weights[j]
-                    loss.backward()
+                    exploration_loss = exploration_loss + loss
 
+            exploration_loss.backward()
             grad = torch.nn.utils.clip_grad_norm_(self._exploration_policy.parameters(), 1000)
             writer.add_scalar(f'Explore_Grad', grad, train_step_idx)
+            writer.add_scalar(f'Explore_Loss', exploration_loss.item(), train_step_idx)
 
             self._exploration_policy_optimizer.step()
             self._exploration_policy_optimizer.zero_grad()
@@ -458,11 +453,12 @@ class MAMLRAWR(object):
         summary_writer = SummaryWriter(tensorboard_log_path)
             
         # Gather initial trajectory rollouts
-        for i, (env, adapted_buffer, buffer, pre_adapted_buffer) in enumerate(zip(self._envs, self._adapted_buffers, self._buffers, self._pre_adapted_buffers)):
+        for i, (env, adapted_buffer, exploration_buffer, offline_buffer) in enumerate(zip(self._envs, self._adapted_buffers,
+                                                                                          self._exploration_buffers, self._offline_buffers)):
             trajectories = [self._rollout_policy(self._adaptation_policy, env)[0] for _ in range(self._initial_trajectories)]
-            adapted_buffer.add_trajectories(trajectories, force=True)
-            pre_adapted_buffer.add_trajectories(trajectories, force=True)
-            buffer.add_trajectories(trajectories)
+            adapted_buffer.add_trajectories(trajectories)
+            exploration_buffer.add_trajectories(trajectories)
+            offline_buffer.add_trajectories(trajectories, force=True)
 
         for t in range(self._training_iterations):
             rollouts, test_rewards, train_rewards, value, policy = self.train_step(t, summary_writer)
@@ -486,5 +482,14 @@ class MAMLRAWR(object):
                 torch.save(self._value_function.state_dict(), f'{log_path}/vf_LATEST_.pt')
                 torch.save(self._adaptation_policy.state_dict(), f'{log_path}/ap_LATEST.pt')
                 torch.save(self._adaptation_policy.state_dict(), f'{log_path}/ap_LATEST_.pt')
-                #torch.save(self._exploration_policy.state_dict(), f'{log_path}/ep_LATEST.pt')
-                #torch.save(self._exploration_policy.state_dict(), f'{log_path}/ep_LATEST_.pt')
+                if self._args.explore:
+                    torch.save(self._exploration_policy.state_dict(), f'{log_path}/ep_LATEST.pt')
+                    torch.save(self._exploration_policy.state_dict(), f'{log_path}/ep_LATEST_.pt')
+                if self._args.save_replay_buffers:
+                    for i, (adapted_buffer, exploration_buffer, offline_buffer) in enumerate(zip(self._adapted_buffers,
+                                                                                                 self._exploration_buffers,
+                                                                                                 self._offline_buffers)):
+                        adapted_buffer.save(f'{log_path}/adapted_buffer_{i}')
+                        exploration_buffer.save(f'{log_path}/exploration_buffer_{i}')
+                        offline_buffer.save(f'{log_path}/offline_buffer_{i}')
+                    

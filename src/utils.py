@@ -70,6 +70,9 @@ class ReplayBuffer(object):
     def __len__(self):
         return self._stored_trajectories
 
+    def save(self, location: str):
+        np.save(location, self._trajectories)
+    
     def add_trajectory(self, trajectory: List[Experience], force: bool = False):
         if self._immutable and not force:
             raise ValueError('Cannot add trajectory to immutable replay buffer')

@@ -17,8 +17,11 @@ def get_args() -> argparse.Namespace:
     parser.add_argument('--train_steps', type=int, default=100000)
     parser.add_argument('--batch_size', type=int, default=256)
     parser.add_argument('--inner_batch_size', type=int, default=256)
-    parser.add_argument('--alpha1', type=float, default=0.1)
-    parser.add_argument('--eta1', type=float, default=0.1)
+    parser.add_argument('--inner_policy_lr', type=float, default=0.1)
+    parser.add_argument('--inner_value_lr', type=float, default=0.1)
+    parser.add_argument('--outer_policy_lr', type=float, default=2.5e-4)
+    parser.add_argument('--outer_value_lr', type=float, default=1e-4)
+    parser.add_argument('--exploration_lr', type=float, default=1e-4)
     parser.add_argument('--device', type=str, default='cpu')
     parser.add_argument('--vis_interval', type=int, default=200)
     parser.add_argument('--log_dir', type=str, default='log')
@@ -32,18 +35,21 @@ def get_args() -> argparse.Namespace:
     parser.add_argument('--replay_buffer_size', type=int, default=1000)
     parser.add_argument('--discount_factor', type=float, default=0.99)
     parser.add_argument('--profile', action='store_true')
-    parser.add_argument('--eta2', type=float, default=1e-4)
     parser.add_argument('--vf_archive', type=str, default=None)
     parser.add_argument('--ap_archive', type=str, default=None)
     parser.add_argument('--initial_rollouts', type=int, default=40)
-    parser.add_argument('--offline_inner', action='store_true')
+    parser.add_argument('--offline', action='store_true')
     parser.add_argument('--grad_clip', type=float, default=None)
+    parser.add_argument('--exp_advantage_clip', type=float, default=10.0)
     parser.add_argument('--maml_steps', type=int, default=1)
     parser.add_argument('--adaptation_temp', type=float, default=0.05)
     parser.add_argument('--exploration_temp', type=float, default=0.2)
     parser.add_argument('--bias_linear', action='store_true')
     parser.add_argument('--advantage_head_coef', type=float, default=None)
     parser.add_argument('--eval', action='store_true')
+    parser.add_argument('--target_reward', type=float, default=None)
+    parser.add_argument('--save_replay_buffers', action='store_true')
+    parser.add_argument('--ratio_clip', type=float, default=0.5)
     return parser.parse_args()
 
 
@@ -80,9 +86,9 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
     maml_rawr = MAMLRAWR(args, envs, args.log_dir, name, network_shape, network_shape, batch_size=args.batch_size, training_iterations=args.train_steps,
                          device=args.device, visualization_interval=args.vis_interval, silent=args.instances > 1,
                          inline_render=args.inline_render, gradient_steps_per_iteration=args.gradient_steps_per_iteration,
-                         replay_buffer_length=args.replay_buffer_size, discount_factor=args.discount_factor, eta2=args.eta2,
-                         initial_trajectories=args.initial_rollouts, offline_inner_loop=args.offline_inner, grad_clip=args.grad_clip,
-                         inner_batch_size=args.inner_batch_size, maml_steps=args.maml_steps, bias_linear=args.bias_linear, eta1=args.eta1, alpha1=args.alpha1)
+                         replay_buffer_length=args.replay_buffer_size, discount_factor=args.discount_factor,
+                         initial_trajectories=args.initial_rollouts, grad_clip=args.grad_clip,
+                         inner_batch_size=args.inner_batch_size, maml_steps=args.maml_steps, bias_linear=args.bias_linear)
 
     maml_rawr.train()
 
