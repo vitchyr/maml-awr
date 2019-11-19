@@ -47,7 +47,7 @@ class MAMLRAWR(object):
                  training_iterations: int = 20000, batch_size: int = 64,
                  alpha1: float = 0.1, alpha2: float = 2.5e-4, eta1: float = 0.1, eta2: float = 1e-4, mu: float = 1e-4,
                  initial_trajectories: int = 40, device: str = 'cuda:0', maml_steps: int = 1,
-                 test_samples: int = 10, weight_clamp: float = 20.0, action_sigma: float = 0.2,
+                 test_samples: int = 10, weight_clamp: float = 100.0, action_sigma: float = 0.2,
                  visualization_interval: int = 100, silent: bool = False, replay_buffer_length: int = 1000,
                  inline_render: bool = False, gradient_steps_per_iteration: int = 1, discount_factor: float = 0.99,
                  offline_inner_loop: bool = False, grad_clip: float = 100., inner_batch_size: int = 256, bias_linear: bool = False):
@@ -235,9 +235,7 @@ class MAMLRAWR(object):
             value_estimates = value_function(batch[:,:self._observation_dim])
             mc_value_estimates = self.mc_value_estimates_on_batch(value_function, batch)
             
-            advantages = (mc_value_estimates - value_estimates)
-            weights = advantages
-            #weights = advantages.clamp(max=self._advantage_clamp)
+            clipped_advantages = (mc_value_estimates - value_estimates).clamp(max=self._advantage_clamp)
             
             original_obs = batch[:,:self._observation_dim]
             original_action = batch[:,self._observation_dim:self._observation_dim + self._action_dim]
@@ -245,9 +243,12 @@ class MAMLRAWR(object):
             
             action = policy(original_obs)
             log_probs = D.Normal(action, torch.empty_like(action).fill_(self._action_sigma)).log_prob(original_action).sum(-1)
-            ratio = (log_probs - original_log_probs).exp()
+            log_ratio = log_probs - original_log_probs
 
-        return (weights * ratio).sum()
+        assert log_ratio.dim() == 1
+        assert clipped_advantages.dim() == 1
+
+        return (log_ratio + clipped_advantages).exp().mean()
 
     #################################################################
     #################################################################
@@ -415,33 +416,33 @@ class MAMLRAWR(object):
         ############################################################################3
         # Update exploration policy [WIP] [L16]
         ############################################################################3
-        for i, (meta_batch, pyt_batch) in enumerate(zip(meta_batches, batches)):
-            weights = []
-            for policy, vf in zip(adaptation_policies[i], value_functions[i]):
-                weight = self.policy_advantage_on_batch(policy, vf, meta_batch)
-                weights.append(weight.detach())
+        if self._args.explore:
+            for i, (meta_batch, pyt_batch) in enumerate(zip(meta_batches, batches)):
+                weights = []
+                for policy, vf in zip(adaptation_policies[i], value_functions[i]):
+                    weight = self.policy_advantage_on_batch(policy, vf, meta_batch)
+                    weights.append(weight.detach())
 
-            weights = torch.tensor(weights)
-            weights = (1 / self._exploration_temperature) * (weights - weights.mean()) / weights.std()
-            weights = weights.clamp(max=self._advantage_clamp).exp()
-            #weights = weights.softmax(0)
-            print(i, train_step_idx, weights)
-            
-            for j, batch in enumerate(pyt_batch):
-                batch = batch.view(-1, batch.shape[-1])
-                original_action = batch[:,self._observation_dim:self._observation_dim + self._action_dim]
-                original_obs = batch[:,:self._observation_dim]
-                action = self._exploration_policy(original_obs)
-                log_probs = D.Normal(action, torch.empty_like(action).fill_(self._action_sigma)).log_prob(original_action).sum(-1)
+                weights = torch.tensor(weights)
+                #weights = (1 / self._exploration_temperature) * (weights - weights.mean()) / weights.std()
+                #weights = weights.clamp(max=self._advantage_clamp).exp()
+                print(i, train_step_idx, weights)
 
-                loss = -log_probs.mean() * weights[j]
-                loss.backward()
+                for j, batch in enumerate(pyt_batch):
+                    batch = batch.view(-1, batch.shape[-1])
+                    original_action = batch[:,self._observation_dim:self._observation_dim + self._action_dim]
+                    original_obs = batch[:,:self._observation_dim]
+                    action = self._exploration_policy(original_obs)
+                    log_probs = D.Normal(action, torch.empty_like(action).fill_(self._action_sigma)).log_prob(original_action).sum(-1)
 
-        grad = torch.nn.utils.clip_grad_norm_(self._exploration_policy.parameters(), 1000)
-        writer.add_scalar(f'Explore_Grad', grad, train_step_idx)
+                    loss = -log_probs.mean() * weights[j]
+                    loss.backward()
 
-        self._exploration_policy_optimizer.step()
-        self._exploration_policy_optimizer.zero_grad()
+            grad = torch.nn.utils.clip_grad_norm_(self._exploration_policy.parameters(), 1000)
+            writer.add_scalar(f'Explore_Grad', grad, train_step_idx)
+
+            self._exploration_policy_optimizer.step()
+            self._exploration_policy_optimizer.zero_grad()
         ############################################################################3
 
         return rollouts, test_rewards, train_rewards, meta_value_losses, meta_policy_losses
@@ -458,7 +459,7 @@ class MAMLRAWR(object):
             
         # Gather initial trajectory rollouts
         for i, (env, adapted_buffer, buffer, pre_adapted_buffer) in enumerate(zip(self._envs, self._adapted_buffers, self._buffers, self._pre_adapted_buffers)):
-            trajectories = [self._rollout_policy(self._adaptation_policy, env, random=True)[0] for _ in range(self._initial_trajectories)]
+            trajectories = [self._rollout_policy(self._adaptation_policy, env)[0] for _ in range(self._initial_trajectories)]
             adapted_buffer.add_trajectories(trajectories, force=True)
             pre_adapted_buffer.add_trajectories(trajectories, force=True)
             buffer.add_trajectories(trajectories)
