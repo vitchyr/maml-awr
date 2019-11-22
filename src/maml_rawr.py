@@ -74,7 +74,7 @@ class MAMLRAWR(object):
                                        final_activation=torch.tanh).to(device)
         self._value_function = MLP([self._observation_dim] + value_function_hidden_layers + [1],
                                    bias_linear=bias_linear).to(device)
-
+        print(self._adaptation_policy.seq[0]._linear.weight.mean())
         self._advantage_coef = nn.Parameter(torch.ones(1).to(device))
         
         self._adaptation_policy_optimizer = O.Adam(self._adaptation_policy.parameters(), lr=args.outer_policy_lr)
@@ -89,15 +89,18 @@ class MAMLRAWR(object):
             print(f'Loading policy archive from: {args.ap_archive}')
             self._adaptation_policy.load_state_dict(torch.load(args.ap_archive, map_location=device))
         
+        adapted_buffer = args.buffer_paths if args.load_adapted_buffer else [None for _ in envs]
+        offline_buffer = args.buffer_paths if args.load_offline_buffer else [None for _ in envs]
+        exploration_buffer = args.buffer_paths if args.load_exploration_buffer else [None for _ in envs]
         self._adapted_buffers = [ReplayBuffer(env._max_episode_steps, env.observation_space.shape[0], env_action_dim(env),
-                                            max_trajectories=replay_buffer_length, discount_factor=discount_factor)
-                               for env in self._envs]
+                                              max_trajectories=replay_buffer_length, discount_factor=discount_factor, load_from=adapted_buffer[i])
+                                 for i, env in enumerate(self._envs)]
         self._offline_buffers = [ReplayBuffer(env._max_episode_steps, env.observation_space.shape[0], env_action_dim(env),
-                                              max_trajectories=replay_buffer_length, discount_factor=discount_factor, immutable=True)
-                                 for env in self._envs]        
+                                              max_trajectories=replay_buffer_length, discount_factor=discount_factor, immutable=True, load_from=offline_buffer[i])
+                                 for i, env in enumerate(self._envs)]
         self._exploration_buffers = [ReplayBuffer(env._max_episode_steps, env.observation_space.shape[0], env_action_dim(env),
-                                                  max_trajectories=replay_buffer_length, discount_factor=discount_factor)
-                                     for env in self._envs]
+                                                  max_trajectories=replay_buffer_length, discount_factor=discount_factor, load_from=exploration_buffer[i])
+                                     for i, env in enumerate(self._envs)]
         
         self._training_iterations = training_iterations
         self._batch_size = batch_size
@@ -199,7 +202,7 @@ class MAMLRAWR(object):
         if inner:
             # Use learnable learning rate
             if self._args.advantage_head_coef is not None:
-                losses = losses + F.softplus(self._advantage_coef) * self._args.advantage_head_coef * (advantage_prediction - advantages) ** 2
+                losses = losses + self._args.advantage_head_coef * (advantage_prediction - advantages) ** 2
 
         return losses.mean()
 
@@ -263,7 +266,7 @@ class MAMLRAWR(object):
         for i, (env, adapted_buffer, exploration_buffer, offline_buffer) in enumerate(zip(self._envs, self._adapted_buffers,
                                                                                           self._exploration_buffers, self._offline_buffers)):
             # Sample J training batches for independent adaptations [L7]
-            if self._args.offline:
+            if self._args.offline or self._args.offline_inner:
                 inner_buffer = offline_buffer
             else:
                 if self._args.pre_adapted:
@@ -271,12 +274,17 @@ class MAMLRAWR(object):
                 else:
                     inner_buffer = adapted_buffer
 
+            if self._args.offline or self._args.offline_outer:
+                outer_buffer = offline_buffer
+            else:
+                outer_buffer = adapted_buffer
+
             np_batch = inner_buffer.sample(self._inner_batch_size * self._maml_steps).reshape(
                 (self._args.n_adaptations, self._maml_steps, self._inner_batch_size // self._args.n_adaptations, -1))
             pyt_batch = torch.tensor(np_batch, requires_grad=False).to(self._device)
             batches.append(pyt_batch)
 
-            meta_batch = torch.tensor(adapted_buffer.sample(self._batch_size), requires_grad=False).to(self._device)
+            meta_batch = torch.tensor(outer_buffer.sample(self._batch_size), requires_grad=False).to(self._device)
             meta_batches.append(meta_batch)
             
             value_functions_i = []
@@ -353,19 +361,20 @@ class MAMLRAWR(object):
 
             # Sample adapted policy trajectory, add to replay buffer i [L12]
             if train_step_idx % self._gradient_steps_per_iteration == 0:
-                adapted_trajectory, adapted_reward = self._rollout_policy(adaptation_policies_i[0], env, test=False)
-                adapted_buffer.add_trajectory(adapted_trajectory)
-
                 exploration_policy = self._adaptation_policy if not self._args.explore else self._exploration_policy
                 exploration_trajectory, _ = self._rollout_policy(exploration_policy, env, test=False)
-                exploration_buffer.add_trajectory(exploration_trajectory)
+                adapted_trajectory, adapted_reward = self._rollout_policy(adaptation_policies_i[0], env, test=False)
 
                 train_rewards.append(adapted_reward)
+
+                if not self._args.offline:
+                    adapted_buffer.add_trajectory(adapted_trajectory)
+                    exploration_buffer.add_trajectory(exploration_trajectory)
             
             if train_step_idx % self._visualization_interval == 0:
                 if self._inline_render:
                     print(f'Visualizing task {i}, test rollout')
-                test_trajectory, test_reward = self._rollout_policy(adaptation_policies_i[0], env, test=True,
+                test_trajectory, test_reward = self._rollout_policy(adaptation_policies_i[0], env, test=False,
                                                                     render=self._inline_render)
                 rollouts.append(test_trajectory)
                 test_rewards.append(test_reward)
@@ -453,24 +462,31 @@ class MAMLRAWR(object):
         summary_writer = SummaryWriter(tensorboard_log_path)
             
         # Gather initial trajectory rollouts
-        for i, (env, adapted_buffer, exploration_buffer, offline_buffer) in enumerate(zip(self._envs, self._adapted_buffers,
-                                                                                          self._exploration_buffers, self._offline_buffers)):
-            trajectories = [self._rollout_policy(self._adaptation_policy, env)[0] for _ in range(self._initial_trajectories)]
-            adapted_buffer.add_trajectories(trajectories)
-            exploration_buffer.add_trajectories(trajectories)
-            offline_buffer.add_trajectories(trajectories, force=True)
-
+        if not self._args.offline:
+            for i, (env, adapted_buffer, exploration_buffer, offline_buffer) in enumerate(zip(self._envs, self._adapted_buffers,
+                                                                                              self._exploration_buffers, self._offline_buffers)):
+                trajectories = [self._rollout_policy(self._exploration_policy, env, random=self._args.random)[0] for _ in range(self._initial_trajectories)]
+                adapted_buffer.add_trajectories(trajectories)
+                exploration_buffer.add_trajectories(trajectories)
+                offline_buffer.add_trajectories(trajectories, force=True)
+                
         for t in range(self._training_iterations):
             rollouts, test_rewards, train_rewards, value, policy = self.train_step(t, summary_writer)
 
             if not self._silent:
-                if len(test_rewards):
-                    print(f'{t}: {test_rewards}, {np.mean(value)}, {np.mean(policy)}')
+                if len(train_rewards):
+                    print(f'{t}: {train_rewards}, {np.mean(value)}, {np.mean(policy)}')
 
             if len(test_rewards):
                 summary_writer.add_scalar(f'Reward_Test/Mean', np.mean(test_rewards), t)
             if len(train_rewards):
                 summary_writer.add_scalar(f'Reward_Train/Mean', np.mean(train_rewards), t)
+
+                if self._args.target_reward is not None:
+                    if np.mean(train_rewards) > self._args.target_reward:
+                        print('Target reward reached; breaking')
+                        break
+                
             if t % self._visualization_interval == 0:
                 try:
                     for idx, (env, rollout) in enumerate(zip(self._envs, rollouts)):
@@ -485,7 +501,7 @@ class MAMLRAWR(object):
                 if self._args.explore:
                     torch.save(self._exploration_policy.state_dict(), f'{log_path}/ep_LATEST.pt')
                     torch.save(self._exploration_policy.state_dict(), f'{log_path}/ep_LATEST_.pt')
-                if self._args.save_replay_buffers:
+                if self._args.save_buffers:
                     for i, (adapted_buffer, exploration_buffer, offline_buffer) in enumerate(zip(self._adapted_buffers,
                                                                                                  self._exploration_buffers,
                                                                                                  self._offline_buffers)):

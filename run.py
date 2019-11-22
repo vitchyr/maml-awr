@@ -11,15 +11,16 @@ from src.maml_rawr import MAMLRAWR
 
 def get_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
+    parser.add_argument('--random', action='store_true')
     parser.add_argument('--explore', action='store_true')
     parser.add_argument('--n_adaptations', type=int, default=1)
     parser.add_argument('--pre_adapted', action='store_true')
     parser.add_argument('--train_steps', type=int, default=100000)
     parser.add_argument('--batch_size', type=int, default=256)
     parser.add_argument('--inner_batch_size', type=int, default=256)
-    parser.add_argument('--inner_policy_lr', type=float, default=0.1)
+    parser.add_argument('--inner_policy_lr', type=float, default=0.015)
     parser.add_argument('--inner_value_lr', type=float, default=0.1)
-    parser.add_argument('--outer_policy_lr', type=float, default=2.5e-4)
+    parser.add_argument('--outer_policy_lr', type=float, default=1e-4)
     parser.add_argument('--outer_value_lr', type=float, default=1e-4)
     parser.add_argument('--exploration_lr', type=float, default=1e-4)
     parser.add_argument('--device', type=str, default='cpu')
@@ -37,8 +38,11 @@ def get_args() -> argparse.Namespace:
     parser.add_argument('--profile', action='store_true')
     parser.add_argument('--vf_archive', type=str, default=None)
     parser.add_argument('--ap_archive', type=str, default=None)
+    parser.add_argument('--ep_archive', type=str, default=None)
     parser.add_argument('--initial_rollouts', type=int, default=40)
     parser.add_argument('--offline', action='store_true')
+    parser.add_argument('--offline_outer', action='store_true')
+    parser.add_argument('--offline_inner', action='store_true')
     parser.add_argument('--grad_clip', type=float, default=None)
     parser.add_argument('--exp_advantage_clip', type=float, default=10.0)
     parser.add_argument('--maml_steps', type=int, default=1)
@@ -48,8 +52,12 @@ def get_args() -> argparse.Namespace:
     parser.add_argument('--advantage_head_coef', type=float, default=None)
     parser.add_argument('--eval', action='store_true')
     parser.add_argument('--target_reward', type=float, default=None)
-    parser.add_argument('--save_replay_buffers', action='store_true')
+    parser.add_argument('--save_buffers', action='store_true')
     parser.add_argument('--ratio_clip', type=float, default=0.5)
+    parser.add_argument('--buffer_paths', type=str, nargs='+', default=None)
+    parser.add_argument('--load_offline_buffer', action='store_true')
+    parser.add_argument('--load_adapted_buffer', action='store_true')
+    parser.add_argument('--load_exploration_buffer', action='store_true')
     return parser.parse_args()
 
 
@@ -57,12 +65,20 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
     if args.explore:
         assert args.n_adaptations > 1, "Cannot explore without n_adaptation > 1"
     if args.gym_env is None:
-        if args.env == 'point_mass':
-            envs = [PointMass1DEnv(0), PointMass1DEnv(-1)]
-        elif args.env == 'cheetah_dir':
-            envs = [HalfCheetahDirEnv(0), HalfCheetahDirEnv(1)]
-        elif args.env == 'cheetah_vel':
-            envs = [HalfCheetahVelEnv(i) for i in range(4)]
+        if args.task_idx is None:
+            if args.env == 'point_mass':
+                envs = [PointMass1DEnv(0), PointMass1DEnv(-1)]
+            elif args.env == 'cheetah_dir':
+                envs = [HalfCheetahDirEnv(0), HalfCheetahDirEnv(1)]
+            elif args.env == 'cheetah_vel':
+                envs = [HalfCheetahVelEnv(i) for i in range(4)]
+        else:
+            if args.env == 'point_mass':
+                envs = [PointMass1DEnv(args.task_idx)]
+            elif args.env == 'cheetah_dir':
+                envs = [HalfCheetahDirEnv(args.task_idx)]
+            elif args.env == 'cheetah_vel':
+                envs = [HalfCheetahVelEnv(args.task_idx)]
     else:
         envs = [gym.make(args.gym_env)]
 

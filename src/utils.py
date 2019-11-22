@@ -54,7 +54,7 @@ class MiniBatch(object):
 
 class ReplayBuffer(object):
     def __init__(self, trajectory_length: int, state_dim: int, action_dim: int, max_trajectories: int = 10000,
-                 discount_factor: float = 0.99, immutable: bool = False):
+                 discount_factor: float = 0.99, immutable: bool = False, load_from: str = None):
         self._trajectories = np.empty((max_trajectories, trajectory_length, state_dim + action_dim + state_dim + state_dim + 1 + 1 + 1 + 1 + 1), dtype=np.float32)
         self._stored_trajectories = 0
         self._new_trajectory_idx = 0
@@ -64,6 +64,17 @@ class ReplayBuffer(object):
         self._action_dim = action_dim
         self._discount_factor = discount_factor
         self._immutable = immutable
+        if load_from is not None:
+            print(f'Loading trajectories from {load_from}')
+            trajectories = np.load(load_from)
+            if trajectories.shape[1:] != self._trajectories.shape[1:]:
+                raise RuntimeError(f'Loaded old trajectories with mismatching shape (old/new {trajectories.shape}/{self._trajectories.shape})')
+
+            n_seed_trajectories = min(trajectories.shape[0], self._max_trajectories)
+            self._trajectories[:n_seed_trajectories] = trajectories[:n_seed_trajectories]
+            self._stored_trajectories = n_seed_trajectories
+            self._new_trajectory_idx = n_seed_trajectories % self._max_trajectories
+
         if self._immutable:
             print('Creating immutable replay buffer')
         
@@ -71,7 +82,7 @@ class ReplayBuffer(object):
         return self._stored_trajectories
 
     def save(self, location: str):
-        np.save(location, self._trajectories)
+        np.save(location, self._trajectories[:self._stored_trajectories])
     
     def add_trajectory(self, trajectory: List[Experience], force: bool = False):
         if self._immutable and not force:
