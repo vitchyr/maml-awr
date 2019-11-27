@@ -48,8 +48,8 @@ class MAMLRAWR(object):
                  initial_trajectories: int = 40, device: str = 'cuda:0', maml_steps: int = 1,
                  test_samples: int = 10, action_sigma: float = 0.2,
                  visualization_interval: int = 100, silent: bool = False, replay_buffer_length: int = 1000,
-                 inline_render: bool = False, gradient_steps_per_iteration: int = 1, discount_factor: float = 0.99,
-                 grad_clip: float = 100., inner_batch_size: int = 256, bias_linear: bool = False):
+                 gradient_steps_per_iteration: int = 1, discount_factor: float = 0.99, grad_clip: float = 100.,
+                 inner_batch_size: int = 256, bias_linear: bool = False):
         self._envs = envs
         self._log_dir = log_dir
         self._name = name if name is not None else 'throwaway_test_run'
@@ -75,12 +75,10 @@ class MAMLRAWR(object):
         self._value_function = MLP([self._observation_dim] + value_function_hidden_layers + [1],
                                    bias_linear=bias_linear).to(device)
         print(self._adaptation_policy.seq[0]._linear.weight.mean())
-        self._advantage_coef = nn.Parameter(torch.ones(1).to(device))
         
         self._adaptation_policy_optimizer = O.Adam(self._adaptation_policy.parameters(), lr=args.outer_policy_lr)
         self._value_function_optimizer = O.Adam(self._value_function.parameters(), lr=args.outer_value_lr)
         self._exploration_policy_optimizer = O.Adam(self._exploration_policy.parameters(), lr=args.exploration_lr)
-        self._advantage_coef_opt = O.SGD([self._advantage_coef], lr=1e-4, momentum=0.9)
         
         if args.vf_archive is not None:
             print(f'Loading value function archive from: {args.vf_archive}')
@@ -115,7 +113,6 @@ class MAMLRAWR(object):
         self._action_sigma = action_sigma
         self._visualization_interval = visualization_interval
         self._silent = silent
-        self._inline_render = inline_render
         self._gradient_steps_per_iteration = gradient_steps_per_iteration
         self._grad_clip = grad_clip
         self._inner_batch_size = inner_batch_size
@@ -200,7 +197,6 @@ class MAMLRAWR(object):
         losses = -(action_log_probs * weights)
 
         if inner:
-            # Use learnable learning rate
             if self._args.advantage_head_coef is not None:
                 losses = losses + self._args.advantage_head_coef * (advantage_prediction - advantages) ** 2
 
@@ -290,7 +286,6 @@ class MAMLRAWR(object):
             value_functions_i = []
             adaptation_policies_i = []
             meta_value_grads_i = []
-            adv_coef_grads = []
             meta_policy_grads_i = []
             inner_value_losses = []
             meta_value_losses = []
@@ -344,8 +339,7 @@ class MAMLRAWR(object):
                             
                     meta_policy_loss = self.adaptation_policy_loss_on_batch(f_adaptation_policy_j, adapted_value_function, meta_batch)
                     meta_policy_grad_j = A.grad(meta_policy_loss, f_adaptation_policy_j.parameters(time=0), retain_graph=True)
-                    if self._args.advantage_head_coef is not None:
-                        adv_coef_grads.append(A.grad(meta_policy_loss, self._advantage_coef)[0])
+
                     # Collect grads for the adaptation policy update in the outer loop [L15],
                     #  which is not actually performed here
                     meta_policy_losses.append(meta_policy_loss.item())
@@ -372,10 +366,12 @@ class MAMLRAWR(object):
                     exploration_buffer.add_trajectory(exploration_trajectory)
             
             if train_step_idx % self._visualization_interval == 0:
-                if self._inline_render:
+                if self._args.render:
                     print(f'Visualizing task {i}, test rollout')
                 test_trajectory, test_reward = self._rollout_policy(adaptation_policies_i[0], env, test=False,
-                                                                    render=self._inline_render)
+                                                                    render=self._args.render)
+                if self._args.render:
+                    print(f'Reward: {test_reward}')
                 rollouts.append(test_trajectory)
                 test_rewards.append(test_reward)
 
@@ -394,9 +390,6 @@ class MAMLRAWR(object):
                 if train_step_idx % self._gradient_steps_per_iteration == 0:
                     writer.add_scalar(f'Reward_Train/Task_{i}', adapted_reward, train_step_idx)
 
-                if self._args.advantage_head_coef is not None:
-                    writer.add_scalar(f'Advantage_Coef', F.softplus(self._advantage_coef), train_step_idx)
-
         if self._args.eval:
             return rollouts, test_rewards, train_rewards, meta_value_losses, meta_policy_losses
 
@@ -410,13 +403,6 @@ class MAMLRAWR(object):
         if grad is not None:
             writer.add_scalar(f'Policy_Outer_Grad', grad, train_step_idx)
 
-        ###################
-        if self._args.advantage_head_coef is not None:
-            self._advantage_coef.grad = sum(adv_coef_grads) / len(adv_coef_grads)
-            self._advantage_coef_opt.step()
-            self._advantage_coef_opt.zero_grad()
-        ###################
-        
         ############################################################################3
         # Update exploration policy [WIP] [L16]
         ############################################################################3

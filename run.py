@@ -29,7 +29,7 @@ def get_args() -> argparse.Namespace:
     parser.add_argument('--task_idx', type=int, default=None)
     parser.add_argument('--instances', type=int, default=1)
     parser.add_argument('--name', type=str, default=None)
-    parser.add_argument('--inline_render', action='store_true')
+    parser.add_argument('--render', action='store_true')
     parser.add_argument('--env', type=str, default='point_mass')
     parser.add_argument('--gym_env', type=str, default=None)
     parser.add_argument('--gradient_steps_per_iteration', type=int, default=10)
@@ -101,7 +101,7 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
 
     maml_rawr = MAMLRAWR(args, envs, args.log_dir, name, network_shape, network_shape, batch_size=args.batch_size, training_iterations=args.train_steps,
                          device=args.device, visualization_interval=args.vis_interval, silent=args.instances > 1,
-                         inline_render=args.inline_render, gradient_steps_per_iteration=args.gradient_steps_per_iteration,
+                         gradient_steps_per_iteration=args.gradient_steps_per_iteration,
                          replay_buffer_length=args.replay_buffer_size, discount_factor=args.discount_factor,
                          initial_trajectories=args.initial_rollouts, grad_clip=args.grad_clip,
                          inner_batch_size=args.inner_batch_size, maml_steps=args.maml_steps, bias_linear=args.bias_linear)
