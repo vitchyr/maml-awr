@@ -2,6 +2,27 @@ from typing import NamedTuple, List
 
 import numpy as np
 import torch
+import torch.nn as nn
+
+
+def argmax(module: nn.Module, arg: torch.tensor):
+    print('Computing argmax')
+    arg.requires_grad = True
+    opt = torch.optim.Adam([arg], lr=0.1)
+    for idx in range(1000):
+        out = module(arg)
+        loss = -out
+        prev_arg = arg.clone()
+        loss.backward()
+        opt.step()
+        opt.zero_grad()
+        module.zero_grad()
+        d = (arg-prev_arg).norm(2)
+        if d < 1e-4:
+            print('breaking')
+            break
+    print(f'Final d: {d}')
+    return arg, out
 
 
 class Experience(NamedTuple):

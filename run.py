@@ -11,6 +11,7 @@ from src.maml_rawr import MAMLRAWR
 
 def get_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
+    parser.add_argument('--seed', type=int, default=None)
     parser.add_argument('--random', action='store_true')
     parser.add_argument('--explore', action='store_true')
     parser.add_argument('--n_adaptations', type=int, default=1)
@@ -94,10 +95,11 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
     else:
         network_shape = [64, 64, 32, 32]
 
-    random.seed(instance_idx)
-    np.random.seed(instance_idx)
-    torch.manual_seed(instance_idx)
-    torch.cuda.manual_seed(instance_idx)
+    seed = args.seed if args.seed is not None else instance_idx
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
 
     maml_rawr = MAMLRAWR(args, envs, args.log_dir, name, network_shape, network_shape, batch_size=args.batch_size, training_iterations=args.train_steps,
                          device=args.device, visualization_interval=args.vis_interval, silent=args.instances > 1,

@@ -17,7 +17,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from src.envs import Env
 from src.nn import MLP
-from src.utils import ReplayBuffer, Experience
+from src.utils import ReplayBuffer, Experience, argmax
 
 
 def copy_model_with_grads(from_model: nn.Module, to_model: nn.Module = None) -> nn.Module:
@@ -391,7 +391,7 @@ class MAMLRAWR(object):
                     writer.add_scalar(f'Reward_Train/Task_{i}', adapted_reward, train_step_idx)
 
         if self._args.eval:
-            return rollouts, test_rewards, train_rewards, meta_value_losses, meta_policy_losses
+            return rollouts, test_rewards, train_rewards, meta_value_losses, meta_policy_losses, value_functions_i[-1]
 
         # Meta-update value function [L14]
         grad = self.update_model_with_grads(self._value_function, meta_value_grads, self._value_function_optimizer, self._grad_clip)
@@ -435,7 +435,7 @@ class MAMLRAWR(object):
             self._exploration_policy_optimizer.zero_grad()
         ############################################################################3
 
-        return rollouts, test_rewards, train_rewards, meta_value_losses, meta_policy_losses
+        return rollouts, test_rewards, train_rewards, meta_value_losses, meta_policy_losses, [vfs[-1] for vfs in value_functions]
 
     def train(self):
         log_path = f'{self._log_dir}/{self._name}'
@@ -446,7 +446,7 @@ class MAMLRAWR(object):
         if not os.path.exists(tensorboard_log_path):
             os.makedirs(tensorboard_log_path)
         summary_writer = SummaryWriter(tensorboard_log_path)
-            
+
         # Gather initial trajectory rollouts
         if not self._args.offline:
             for i, (env, adapted_buffer, exploration_buffer, offline_buffer) in enumerate(zip(self._envs, self._adapted_buffers,
@@ -457,11 +457,14 @@ class MAMLRAWR(object):
                 offline_buffer.add_trajectories(trajectories, force=True)
                 
         for t in range(self._training_iterations):
-            rollouts, test_rewards, train_rewards, value, policy = self.train_step(t, summary_writer)
+            rollouts, test_rewards, train_rewards, value, policy, vfs = self.train_step(t, summary_writer)
 
             if not self._silent:
                 if len(train_rewards):
                     print(f'{t}: {train_rewards}, {np.mean(value)}, {np.mean(policy)}')
+                    if self._args.eval:
+                        for idx, vf in enumerate(vfs):
+                            print(idx, argmax(vf, torch.zeros(self._observation_dim, device=self._device)))
 
             if len(test_rewards):
                 summary_writer.add_scalar(f'Reward_Test/Mean', np.mean(test_rewards), t)
