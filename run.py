@@ -56,9 +56,8 @@ def get_args() -> argparse.Namespace:
     parser.add_argument('--save_buffers', action='store_true')
     parser.add_argument('--ratio_clip', type=float, default=0.5)
     parser.add_argument('--buffer_paths', type=str, nargs='+', default=None)
-    parser.add_argument('--load_offline_buffer', action='store_true')
-    parser.add_argument('--load_adapted_buffer', action='store_true')
-    parser.add_argument('--load_exploration_buffer', action='store_true')
+    parser.add_argument('--load_inner_buffer', action='store_true')
+    parser.add_argument('--load_outer_buffer', action='store_true')
     return parser.parse_args()
 
 

@@ -87,19 +87,17 @@ class MAMLRAWR(object):
             print(f'Loading policy archive from: {args.ap_archive}')
             self._adaptation_policy.load_state_dict(torch.load(args.ap_archive, map_location=device))
         
-        adapted_buffer = args.buffer_paths if args.load_adapted_buffer else [None for _ in envs]
-        offline_buffer = args.buffer_paths if args.load_offline_buffer else [None for _ in envs]
-        exploration_buffer = args.buffer_paths if args.load_exploration_buffer else [None for _ in envs]
-        self._adapted_buffers = [ReplayBuffer(env._max_episode_steps, env.observation_space.shape[0], env_action_dim(env),
-                                              max_trajectories=replay_buffer_length, discount_factor=discount_factor, load_from=adapted_buffer[i])
-                                 for i, env in enumerate(self._envs)]
-        self._offline_buffers = [ReplayBuffer(env._max_episode_steps, env.observation_space.shape[0], env_action_dim(env),
-                                              max_trajectories=replay_buffer_length, discount_factor=discount_factor, immutable=True, load_from=offline_buffer[i])
-                                 for i, env in enumerate(self._envs)]
-        self._exploration_buffers = [ReplayBuffer(env._max_episode_steps, env.observation_space.shape[0], env_action_dim(env),
-                                                  max_trajectories=replay_buffer_length, discount_factor=discount_factor, load_from=exploration_buffer[i])
-                                     for i, env in enumerate(self._envs)]
-        
+        inner_buffer = args.buffer_paths if args.load_inner_buffer else [None for _ in envs]
+        outer_buffer = args.buffer_paths if args.load_outer_buffer else [None for _ in envs]
+        self._inner_buffers = [ReplayBuffer(env._max_episode_steps, env.observation_space.shape[0], env_action_dim(env),
+                                            max_trajectories=replay_buffer_length, discount_factor=discount_factor,
+                                            immutable=args.offline or args.offline_inner, load_from=inner_buffer[i])
+                               for i, env in enumerate(self._envs)]
+        self._outer_buffers = [ReplayBuffer(env._max_episode_steps, env.observation_space.shape[0], env_action_dim(env),
+                                            max_trajectories=replay_buffer_length, discount_factor=discount_factor,
+                                            immutable=args.offline or args.offline_outer, load_from=outer_buffer[i])
+                               for i, env in enumerate(self._envs)]
+
         self._training_iterations = training_iterations
         self._batch_size = batch_size
         self._inner_policy_lr, self._inner_value_lr = args.inner_policy_lr, args.inner_value_lr
@@ -259,22 +257,8 @@ class MAMLRAWR(object):
         test_rewards = []
         train_rewards = []
         rollouts = []
-        for i, (env, adapted_buffer, exploration_buffer, offline_buffer) in enumerate(zip(self._envs, self._adapted_buffers,
-                                                                                          self._exploration_buffers, self._offline_buffers)):
+        for i, (env, inner_buffer, outer_buffer) in enumerate(zip(self._envs, self._inner_buffers, self._outer_buffers)):
             # Sample J training batches for independent adaptations [L7]
-            if self._args.offline or self._args.offline_inner:
-                inner_buffer = offline_buffer
-            else:
-                if self._args.pre_adapted:
-                    inner_buffer = exploration_buffer
-                else:
-                    inner_buffer = adapted_buffer
-
-            if self._args.offline or self._args.offline_outer:
-                outer_buffer = offline_buffer
-            else:
-                outer_buffer = adapted_buffer
-
             np_batch = inner_buffer.sample(self._inner_batch_size * self._maml_steps).reshape(
                 (self._args.n_adaptations, self._maml_steps, self._inner_batch_size // self._args.n_adaptations, -1))
             pyt_batch = torch.tensor(np_batch, requires_grad=False).to(self._device)
@@ -355,15 +339,18 @@ class MAMLRAWR(object):
 
             # Sample adapted policy trajectory, add to replay buffer i [L12]
             if train_step_idx % self._gradient_steps_per_iteration == 0:
-                exploration_policy = self._adaptation_policy if not self._args.explore else self._exploration_policy
-                exploration_trajectory, _ = self._rollout_policy(exploration_policy, env, test=False)
                 adapted_trajectory, adapted_reward = self._rollout_policy(adaptation_policies_i[0], env, test=False)
-
                 train_rewards.append(adapted_reward)
 
                 if not self._args.offline:
-                    adapted_buffer.add_trajectory(adapted_trajectory)
-                    exploration_buffer.add_trajectory(exploration_trajectory)
+                    if not self._args.offline_inner:
+                        if self._args.explore:
+                            exploration_trajectory, _ = self._rollout_policy(exploration_policy, env, test=False)
+                            inner_buffer.add_trajectory(exploration_trajectory)
+                        else:
+                            inner_buffer.add_trajectory(adapted_trajectory)
+                    if not self._args.offline_outer:
+                        outer_buffer.add_trajectory(adapted_trajectory)
             
             if train_step_idx % self._visualization_interval == 0:
                 if self._args.render:
@@ -448,13 +435,12 @@ class MAMLRAWR(object):
         summary_writer = SummaryWriter(tensorboard_log_path)
 
         # Gather initial trajectory rollouts
-        if not self._args.offline:
-            for i, (env, adapted_buffer, exploration_buffer, offline_buffer) in enumerate(zip(self._envs, self._adapted_buffers,
-                                                                                              self._exploration_buffers, self._offline_buffers)):
-                trajectories = [self._rollout_policy(self._exploration_policy, env, random=self._args.random)[0] for _ in range(self._initial_trajectories)]
-                adapted_buffer.add_trajectories(trajectories)
-                exploration_buffer.add_trajectories(trajectories)
-                offline_buffer.add_trajectories(trajectories, force=True)
+        print('Gathering initial trajectories...')
+        for i, (env, inner_buffer, outer_buffer) in enumerate(zip(self._envs, self._inner_buffers, self._outer_buffers)):
+            trajectories = [self._rollout_policy(self._exploration_policy, env, random=self._args.random)[0] for _ in range(self._initial_trajectories)]
+            inner_buffer.add_trajectories(trajectories, force=True)
+            if not self._args.load_outer_buffer:
+                outer_buffer.add_trajectories(trajectories, force=True)
                 
         for t in range(self._training_iterations):
             rollouts, test_rewards, train_rewards, value, policy, vfs = self.train_step(t, summary_writer)
@@ -491,10 +477,7 @@ class MAMLRAWR(object):
                     torch.save(self._exploration_policy.state_dict(), f'{log_path}/ep_LATEST.pt')
                     torch.save(self._exploration_policy.state_dict(), f'{log_path}/ep_LATEST_.pt')
                 if self._args.save_buffers:
-                    for i, (adapted_buffer, exploration_buffer, offline_buffer) in enumerate(zip(self._adapted_buffers,
-                                                                                                 self._exploration_buffers,
-                                                                                                 self._offline_buffers)):
-                        adapted_buffer.save(f'{log_path}/adapted_buffer_{i}')
-                        exploration_buffer.save(f'{log_path}/exploration_buffer_{i}')
-                        offline_buffer.save(f'{log_path}/offline_buffer_{i}')
+                    for i, (inner_buffer, outer_buffer) in enumerate(zip(self._inner_buffers, self._outer_buffers)):
+                        inner_buffer.save(f'{log_path}/inner_buffer_{i}')
+                        outer_buffer.save(f'{log_path}/outer_buffer_{i}')
                     

@@ -96,9 +96,6 @@ class ReplayBuffer(object):
             self._stored_trajectories = n_seed_trajectories
             self._new_trajectory_idx = n_seed_trajectories % self._max_trajectories
 
-        if self._immutable:
-            print('Creating immutable replay buffer')
-        
     def __len__(self):
         return self._stored_trajectories
 
