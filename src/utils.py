@@ -25,6 +25,18 @@ def argmax(module: nn.Module, arg: torch.tensor):
     return arg, out
 
 
+def kld(p, q):
+    p_mu = p[:,:p.shape[-1] // 2]
+    q_mu = q[:,:q.shape[-1] // 2]
+
+    p_std = (p[:,p.shape[-1] // 2:] / 2).exp()
+    q_std = (q[:,q.shape[-1] // 2:] / 2).exp()
+    dp = torch.distributions.Normal(p_mu, p_std)
+    dq = torch.distributions.Normal(q_mu, q_std)
+
+    return torch.distributions.kl_divergence(dp, dq).sum(-1)
+    
+
 class Experience(NamedTuple):
     state: np.ndarray
     action: np.ndarray

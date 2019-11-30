@@ -3,6 +3,40 @@ import torch.nn as nn
 from typing import List, Callable, Optional
 
 
+class CVAE(nn.Module):
+    def __init__(self, observation_dim: int, action_dim: int, task_dim: int, latent_dim: int = 32
+                 encoder_hidden: List[int] = [128, 64], prior_hidden: List[int] = [128, 64], decoder_hidden: List[int] = [128, 64]):
+        self._encoder = MLP([observation_dim + action_dim + task_dim] + encoder_hidden + [latent_dim * 2])
+        self._prior = MLP([observation_dim + task_dim] + prior_hidden + [latent_dim * 2])
+        self._decoder = MLP([latent_dim + observation_dim, + task_dim] + decoder_hidden + [action_dim * 2])
+
+    def sample(self, mu_logvar: torch.tensor):
+        mu = mu_logvar[:,:mu_logvar.shape[-1] // 2]
+        std = (mu_logvar[:,mu_logvar.shape[-1] // 2:] / 2).exp()
+        return torch.empty_like(mu).normal_() * std + mu
+
+    def encode(self, obs: torch.tensor, action: torch.tensor, task: torch.tensor, sample: bool = False):
+        mu_logvar = self._encoder(torch.cat((obs, action, task), -1))
+        if sample:
+            return mu_logvar, self.sample(mu_logvar)
+        else:
+            return mu_logvar
+
+    def prior(self, obs: torch.tensor, task: torch.tensor, sample: bool = False):
+        mu_logvar = self._prior(torch.cat((obs, task), -1))
+        if sample:
+            return mu_logvar, self.sample(mu_logvar)
+        else:
+            return mu_logvar
+
+    def decode(self, latent: torch.tensor, obs: torch.tensor, task: torch.tensor, sample: bool = False):
+        mu_logvar = self._decoder(torch.cat((latent, obs, task), -1))
+        if sample:
+            return mu_logvar, self.sample(mu_logvar)
+        else:
+            return mu_logvar
+
+
 class BiasLinear(nn.Module):
     def __init__(self, in_features: int, out_features: int, bias_size: Optional[int] = None):
         super().__init__()

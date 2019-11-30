@@ -16,8 +16,8 @@ import torch.distributions as D
 from torch.utils.tensorboard import SummaryWriter
 
 from src.envs import Env
-from src.nn import MLP
-from src.utils import ReplayBuffer, Experience, argmax
+from src.nn import MLP, CVAE
+from src.utils import ReplayBuffer, Experience, argmax, kld
 
 
 def copy_model_with_grads(from_model: nn.Module, to_model: nn.Module = None) -> nn.Module:
@@ -30,10 +30,6 @@ def copy_model_with_grads(from_model: nn.Module, to_model: nn.Module = None) -> 
             to_param.grad = from_param.grad
 
     return to_model
-
-
-def kld_loss(mu, log_sigma):
-    return -0.5 * (1 + 2 * log_sigma - mu.pow(2) - log_sigma.exp().pow(2)).sum()
 
 
 def env_action_dim(env):
@@ -68,10 +64,14 @@ class MAMLRAWR(object):
                                       final_activation=torch.tanh,
                                       bias_linear=bias_linear,
                                       extra_head_layers=policy_head).to(device)
-        self._exploration_policy = MLP([self._observation_dim] +
-                                       policy_hidden_layers +
-                                       [self._action_dim],
-                                       final_activation=torch.tanh).to(device)
+        if args.cvae:
+            self._exploration_policy = CVAE(self._observation_dim, self._action_dim, self.task_description_dim(), args.latent_dim)
+        else:
+            self._exploration_policy = MLP([self._observation_dim] +
+                                           policy_hidden_layers +
+                                           [self._action_dim],
+                                           final_activation=torch.tanh).to(device)
+
         self._value_function = MLP([self._observation_dim] + value_function_hidden_layers + [1],
                                    bias_linear=bias_linear).to(device)
         print(self._adaptation_policy.seq[0]._linear.weight.mean())
@@ -196,7 +196,7 @@ class MAMLRAWR(object):
 
         if inner:
             if self._args.advantage_head_coef is not None:
-                losses = losses + self._args.advantage_head_coef * (advantage_prediction - advantages) ** 2
+                losses = losses + self._args.advantage_head_coef * (advantage_prediction.squeeze() - advantages) ** 2
 
         return losses.mean()
 
@@ -243,6 +243,80 @@ class MAMLRAWR(object):
     #################################################################
     #################################################################
 
+    def train_awr_exploration(self, train_step_idx: int, batches: torch.tensor, meta_batches: torch.tensor,
+                              adaptation_policies: list, value_functions: list):
+        exploration_loss = 0
+        for i, (meta_batch, pyt_batch) in enumerate(zip(meta_batches, batches)):
+            weights = []
+            for policy, vf in zip(adaptation_policies[i], value_functions[i]):
+                weight = self.policy_advantage_on_batch(policy, vf, meta_batch)
+                weights.append(weight)
+
+            print(i, train_step_idx, weights)
+
+            for j, batch in enumerate(pyt_batch):
+                batch = batch.view(-1, batch.shape[-1])
+                original_action = batch[:,self._observation_dim:self._observation_dim + self._action_dim]
+                original_obs = batch[:,:self._observation_dim]
+                action = self._exploration_policy(original_obs)
+                log_probs = D.Normal(action, torch.empty_like(action).fill_(self._action_sigma)).log_prob(original_action).sum(-1)
+
+                loss = -log_probs.mean() * weights[j]
+                exploration_loss = exploration_loss + loss
+
+        exploration_loss.backward()
+        grad = torch.nn.utils.clip_grad_norm_(self._exploration_policy.parameters(), 1000)
+        writer.add_scalar(f'Explore_Grad', grad, train_step_idx)
+        writer.add_scalar(f'Explore_Loss', exploration_loss.item(), train_step_idx)
+
+        self._exploration_policy_optimizer.step()
+        self._exploration_policy_optimizer.zero_grad()
+
+    def task_description_length(self):
+        return len(self._envs)
+        
+    def get_task_description(self, env, batch: Optional[int] = None):
+        idx = self._envs.index(env)
+        one_hot = torch.zeros(self.task_description_length(), device=self._device)
+        if batch:
+            one_hot = one_hot.unsqueeze(0).expand(batch, 1)
+        return one_hot
+        
+    def train_vae_exploration(self, train_step_idx: int, batches: torch.tensor, meta_batches: torch.tensor,
+                              adaptation_policies: list, value_functions: list):
+        kld_loss = 0
+        recon_loss = 0
+        for i, (env, meta_batch, batch) in enumerate(zip(meta_batches, batches)):
+            task = self.get_task_description(env, batch=self._args.inner_batch_size)
+            batch = batch.view(-1, batch.shape[-1])
+            obs = batch[:,:self._observation_dim]
+            action = batch[:,self._observation_dim:self._observation_dim + self._action_dim]
+
+            pz_wxy, z = self._exploration_policy.encode(obs, action, task, sample=True)
+            pz_wx = self._exploration_policy.prior(obs, task)
+
+            py_wx = self._exploration_policy.decode(z, obs, task)
+            mu_y = py_wx[:,:py_wx.shape[-1]//2]
+            std_y = (py_wx[:,py_wx.shape[-1]//2:] / 2).exp()
+
+            d_y = D.Normal(mu_y, std_y)
+            
+            kld_loss += kld(pz_wxy, pz_wx).mean()
+            recon_loss += -d_y.log_prob(action).sum(-1).mean()
+
+        exploration_loss = kld_loss + recon_loss
+        exploration_loss.backward()
+        
+        grad = torch.nn.utils.clip_grad_norm_(self._exploration_policy.parameters(), 1000)
+
+        writer.add_scalar(f'Explore_Grad', grad, train_step_idx)
+        writer.add_scalar(f'Explore_Loss', exploration_loss.item(), train_step_idx)
+        writer.add_scalar(f'Explore_Loss_Recon', recon_loss.item(), train_step_idx)
+        writer.add_scalar(f'Explore_Loss_KLD', kld_loss.item(), train_step_idx)
+        
+        self._exploration_policy_optimizer.step()
+        self._exploration_policy_optimizer.zero_grad()
+            
     # This function is the body of the main training loop [L4]
     # At every iteration, it adds rollouts from the exploration policy and one of the adapted policies
     #  to the replay buffer. It also updates the adaptation value function, adaptation policy, and
@@ -394,32 +468,10 @@ class MAMLRAWR(object):
         # Update exploration policy [WIP] [L16]
         ############################################################################3
         if self._args.explore:
-            exploration_loss = 0
-            for i, (meta_batch, pyt_batch) in enumerate(zip(meta_batches, batches)):
-                weights = []
-                for policy, vf in zip(adaptation_policies[i], value_functions[i]):
-                    weight = self.policy_advantage_on_batch(policy, vf, meta_batch)
-                    weights.append(weight)
-
-                print(i, train_step_idx, weights)
-
-                for j, batch in enumerate(pyt_batch):
-                    batch = batch.view(-1, batch.shape[-1])
-                    original_action = batch[:,self._observation_dim:self._observation_dim + self._action_dim]
-                    original_obs = batch[:,:self._observation_dim]
-                    action = self._exploration_policy(original_obs)
-                    log_probs = D.Normal(action, torch.empty_like(action).fill_(self._action_sigma)).log_prob(original_action).sum(-1)
-
-                    loss = -log_probs.mean() * weights[j]
-                    exploration_loss = exploration_loss + loss
-
-            exploration_loss.backward()
-            grad = torch.nn.utils.clip_grad_norm_(self._exploration_policy.parameters(), 1000)
-            writer.add_scalar(f'Explore_Grad', grad, train_step_idx)
-            writer.add_scalar(f'Explore_Loss', exploration_loss.item(), train_step_idx)
-
-            self._exploration_policy_optimizer.step()
-            self._exploration_policy_optimizer.zero_grad()
+            if self._args.cvae:
+                self._train_vae_exploration(train_step_idx, batches, meta_batches, adaptation_policies, value_functions)
+            else:
+                self._train_awr_exploration(train_step_idx, batches, meta_batches, adaptation_policies, value_functions)
         ############################################################################3
 
         return rollouts, test_rewards, train_rewards, meta_value_losses, meta_policy_losses, [vfs[-1] for vfs in value_functions]

@@ -14,6 +14,8 @@ def get_args() -> argparse.Namespace:
     parser.add_argument('--seed', type=int, default=None)
     parser.add_argument('--random', action='store_true')
     parser.add_argument('--explore', action='store_true')
+    parser.add_argument('--cvae', action='store_true')
+    parser.add_argument('--latent_dim', type=int, default=32)
     parser.add_argument('--n_adaptations', type=int, default=1)
     parser.add_argument('--pre_adapted', action='store_true')
     parser.add_argument('--train_steps', type=int, default=100000)
