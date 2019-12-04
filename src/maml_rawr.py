@@ -65,7 +65,7 @@ class MAMLRAWR(object):
                                       bias_linear=bias_linear,
                                       extra_head_layers=policy_head).to(device)
         if args.cvae:
-            self._exploration_policy = CVAE(self._observation_dim, self._action_dim, self.task_description_dim(), args.latent_dim)
+            self._exploration_policy = CVAE(self._observation_dim, self._action_dim, self.task_description_dim(), args.latent_dim).to(device)
         else:
             self._exploration_policy = MLP([self._observation_dim] +
                                            policy_hidden_layers +
@@ -86,7 +86,10 @@ class MAMLRAWR(object):
         if args.ap_archive is not None:
             print(f'Loading policy archive from: {args.ap_archive}')
             self._adaptation_policy.load_state_dict(torch.load(args.ap_archive, map_location=device))
-        
+        if args.ep_archive is not None:
+            print(f'Loading exploration policy archive from: {args.ep_archive}')
+            self._exploration_policy.load_state_dict(torch.load(args.ep_archive, map_location=device))
+            
         inner_buffer = args.buffer_paths if args.load_inner_buffer else [None for _ in envs]
         outer_buffer = args.buffer_paths if args.load_outer_buffer else [None for _ in envs]
         self._inner_buffers = [ReplayBuffer(env._max_episode_steps, env.observation_space.shape[0], env_action_dim(env),
@@ -130,11 +133,19 @@ class MAMLRAWR(object):
         while not done:
             if not random:
                 with torch.no_grad():
-                    mu = cpu_policy(torch.tensor(state).unsqueeze(0).float()).squeeze()#.numpy()
+                    action_sigma = self._action_sigma
+                    if isinstance(cpu_policy, CVAE):
+                        desc = self.get_task_description(env, batch=1, device=self._cpu)
+                        mu, action_sigma = cpu_policy(torch.tensor(state).unsqueeze(0).float(), desc)
+                        mu = mu.squeeze()
+                        action_sigma = action_sigma.squeeze()
+                    else:
+                        mu = cpu_policy(torch.tensor(state).unsqueeze(0).float()).squeeze()
+
                     if test:
                         action = mu
                     else:
-                        action = mu + torch.empty_like(mu).normal_() * self._action_sigma
+                        action = mu + torch.empty_like(mu).normal_() * action_sigma
 
                     log_prob = D.Normal(mu, torch.empty_like(mu).fill_(self._action_sigma)).log_prob(action).numpy().sum()
                     action = action.squeeze().numpy().clip(min=env.action_space.low, max=env.action_space.high)
@@ -244,7 +255,7 @@ class MAMLRAWR(object):
     #################################################################
 
     def train_awr_exploration(self, train_step_idx: int, batches: torch.tensor, meta_batches: torch.tensor,
-                              adaptation_policies: list, value_functions: list):
+                              adaptation_policies: list, value_functions: list, writer: SummaryWriter):
         exploration_loss = 0
         for i, (meta_batch, pyt_batch) in enumerate(zip(meta_batches, batches)):
             weights = []
@@ -272,21 +283,24 @@ class MAMLRAWR(object):
         self._exploration_policy_optimizer.step()
         self._exploration_policy_optimizer.zero_grad()
 
-    def task_description_length(self):
+    def task_description_dim(self):
         return len(self._envs)
         
-    def get_task_description(self, env, batch: Optional[int] = None):
+    def get_task_description(self, env, batch: Optional[int] = None, device: torch.device = None):
+        if device is None:
+            device = self._device
+            
         idx = self._envs.index(env)
-        one_hot = torch.zeros(self.task_description_length(), device=self._device)
+        one_hot = torch.zeros(self.task_description_dim(), device=device)
         if batch:
-            one_hot = one_hot.unsqueeze(0).expand(batch, 1)
+            one_hot = one_hot.unsqueeze(0).expand(batch, -1)
         return one_hot
         
     def train_vae_exploration(self, train_step_idx: int, batches: torch.tensor, meta_batches: torch.tensor,
-                              adaptation_policies: list, value_functions: list):
+                              adaptation_policies: list, value_functions: list, writer: SummaryWriter):
         kld_loss = 0
         recon_loss = 0
-        for i, (env, meta_batch, batch) in enumerate(zip(meta_batches, batches)):
+        for i, (env, meta_batch, batch) in enumerate(zip(self._envs, meta_batches, batches)):
             task = self.get_task_description(env, batch=self._args.inner_batch_size)
             batch = batch.view(-1, batch.shape[-1])
             obs = batch[:,:self._observation_dim]
@@ -419,7 +433,7 @@ class MAMLRAWR(object):
                 if not self._args.offline:
                     if not self._args.offline_inner:
                         if self._args.explore:
-                            exploration_trajectory, _ = self._rollout_policy(exploration_policy, env, test=False)
+                            exploration_trajectory, _ = self._rollout_policy(self._exploration_policy, env, test=False)
                             inner_buffer.add_trajectory(exploration_trajectory)
                         else:
                             inner_buffer.add_trajectory(adapted_trajectory)
@@ -469,9 +483,9 @@ class MAMLRAWR(object):
         ############################################################################3
         if self._args.explore:
             if self._args.cvae:
-                self._train_vae_exploration(train_step_idx, batches, meta_batches, adaptation_policies, value_functions)
+                self.train_vae_exploration(train_step_idx, batches, meta_batches, adaptation_policies, value_functions, writer)
             else:
-                self._train_awr_exploration(train_step_idx, batches, meta_batches, adaptation_policies, value_functions)
+                self.train_awr_exploration(train_step_idx, batches, meta_batches, adaptation_policies, value_functions, writer)
         ############################################################################3
 
         return rollouts, test_rewards, train_rewards, meta_value_losses, meta_policy_losses, [vfs[-1] for vfs in value_functions]
@@ -489,7 +503,7 @@ class MAMLRAWR(object):
         # Gather initial trajectory rollouts
         print('Gathering initial trajectories...')
         for i, (env, inner_buffer, outer_buffer) in enumerate(zip(self._envs, self._inner_buffers, self._outer_buffers)):
-            trajectories = [self._rollout_policy(self._exploration_policy, env, random=self._args.random)[0] for _ in range(self._initial_trajectories)]
+            trajectories = [self._rollout_policy(self._exploration_policy, self._envs[0], random=self._args.random)[0] for _ in range(self._initial_trajectories)]
             inner_buffer.add_trajectories(trajectories, force=True)
             if not self._args.load_outer_buffer:
                 outer_buffer.add_trajectories(trajectories, force=True)

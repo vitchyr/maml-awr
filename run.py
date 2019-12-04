@@ -65,7 +65,7 @@ def get_args() -> argparse.Namespace:
 
 def run(args: argparse.Namespace, instance_idx: int = 0):
     if args.explore:
-        assert args.n_adaptations > 1, "Cannot explore without n_adaptation > 1"
+        assert args.n_adaptations > 1 or args.cvae, "Cannot explore without n_adaptation > 1"
     if args.gym_env is None:
         if args.task_idx is None:
             if args.env == 'point_mass':
