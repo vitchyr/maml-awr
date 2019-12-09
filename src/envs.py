@@ -171,8 +171,8 @@ class HalfCheetahEnv(HalfCheetahEnv_):
         self.viewer.cam.type = 2
         self.viewer.cam.fixedcamid = camera_id
         self.viewer.cam.distance = self.model.stat.extent * 0.35
-        # Hide the overlay
-        self.viewer._hide_overlay = True
+        # [Don't] Hide the overlay
+        # self.viewer._hide_overlay = True
 
     def render(self, mode='human'):
         if mode == 'rgb_array':

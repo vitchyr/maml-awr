@@ -5,16 +5,20 @@ from multiprocessing import Process
 import random
 import torch
 
+from oyster.rlkit.envs.ant_goal import AntGoalEnv
 from src.envs import PointMass1DEnv, HalfCheetahDirEnv, HalfCheetahVelEnv
 from src.maml_rawr import MAMLRAWR
 
 
 def get_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
+    parser.add_argument('--debug', action='store_true')
+    parser.add_argument('--render_exploration', action='store_true')
     parser.add_argument('--seed', type=int, default=None)
     parser.add_argument('--random', action='store_true')
     parser.add_argument('--explore', action='store_true')
     parser.add_argument('--cvae', action='store_true')
+    parser.add_argument('--unconditional', action='store_true')
     parser.add_argument('--latent_dim', type=int, default=32)
     parser.add_argument('--n_adaptations', type=int, default=1)
     parser.add_argument('--pre_adapted', action='store_true')
@@ -35,6 +39,7 @@ def get_args() -> argparse.Namespace:
     parser.add_argument('--render', action='store_true')
     parser.add_argument('--env', type=str, default='point_mass')
     parser.add_argument('--gym_env', type=str, default=None)
+    parser.add_argument('--rlkit_env', type=str, default=None)
     parser.add_argument('--gradient_steps_per_iteration', type=int, default=10)
     parser.add_argument('--replay_buffer_size', type=int, default=1000)
     parser.add_argument('--discount_factor', type=float, default=0.99)
@@ -66,7 +71,22 @@ def get_args() -> argparse.Namespace:
 def run(args: argparse.Namespace, instance_idx: int = 0):
     if args.explore:
         assert args.n_adaptations > 1 or args.cvae, "Cannot explore without n_adaptation > 1"
-    if args.gym_env is None:
+    if args.gym_env is not None:
+        envs = [gym.make(args.gym_env)]
+    elif args.rlkit_env is not None:
+        if args.task_idx is not None:
+            if args.rlkit_env == 'ant_goal':
+                task = [{'goal': AntGoalEnv.sample_tasks(1, a=a, r=2)[0]} for a in np.linspace(0,1,5)][args.task_idx]
+                envs = [AntGoalEnv(task)]
+            else:
+                assert False
+        else:
+            if args.rlkit_env == 'ant_goal':
+                tasks = [{'goal': AntGoalEnv.sample_tasks(1, a=a, r=2)[0]} for a in np.linspace(0,0.8,5)]
+                envs = [AntGoalEnv(task) for task in tasks]
+            else:
+                assert False
+    else:
         if args.task_idx is None:
             if args.env == 'point_mass':
                 envs = [PointMass1DEnv(0), PointMass1DEnv(-1)]
@@ -81,8 +101,6 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
                 envs = [HalfCheetahDirEnv(args.task_idx)]
             elif args.env == 'cheetah_vel':
                 envs = [HalfCheetahVelEnv(args.task_idx)]
-    else:
-        envs = [gym.make(args.gym_env)]
 
     if args.name is None:
         args.name = 'throwaway_test_run'
