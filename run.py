@@ -5,13 +5,15 @@ from multiprocessing import Process
 import random
 import torch
 
-from oyster.rlkit.envs.ant_goal import AntGoalEnv
+#from oyster.rlkit.envs.ant_goal import AntGoalEnv
+from src.tp_envs.ant_goal import AntGoalEnv
 from src.envs import PointMass1DEnv, HalfCheetahDirEnv, HalfCheetahVelEnv
 from src.maml_rawr import MAMLRAWR
 
 
 def get_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
+    parser.add_argument('--reward_offset', type=float, default=0)
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--render_exploration', action='store_true')
     parser.add_argument('--seed', type=int, default=None)
@@ -76,31 +78,30 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
     elif args.rlkit_env is not None:
         if args.task_idx is not None:
             if args.rlkit_env == 'ant_goal':
-                task = [{'goal': AntGoalEnv.sample_tasks(1, a=a, r=2)[0]} for a in np.linspace(0,1,5)][args.task_idx]
-                envs = [AntGoalEnv(task)]
+                env = AntGoalEnv(task_idx=args.task_idx)
             else:
                 assert False
         else:
             if args.rlkit_env == 'ant_goal':
-                tasks = [{'goal': AntGoalEnv.sample_tasks(1, a=a, r=2)[0]} for a in np.linspace(0,0.8,5)]
-                envs = [AntGoalEnv(task) for task in tasks]
+                env = AntGoalEnv()
             else:
                 assert False
     else:
         if args.task_idx is None:
             if args.env == 'point_mass':
+                
                 envs = [PointMass1DEnv(0), PointMass1DEnv(-1)]
             elif args.env == 'cheetah_dir':
-                envs = [HalfCheetahDirEnv(0), HalfCheetahDirEnv(1)]
+                env = HalfCheetahDirEnv()
             elif args.env == 'cheetah_vel':
-                envs = [HalfCheetahVelEnv(i) for i in range(4)]
+                env = HalfCheetahVelEnv()
         else:
             if args.env == 'point_mass':
-                envs = [PointMass1DEnv(args.task_idx)]
+                env = PointMass1DEnv(args.task_idx)
             elif args.env == 'cheetah_dir':
-                envs = [HalfCheetahDirEnv(args.task_idx)]
+                env = HalfCheetahDirEnv(task_idx=args.task_idx)
             elif args.env == 'cheetah_vel':
-                envs = [HalfCheetahVelEnv(args.task_idx)]
+                env = HalfCheetahVelEnv(task_idx=args.task_idx)
 
     if args.name is None:
         args.name = 'throwaway_test_run'
@@ -120,7 +121,7 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
 
-    maml_rawr = MAMLRAWR(args, envs, args.log_dir, name, network_shape, network_shape, batch_size=args.batch_size, training_iterations=args.train_steps,
+    maml_rawr = MAMLRAWR(args, env, args.log_dir, name, network_shape, network_shape, batch_size=args.batch_size, training_iterations=args.train_steps,
                          device=args.device, visualization_interval=args.vis_interval, silent=args.instances > 1,
                          gradient_steps_per_iteration=args.gradient_steps_per_iteration,
                          replay_buffer_length=args.replay_buffer_size, discount_factor=args.discount_factor,

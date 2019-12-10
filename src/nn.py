@@ -17,28 +17,38 @@ class CVAE(nn.Module):
         std = (mu_logvar[:,mu_logvar.shape[-1] // 2:] / 2).exp()
         return torch.empty_like(mu).normal_() * std + mu
 
-    def encode(self, obs: torch.tensor, action: torch.tensor, task: torch.tensor, sample: bool = False):
-        mu_logvar = self._encoder(torch.cat((obs, action, task), -1))
+    def encode(self, obs: torch.tensor, action: torch.tensor, task: torch.tensor = None, sample: bool = False):
+        if task is not None:
+            mu_logvar = self._encoder(torch.cat((obs, action, task), -1))
+        else:
+            mu_logvar = self._encoder(torch.cat((obs, action), -1))
         if sample:
             return mu_logvar, self.sample(mu_logvar)
         else:
             return mu_logvar
 
-    def prior(self, obs: torch.tensor, task: torch.tensor, sample: bool = False):
-        mu_logvar = self._prior(torch.cat((obs, task), -1))
+    def prior(self, obs: torch.tensor, task: torch.tensor = None, sample: bool = False):
+        if task is not None:
+            mu_logvar = self._prior(torch.cat((obs, task), -1))
+        else:
+            mu_logvar = self._prior(torch.cat((obs,), -1))
+
         if sample:
             return mu_logvar, self.sample(mu_logvar)
         else:
             return mu_logvar
 
-    def decode(self, latent: torch.tensor, obs: torch.tensor, task: torch.tensor, sample: bool = False):
-        mu_logvar = self._decoder(torch.cat((latent, obs, task), -1))
+    def decode(self, latent: torch.tensor, obs: torch.tensor, task: torch.tensor = None, sample: bool = False):
+        if task is not None:
+            mu_logvar = self._decoder(torch.cat((latent, obs, task), -1))
+        else:
+            mu_logvar = self._decoder(torch.cat((latent, obs), -1))
         if sample:
             return mu_logvar, self.sample(mu_logvar)
         else:
             return mu_logvar
 
-    def forward(self, obs: torch.tensor, task: torch.tensor):
+    def forward(self, obs: torch.tensor, task: torch.tensor = None):
         z = self.prior(obs, task, sample=True)[1]
         mu_logvar = self.decode(z, obs, task)
         return mu_logvar[:,:mu_logvar.shape[-1] // 2], (mu_logvar[:,mu_logvar.shape[-1] // 2:] / 2).exp()

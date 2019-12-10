@@ -39,7 +39,7 @@ def env_action_dim(env):
 
 
 class MAMLRAWR(object):
-    def __init__(self, args: argparse.Namespace, envs: List[Env], log_dir: str, name: str = None,
+    def __init__(self, args: argparse.Namespace, env: Env, log_dir: str, name: str = None,
                  policy_hidden_layers: List[int] = [32, 32], value_function_hidden_layers: List[int] = [32, 32],
                  training_iterations: int = 20000, batch_size: int = 64,
                  initial_trajectories: int = 40, device: str = 'cuda:0', maml_steps: int = 1,
@@ -47,15 +47,13 @@ class MAMLRAWR(object):
                  visualization_interval: int = 100, silent: bool = False, replay_buffer_length: int = 1000,
                  gradient_steps_per_iteration: int = 1, discount_factor: float = 0.99, grad_clip: float = 100.,
                  inner_batch_size: int = 256, bias_linear: bool = False):
-        self._envs = envs
+        self._env = env
         self._log_dir = log_dir
         self._name = name if name is not None else 'throwaway_test_run'
         self._args = args
         
-        example_env = self._envs[0]
-
-        self._observation_dim = example_env.observation_space.shape[0]
-        self._action_dim = env_action_dim(example_env)
+        self._observation_dim = env.observation_space.shape[0]
+        self._action_dim = env_action_dim(env)
 
         policy_head = [32, 1] if args.advantage_head_coef is not None else None
         
@@ -66,7 +64,9 @@ class MAMLRAWR(object):
                                       bias_linear=bias_linear,
                                       extra_head_layers=policy_head).to(device)
         if args.cvae:
-            self._exploration_policy = CVAE(self._observation_dim, self._action_dim, self.task_description_dim(), args.latent_dim).to(device)
+            self._exploration_policy = CVAE(self._observation_dim, self._action_dim,
+                                            self._env.task_description_dim() if not args.unconditional else 0,
+                                            args.latent_dim).to(device)
         else:
             self._exploration_policy = MLP([self._observation_dim] +
                                            policy_hidden_layers +
@@ -91,16 +91,16 @@ class MAMLRAWR(object):
             print(f'Loading exploration policy archive from: {args.ep_archive}')
             self._exploration_policy.load_state_dict(torch.load(args.ep_archive, map_location=device))
             
-        inner_buffer = args.buffer_paths if args.load_inner_buffer else [None for _ in envs]
-        outer_buffer = args.buffer_paths if args.load_outer_buffer else [None for _ in envs]
-        self._inner_buffers = [ReplayBuffer(env._max_episode_steps, env.observation_space.shape[0], env_action_dim(env),
+        inner_buffer = args.buffer_paths if args.load_inner_buffer else [None for _ in self._env.tasks]
+        outer_buffer = args.buffer_paths if args.load_outer_buffer else [None for _ in self._env.tasks]
+        self._inner_buffers = [ReplayBuffer(self._env._max_episode_steps, self._env.observation_space.shape[0], env_action_dim(self._env),
                                             max_trajectories=replay_buffer_length, discount_factor=discount_factor,
                                             immutable=args.offline or args.offline_inner, load_from=inner_buffer[i])
-                               for i, env in enumerate(self._envs)]
-        self._outer_buffers = [ReplayBuffer(env._max_episode_steps, env.observation_space.shape[0], env_action_dim(env),
+                               for i, task in enumerate(self._env.tasks)]
+        self._outer_buffers = [ReplayBuffer(self._env._max_episode_steps, self._env.observation_space.shape[0], env_action_dim(self._env),
                                             max_trajectories=replay_buffer_length, discount_factor=discount_factor,
                                             immutable=args.offline or args.offline_outer, load_from=outer_buffer[i])
-                               for i, env in enumerate(self._envs)]
+                               for i, task in enumerate(self._env.tasks)]
 
         self._training_iterations = training_iterations
         self._batch_size = batch_size
@@ -136,15 +136,17 @@ class MAMLRAWR(object):
         done = False
         total_reward = 0
         episode_t = 0
-        if isinstance(cpu_policy, CVAE):
-            desc = self.get_task_description(env, batch=1, device=self._cpu)
+        if isinstance(cpu_policy, CVAE) and not self._args.unconditional:
+            desc = torch.tensor(self.task_description(env, batch=1), device=self._cpu)
         while not done:
             if not random:
                 with torch.no_grad():
                     action_sigma = self._action_sigma
                     if isinstance(cpu_policy, CVAE):
-                        #desc = self.get_task_description(self._envs[np.random.randint(2)], batch=1, device=self._cpu)
-                        mu, action_sigma = cpu_policy(torch.tensor(state).unsqueeze(0).float(), desc)
+                        if self._args.unconditional:
+                            mu, action_sigma = cpu_policy(torch.tensor(state).unsqueeze(0).float())
+                        else:
+                            mu, action_sigma = cpu_policy(torch.tensor(state).unsqueeze(0).float(), desc)
                         mu = mu.squeeze()
                         action_sigma = action_sigma.squeeze()
                     else:
@@ -162,6 +164,7 @@ class MAMLRAWR(object):
                 log_prob = math.log(1 / 2 ** env.action_space.shape[0])
 
             next_state, reward, done, info_dict = env.step(action)
+            reward += self._args.reward_offset
             if render:
                 env.render()
             trajectory.append(Experience(state, action, next_state, reward, done, log_prob))
@@ -288,27 +291,16 @@ class MAMLRAWR(object):
         self._exploration_policy_optimizer.step()
         self._exploration_policy_optimizer.zero_grad()
 
-    def task_description_dim(self):
-        return len(self._envs)
-        
-    def get_task_description(self, env, batch: Optional[int] = None, device: torch.device = None):
-        if device is None:
-            device = self._device
-            
-        idx = self._envs.index(env)
-        one_hot = torch.zeros(self.task_description_dim(), device=device)
-        if not self._args.unconditional:
-            one_hot[idx] = 1
-        if batch:
-            one_hot = one_hot.unsqueeze(0).expand(batch, -1)
-        return one_hot
-        
     def train_vae_exploration(self, train_step_idx: int, batches: torch.tensor, meta_batches: torch.tensor,
                               adaptation_policies: list, value_functions: list, writer: SummaryWriter):
         kld_loss = 0
         recon_loss = 0
-        for i, (env, meta_batch, batch) in enumerate(zip(self._envs, meta_batches, batches)):
-            task = self.get_task_description(env, batch=self._args.inner_batch_size)
+        for i, (meta_batch, batch) in enumerate(zip(meta_batches, batches)):
+            self._env.set_task_idx(i)
+            if self._args.unconditional:
+                task = None
+            else:
+                task = torch.tensor(self._env.task_description(batch=self._args.inner_batch_size), device=self._device)
             batch = batch.view(-1, batch.shape[-1])
             obs = batch[:,:self._observation_dim]
             action = batch[:,self._observation_dim:self._observation_dim + self._action_dim]
@@ -352,7 +344,9 @@ class MAMLRAWR(object):
         test_rewards = []
         train_rewards = []
         rollouts = []
-        for i, (env, inner_buffer, outer_buffer) in enumerate(zip(self._envs, self._inner_buffers, self._outer_buffers)):
+        for i, (inner_buffer, outer_buffer) in enumerate(zip(self._inner_buffers, self._outer_buffers)):
+            self._env.set_task_idx(i)
+            
             # Sample J training batches for independent adaptations [L7]
             np_batch = inner_buffer.sample(self._inner_batch_size * self._maml_steps).reshape(
                 (self._args.n_adaptations, self._maml_steps, self._inner_batch_size // self._args.n_adaptations, -1))
@@ -380,7 +374,7 @@ class MAMLRAWR(object):
                 value_function_j = deepcopy(self._value_function)
                 opt = O.SGD(value_function_j.parameters(), lr=self._inner_value_lr)
                 with higher.innerloop_ctx(value_function_j, opt) as (f_value_function_j, diff_value_opt):
-                    if self._inner_value_lr > 0 and len(self._envs) > 1:
+                    if self._inner_value_lr > 0 and len(self._env.tasks) > 1:
                         for inner_batch in batch:
                             # Compute loss and adapt value function [L9]
                             loss, value_inner, mc_inner, mc_std_inner = self.value_function_loss_on_batch(f_value_function_j, inner_batch, inner=True)
@@ -412,7 +406,7 @@ class MAMLRAWR(object):
                 adaptation_policy_j = deepcopy(self._adaptation_policy)
                 opt = O.SGD(adaptation_policy_j.parameters(), lr=self._inner_policy_lr)
                 with higher.innerloop_ctx(adaptation_policy_j, opt) as (f_adaptation_policy_j, diff_policy_opt):
-                    if self._inner_policy_lr > 0 and len(self._envs) > 1:
+                    if self._inner_policy_lr > 0 and len(self._env.tasks) > 1:
                         for inner_batch in batch:
                             # Compute loss and adapt policy [L10]
                             loss = self.adaptation_policy_loss_on_batch(f_adaptation_policy_j, adapted_value_function, inner_batch, inner=True)
@@ -437,12 +431,12 @@ class MAMLRAWR(object):
 
             # Sample adapted policy trajectory, add to replay buffer i [L12]
             if train_step_idx % self._gradient_steps_per_iteration == 0:
-                adapted_trajectory, adapted_reward = self._rollout_policy(adaptation_policies_i[0], env, test=False)
+                adapted_trajectory, adapted_reward = self._rollout_policy(adaptation_policies_i[0], self._env, test=False)
                 train_rewards.append(adapted_reward)
 
                 if not (self._args.offline or self._args.offline_inner):
                     if self._args.explore:
-                        exploration_trajectory, _ = self._rollout_policy(self._exploration_policy, env, test=False)
+                        exploration_trajectory, _ = self._rollout_policy(self._exploration_policy, self._env, test=False)
                         inner_buffer.add_trajectory(exploration_trajectory)
                     else:
                         inner_buffer.add_trajectory(adapted_trajectory)
@@ -452,7 +446,7 @@ class MAMLRAWR(object):
             if train_step_idx % self._visualization_interval == 0:
                 if self._args.render:
                     print(f'Visualizing task {i}, test rollout')
-                test_trajectory, test_reward = self._rollout_policy(adaptation_policies_i[0], env, test=False,
+                test_trajectory, test_reward = self._rollout_policy(adaptation_policies_i[0], self._env, test=False,
                                                                     render=self._args.render)
                 if self._args.render:
                     print(f'Reward: {test_reward}')
@@ -514,12 +508,13 @@ class MAMLRAWR(object):
         # Gather initial trajectory rollouts
         if not self._args.load_inner_buffer or not self._args.load_outer_buffer:
             print('Gathering initial trajectories...')
-            exploration_rewards = np.zeros((self._initial_trajectories, len(self._envs)))
+            exploration_rewards = np.zeros((self._initial_trajectories, len(self._env.tasks)))
             for j in range(self._initial_trajectories):
-                for i, (env, inner_buffer, outer_buffer) in enumerate(zip(self._envs, self._inner_buffers, self._outer_buffers)):
+                for i, (inner_buffer, outer_buffer) in enumerate(zip(self._inner_buffers, self._outer_buffers)):
+                    self._env.set_task_idx(i)
                     if self._args.render_exploration:
                         print(f'Task {i}, trajectory {j}')
-                    trajectory, reward = self._rollout_policy(self._exploration_policy, env, random=self._args.random, render=self._args.render_exploration)
+                    trajectory, reward = self._rollout_policy(self._exploration_policy, self._env, random=self._args.random, render=self._args.render_exploration)
                     exploration_rewards[j,i] = reward
                     if self._args.render_exploration:
                         print(f'Reward: {reward}')
