@@ -13,12 +13,15 @@ from src.maml_rawr import MAMLRAWR
 
 def get_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument('--reward_offset', type=float, default=0)
+    parser.add_argument('--q', action='store_true')
+    parser.add_argument('--reward_offset', type=float, default=0.)
+    parser.add_argument('--norm', action='store_true')
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--render_exploration', action='store_true')
     parser.add_argument('--seed', type=int, default=None)
     parser.add_argument('--random', action='store_true')
-    parser.add_argument('--explore', action='store_true')
+    parser.add_argument('--train_exploration', action='store_true')
+    parser.add_argument('--sample_exploration_inner', action='store_true')
     parser.add_argument('--cvae', action='store_true')
     parser.add_argument('--unconditional', action='store_true')
     parser.add_argument('--latent_dim', type=int, default=32)
@@ -71,10 +74,13 @@ def get_args() -> argparse.Namespace:
 
 
 def run(args: argparse.Namespace, instance_idx: int = 0):
-    if args.explore:
+    if args.train_exploration:
         assert args.n_adaptations > 1 or args.cvae, "Cannot explore without n_adaptation > 1"
+
     if args.gym_env is not None:
-        envs = [gym.make(args.gym_env)]
+        raise NotImplementedError('TODO: eric-mitchell')
+        #env = gym.make(args.gym_env)
+
     elif args.rlkit_env is not None:
         if args.task_idx is not None:
             if args.rlkit_env == 'ant_goal':
@@ -114,19 +120,18 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
         network_shape = [32, 32]
     else:
         network_shape = [64, 64, 32, 32]
-
+        
     seed = args.seed if args.seed is not None else instance_idx
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
 
-    maml_rawr = MAMLRAWR(args, env, args.log_dir, name, network_shape, network_shape, batch_size=args.batch_size, training_iterations=args.train_steps,
-                         device=args.device, visualization_interval=args.vis_interval, silent=args.instances > 1,
+    maml_rawr = MAMLRAWR(args, env, args.log_dir, name, network_shape, network_shape, training_iterations=args.train_steps,
+                         visualization_interval=args.vis_interval, silent=args.instances > 1,
                          gradient_steps_per_iteration=args.gradient_steps_per_iteration,
                          replay_buffer_length=args.replay_buffer_size, discount_factor=args.discount_factor,
-                         initial_trajectories=args.initial_rollouts, grad_clip=args.grad_clip,
-                         inner_batch_size=args.inner_batch_size, maml_steps=args.maml_steps, bias_linear=args.bias_linear)
+                         grad_clip=args.grad_clip, bias_linear=args.bias_linear)
 
     maml_rawr.train()
 
