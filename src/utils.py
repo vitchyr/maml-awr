@@ -5,6 +5,34 @@ import torch
 import torch.nn as nn
 
 
+class RunningEstimator(object):
+    def __init__(self):
+        self._mu = None
+        self._mu2 = None
+        self._n = 0
+
+    def mean(self):
+        return self._mu
+
+    def var(self):
+        return self._mu2 - self._mu ** 2
+    
+    def std(self):
+        return (self.var() + 1e-8) ** 0.5
+
+    def add(self, xs):
+        if isinstance(xs, torch.Tensor):
+            xs = xs.detach()
+        if self._mu is None:
+            self._mu = xs.mean()
+            self._mu2 = (xs ** 2).mean()
+        else:
+            self._mu += ((xs - self._mu) * (1 / (self._n + 1))).mean()
+            self._mu2 += ((xs**2 - self._mu2) * (1/(self._n+1))).mean()
+
+        self._n += 1
+
+
 def argmax(module: nn.Module, arg: torch.tensor):
     print('Computing argmax')
     arg.requires_grad = True
@@ -87,7 +115,7 @@ class MiniBatch(object):
 
 class ReplayBuffer(object):
     def __init__(self, trajectory_length: int, state_dim: int, action_dim: int, max_trajectories: int = 10000,
-                 discount_factor: float = 0.99, immutable: bool = False, load_from: str = None):
+                 discount_factor: float = 0.99, immutable: bool = False, load_from: str = None, silent: bool = False):
         self._trajectories = np.empty((max_trajectories, trajectory_length, state_dim + action_dim + state_dim + state_dim + 1 + 1 + 1 + 1 + 1), dtype=np.float32)
         self._stored_trajectories = 0
         self._new_trajectory_idx = 0
@@ -98,7 +126,8 @@ class ReplayBuffer(object):
         self._discount_factor = discount_factor
         self._immutable = immutable
         if load_from is not None:
-            print(f'Loading trajectories from {load_from}')
+            if not silent:
+                print(f'Loading trajectories from {load_from}')
             trajectories = np.load(load_from)
             if trajectories.shape[1:] != self._trajectories.shape[1:]:
                 raise RuntimeError(f'Loaded old trajectories with mismatching shape (old/new {trajectories.shape}/{self._trajectories.shape})')

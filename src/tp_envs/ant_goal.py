@@ -8,20 +8,26 @@ from . import register_env
 # Copy task structure from https://github.com/jonasrothfuss/ProMP/blob/master/meta_policy_search/envs/mujoco_envs/ant_rand_goal.py
 @register_env('ant-goal')
 class AntGoalEnv(MultitaskAntEnv):
-    def __init__(self, tasks: List[dict] = None, task_idx: int = 0, **kwargs):
+    def __init__(self, tasks: List[dict] = None, task_idx: int = None, **kwargs):
         if tasks is None:
             tasks = [AntGoalEnv.sample_tasks(1, a=a, r=r)[0]
-                     for a, r in zip(list(np.linspace(0,0.75,4) * 2 * np.pi), list(np.linspace(1,2,4)))]
+                     for a, r in zip(list(np.linspace(0,0.25,5) * 2 * np.pi), [4] * 5)]
+        if task_idx is None:
+            task_idx = 0
+        else:
+            tasks = [tasks[task_idx]]
+            task_idx = 0
+
         self.tasks = tasks
+        self._task_idx = task_idx
         self._task = tasks[task_idx]
         self._goal = self._task['goal']
         super(AntGoalEnv, self).__init__(tasks, task_idx, **kwargs)
-        self._max_episode_steps = 1000
-        
+        self._max_episode_steps = 200
+
     def step(self, action):
         self.do_simulation(action, self.frame_skip)
         xposafter = np.array(self.get_body_com("torso"))
-
         goal_reward = -np.sum(np.abs(xposafter[:2] - self._goal)) # make it happy, not suicidal
 
         ctrl_cost = .1 * np.square(action).sum()
@@ -43,10 +49,7 @@ class AntGoalEnv(MultitaskAntEnv):
         return len(self.tasks) if one_hot else 2
 
     def task_description(self, task: dict = None, batch: Optional[int] = None, one_hot: bool = True):
-        if task is None:
-            task = self._task
-
-        idx = self.tasks.index(task)
+        idx = self._task_idx
         one_hot = np.zeros((self.task_description_dim(),), dtype=np.float32)
         one_hot[idx] = 1
         if batch:

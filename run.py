@@ -4,8 +4,8 @@ import numpy as np
 from multiprocessing import Process
 import random
 import torch
+import metaworld
 
-#from oyster.rlkit.envs.ant_goal import AntGoalEnv
 from src.tp_envs.ant_goal import AntGoalEnv
 from src.envs import PointMass1DEnv, HalfCheetahDirEnv, HalfCheetahVelEnv
 from src.maml_rawr import MAMLRAWR
@@ -13,9 +13,13 @@ from src.maml_rawr import MAMLRAWR
 
 def get_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
+    parser.add_argument('--normalize_values', action='store_true')
+    parser.add_argument('--fixed_exploration_task', type=int, default=None)
+    parser.add_argument('--random_task_percent', type=float, default=None)
+    parser.add_argument('--no_norm', action='store_true')
+    parser.add_argument('--no_bootstrap', action='store_true')
     parser.add_argument('--q', action='store_true')
     parser.add_argument('--reward_offset', type=float, default=0.)
-    parser.add_argument('--norm', action='store_true')
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--render_exploration', action='store_true')
     parser.add_argument('--seed', type=int, default=None)
@@ -43,8 +47,6 @@ def get_args() -> argparse.Namespace:
     parser.add_argument('--name', type=str, default=None)
     parser.add_argument('--render', action='store_true')
     parser.add_argument('--env', type=str, default='point_mass')
-    parser.add_argument('--gym_env', type=str, default=None)
-    parser.add_argument('--rlkit_env', type=str, default=None)
     parser.add_argument('--gradient_steps_per_iteration', type=int, default=10)
     parser.add_argument('--replay_buffer_size', type=int, default=1000)
     parser.add_argument('--discount_factor', type=float, default=0.99)
@@ -59,8 +61,8 @@ def get_args() -> argparse.Namespace:
     parser.add_argument('--grad_clip', type=float, default=1e9) # Essentially no clip, but use this to measure the size of gradients
     parser.add_argument('--exp_advantage_clip', type=float, default=10.0)
     parser.add_argument('--maml_steps', type=int, default=1)
-    parser.add_argument('--adaptation_temp', type=float, default=0.05)
-    parser.add_argument('--exploration_temp', type=float, default=0.2)
+    parser.add_argument('--adaptation_temp', type=float, default=1)
+    parser.add_argument('--exploration_temp', type=float, default=1)
     parser.add_argument('--bias_linear', action='store_true')
     parser.add_argument('--advantage_head_coef', type=float, default=None)
     parser.add_argument('--eval', action='store_true')
@@ -73,41 +75,80 @@ def get_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def get_metaworld_tasks(env_id: str = 'ml10'):
+    if env_id == 'ml10':
+        from metaworld.benchmarks import ML10
+        env = ML10.get_train_tasks()
+
+        task_idxs = set()
+        tasks = [None for _ in range(10)]
+        while len(task_idxs) < 10:
+            task = env.sample_tasks(1)[0]
+            if task['task'] not in task_idxs:
+                task_idxs.add(task['task'])
+                tasks[task['task']] = task
+        if args.task_idx is not None:
+            tasks = [tasks[args.task_idx]]
+        env.tasks = tasks
+        print(tasks)
+        env.task_description_dim = lambda: 10
+
+        def set_task_idx(idx):
+            env.set_task(tasks[idx])
+        env.set_task_idx = set_task_idx
+        def task_description(batch: None, one_hot: bool = True):
+            one_hot = env.active_task_one_hot.astype(np.float32)
+            if batch:
+                one_hot = one_hot[None,:].repeat(batch, 0)
+            return one_hot
+        env.task_description = task_description
+        env._max_episode_steps = 150
+
+        return env
+    else:
+        raise NotImplementedError()
+        
+
 def run(args: argparse.Namespace, instance_idx: int = 0):
     if args.train_exploration:
         assert args.n_adaptations > 1 or args.cvae, "Cannot explore without n_adaptation > 1"
 
-    if args.gym_env is not None:
-        raise NotImplementedError('TODO: eric-mitchell')
-        #env = gym.make(args.gym_env)
-
-    elif args.rlkit_env is not None:
-        if args.task_idx is not None:
-            if args.rlkit_env == 'ant_goal':
-                env = AntGoalEnv(task_idx=args.task_idx)
-            else:
-                assert False
+    seed = args.seed if args.seed is not None else instance_idx
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+        
+    if args.task_idx is None:
+        if args.env == 'ant_goal':
+            env = AntGoalEnv()
+        elif args.env == 'cheetah_dir':
+            env = HalfCheetahDirEnv()
+        elif args.env == 'cheetah_vel':
+            env = HalfCheetahVelEnv()
+        elif args.env == 'ml10':
+            env = get_metaworld_tasks(args.env)
+        elif args.env == 'point_mass':                
+            raise NotImplementedError('TODO: eric-mitchell (point_mass)')
+            #envs = [PointMass1DEnv(0), PointMass1DEnv(-1)]
         else:
-            if args.rlkit_env == 'ant_goal':
-                env = AntGoalEnv()
-            else:
-                assert False
+            raise NotImplementedError('TODO: eric-mitchell')
+            #env = gym.make(args.env)
     else:
-        if args.task_idx is None:
-            if args.env == 'point_mass':
-                
-                envs = [PointMass1DEnv(0), PointMass1DEnv(-1)]
-            elif args.env == 'cheetah_dir':
-                env = HalfCheetahDirEnv()
-            elif args.env == 'cheetah_vel':
-                env = HalfCheetahVelEnv()
+        if args.env == 'ant_goal':
+            env = AntGoalEnv(task_idx=args.task_idx)
+        elif args.env == 'cheetah_dir':
+            env = HalfCheetahDirEnv(task_idx=args.task_idx)
+        elif args.env == 'cheetah_vel':
+            env = HalfCheetahVelEnv(task_idx=args.task_idx)
+        elif args.env == 'ml10':
+            env = get_metaworld_tasks(args.env)
+        elif args.env == 'point_mass':
+            raise NotImplementedError('TODO: eric-mitchell')
+            #env = PointMass1DEnv(args.task_idx)
         else:
-            if args.env == 'point_mass':
-                env = PointMass1DEnv(args.task_idx)
-            elif args.env == 'cheetah_dir':
-                env = HalfCheetahDirEnv(task_idx=args.task_idx)
-            elif args.env == 'cheetah_vel':
-                env = HalfCheetahVelEnv(task_idx=args.task_idx)
+            raise NotImplementedError('TODO: eric-mitchell')
+            #env = gym.make(args.env)
 
     if args.name is None:
         args.name = 'throwaway_test_run'
@@ -116,7 +157,7 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
     else:
         name = f'{args.name}_{instance_idx}'
 
-    if args.gym_env is None and args.env == 'point_mass':
+    if args.env == 'point_mass':
         network_shape = [32, 32]
     else:
         network_shape = [64, 64, 32, 32]
@@ -128,7 +169,7 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
     torch.cuda.manual_seed(seed)
 
     maml_rawr = MAMLRAWR(args, env, args.log_dir, name, network_shape, network_shape, training_iterations=args.train_steps,
-                         visualization_interval=args.vis_interval, silent=args.instances > 1,
+                         visualization_interval=args.vis_interval, silent=instance_idx > 0,
                          gradient_steps_per_iteration=args.gradient_steps_per_iteration,
                          replay_buffer_length=args.replay_buffer_size, discount_factor=args.discount_factor,
                          grad_clip=args.grad_clip, bias_linear=args.bias_linear)

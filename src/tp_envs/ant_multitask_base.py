@@ -31,6 +31,7 @@ class MultitaskAntEnv(AntEnv):
 
     def set_task_idx(self, idx):
         self._task = self.tasks[idx]
+        self._task_idx = idx
         self._goal = self._task['goal']
 
     def set_task(self, task):

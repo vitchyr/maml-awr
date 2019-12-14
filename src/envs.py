@@ -159,7 +159,7 @@ class HalfCheetahVelEnv(HalfCheetahEnv):
         self._task = tasks[task_idx]
         self._velocity = self._task['velocity']
         super(HalfCheetahVelEnv, self).__init__()
-        self._max_episode_steps = 1000
+        self._max_episode_steps = 200
         
     def step(self, action):
         xposbefore = self.sim.data.qpos[0]
@@ -229,7 +229,7 @@ class HalfCheetahDirEnv(HalfCheetahEnv):
         self._direction = self._task['direction']
 
         super(HalfCheetahDirEnv, self).__init__()
-        self._max_episode_steps = 1000
+        self._max_episode_steps = 200
         
     def step(self, action):
         xposbefore = self.sim.data.qpos[0]
