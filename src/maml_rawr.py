@@ -214,7 +214,7 @@ class MAMLRAWR(object):
 
         targets = batch[:,-2] + value_estimates
 
-        if self._args.normalize_values:
+        if self._args.normalize_values or (self._args.normalize_values_outer and not inner):
             if task_idx is not None:
                 self._q_estimators[task_idx].add(targets)
                 factor = self._q_estimators[task_idx].std() + 1
@@ -232,7 +232,7 @@ class MAMLRAWR(object):
             mc_value_estimates = self.mc_value_estimates_on_batch(value_function, batch)
 
         targets = mc_value_estimates
-        if self._args.normalize_values:
+        if self._args.normalize_values or (self._args.normalize_values_outer and not inner):
             if task_idx is not None:
                 self._value_estimators[task_idx].add(targets)
                 factor = self._value_estimators[task_idx].std() + 1
@@ -642,7 +642,7 @@ class MAMLRAWR(object):
                     self._env.set_task_idx(i)
                     if self._args.render_exploration:
                         print_(f'Task {i}, trajectory {j}', self._silent)
-                    trajectory, reward = self._rollout_policy(behavior_policy, self._env, random=self._args.random, render=self._args.render_exploration)
+                    trajectory, reward = self._rollout_policy(behavior_policy, self._env, random=self._args.random, render=self._args.render_exploration, test=self._args.render_exploration)
                     exploration_rewards[j,i] = reward
                     if self._args.render_exploration:
                         print_(f'Reward: {reward}', self._silent)
