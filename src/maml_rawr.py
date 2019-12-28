@@ -6,6 +6,7 @@ import itertools
 import math
 import random
 import time
+import json
 
 import higher
 import numpy as np
@@ -278,24 +279,21 @@ class MAMLRAWR(object):
 
         return losses.mean(), advantages.mean(), weights.mean()
 
-    def update_model_with_grads(self, model: nn.Module, grads: list, optimizer: torch.optim.Optimizer, clip: float, step: bool = True):
+    def update_model_with_grads(self, model: nn.Module, grads: list, optimizer: torch.optim.Optimizer, clip: float = None):
         for idx, parameter in enumerate(model.parameters()):
             grads_ = []
             for i in range(len(grads)):
                 for j in range(len(grads[i])):
-                    if grads[i][j][idx] is not None:
-                        grads_.append(grads[i][j][idx])
-            if len(grads_):
-                parameter.grad = sum(grads_) / len(grads_)
+                    grads_.append(grads[i][j][idx])
+            parameter.grad = sum(grads_) / len(grads_)
 
-        if self._grad_clip is not None:
+        if clip is not None:
             grad = torch.nn.utils.clip_grad_norm_(model.parameters(), clip)
         else:
             grad = None
 
-        if step:
-            optimizer.step()
-            optimizer.zero_grad()
+        optimizer.step()
+        optimizer.zero_grad()
         
         return grad
 
@@ -517,7 +515,7 @@ class MAMLRAWR(object):
 
                     meta_policy_loss, outer_adv, outer_weight = self.adaptation_policy_loss_on_batch(f_adaptation_policy_j, adapted_q_function,
                                                                                                      adapted_value_function, meta_batch)
-                    meta_policy_grad_j = A.grad(meta_policy_loss, f_adaptation_policy_j.parameters(time=0), allow_unused=True)
+                    meta_policy_grad_j = A.grad(meta_policy_loss, f_adaptation_policy_j.parameters(time=0))
 
                     # Collect grads for the adaptation policy update in the outer loop [L15],
                     #  which is not actually performed here
@@ -625,6 +623,9 @@ class MAMLRAWR(object):
         log_path = f'{self._log_dir}/{self._name}'
         if not os.path.exists(log_path):
             os.makedirs(log_path)
+
+        with open(f'{log_path}/args.txt', 'w') as args_file:
+            json.dump(self._args.__dict__, args_file)
 
         tensorboard_log_path = f'{log_path}/tb'
         if not os.path.exists(tensorboard_log_path):
