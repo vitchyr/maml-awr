@@ -234,9 +234,14 @@ class MAMLRAWR(object):
         exploration_sigma = torch.empty_like(exploration_mu).fill_(self._action_sigma)
         exploration_distribution = D.Normal(exploration_mu, exploration_sigma)
         exploration_log_probs = exploration_distribution.log_prob(batch[:,self._observation_dim:self._observation_dim + self._action_dim]).sum(-1)
-        exploration_weights_logits = exploration_log_probs - original_log_probs
+        if self._args.traj_iw_exploration:
+            original_trajectory_log_probs = original_log_probs.cumsum(0)
+            exploration_trajectory_log_probs = exploration_log_probs.cumsum(0)
+            exploration_weights_logits = exploration_trajectory_log_probs - original_trajectory_log_probs
+        else:
+            exploration_weights_logits = exploration_log_probs - original_log_probs
         if clamp:
-            exploration_weights_logits = exploration_weights_logits.clamp(max=1)
+            exploration_weights_logits = exploration_weights_logits.clamp(min=-1,max=1)
         exploration_weights = exploration_weights_logits.exp()
 
         return exploration_weights
@@ -412,7 +417,7 @@ class MAMLRAWR(object):
         
         self._exploration_policy_optimizer.step()
         self._exploration_policy_optimizer.zero_grad()
-            
+
     # This function is the body of the main training loop [L4]
     # At every iteration, it adds rollouts from the exploration policy and one of the adapted policies
     #  to the replay buffer. It also updates the adaptation value function, adaptation policy, and
@@ -435,7 +440,8 @@ class MAMLRAWR(object):
             self._env.set_task_idx(i)
             
             # Sample J training batches for independent adaptations [L7]
-            np_batch = inner_buffer.sample(self._args.inner_batch_size * self._args.maml_steps).reshape(
+            inner_batch_size = self._args.inner_batch_size if not self._args.traj_iw_exploration else 1
+            np_batch = inner_buffer.sample(inner_batch_size * self._args.maml_steps, trajectory=self._args.traj_iw_exploration).reshape(
                 (self._args.n_adaptations, self._args.maml_steps, self._args.inner_batch_size // self._args.n_adaptations, -1))
             pyt_batch = torch.tensor(np_batch, requires_grad=False).to(self._device)
             batches.append(pyt_batch)
@@ -464,7 +470,7 @@ class MAMLRAWR(object):
             inner_advantages, outer_advantages = [], []
             for j, batch in enumerate(pyt_batch):
                 if self._args.iw_exploration:
-                    iweights_ = self.exploration_weights(meta_batch, clamp=False)
+                    iweights_ = self.exploration_weights(batch[0])
                     iweights = iweights_.detach().cpu().numpy()
                     if train_step_idx % self._visualization_interval == 0:
                         writer.add_histogram(f'IW_Hist/Task_{i}', iweights, train_step_idx)

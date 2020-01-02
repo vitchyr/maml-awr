@@ -198,12 +198,16 @@ class ReplayBuffer(object):
         for trajectory in trajectories:
             self.add_trajectory(trajectory, force)
 
-    def sample(self, batch_size):
-        idxs = np.random.choice(np.arange(self._stored_trajectories * (self._trajectory_length - self._trim_suffix)), batch_size)
-        trajectory_idxs = idxs // (self._trajectory_length - self._trim_suffix)
-        time_steps = idxs % (self._trajectory_length - self._trim_suffix)
+    def sample(self, batch_size, trajectory: bool = False):
+        if not trajectory:
+            idxs = np.random.choice(np.arange(self._stored_trajectories * (self._trajectory_length - self._trim_suffix)), batch_size)
+            trajectory_idxs = idxs // (self._trajectory_length - self._trim_suffix)
+            time_steps = idxs % (self._trajectory_length - self._trim_suffix)
 
-        batch = self._trajectories[trajectory_idxs, time_steps]
+            batch = self._trajectories[trajectory_idxs, time_steps]
+        else:
+            idx = np.random.choice(self._stored_trajectories)
+            batch = self._trajectories[idx].reshape((self._trajectory_length, -1))
 
         return batch
 

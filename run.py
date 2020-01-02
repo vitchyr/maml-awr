@@ -32,6 +32,7 @@ def get_args() -> argparse.Namespace:
     parser.add_argument('--sample_exploration_inner', action='store_true')
     parser.add_argument('--cvae', action='store_true')
     parser.add_argument('--iw_exploration', action='store_true')
+    parser.add_argument('--traj_iw_exploration', action='store_true')
     parser.add_argument('--unconditional', action='store_true')
     parser.add_argument('--latent_dim', type=int, default=32)
     parser.add_argument('--n_adaptations', type=int, default=1)
