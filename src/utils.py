@@ -115,7 +115,7 @@ class MiniBatch(object):
 
 class ReplayBuffer(object):
     def __init__(self, trajectory_length: int, state_dim: int, action_dim: int, max_trajectories: int = 10000,
-                 discount_factor: float = 0.99, immutable: bool = False, load_from: str = None, silent: bool = False):
+                 discount_factor: float = 0.99, immutable: bool = False, load_from: str = None, silent: bool = False, trim_suffix: int = 0):
         self._trajectories = np.empty((max_trajectories, trajectory_length, state_dim + action_dim + state_dim + state_dim + 1 + 1 + 1 + 1 + 1), dtype=np.float32)
         self._stored_trajectories = 0
         self._new_trajectory_idx = 0
@@ -125,6 +125,7 @@ class ReplayBuffer(object):
         self._action_dim = action_dim
         self._discount_factor = discount_factor
         self._immutable = immutable
+        self._trim_suffix = trim_suffix
         if load_from is not None:
             if not silent:
                 print(f'Loading trajectories from {load_from}')
@@ -198,9 +199,9 @@ class ReplayBuffer(object):
             self.add_trajectory(trajectory, force)
 
     def sample(self, batch_size):
-        idxs = np.random.choice(np.arange(self._stored_trajectories * self._trajectory_length), batch_size)
-        trajectory_idxs = idxs // self._trajectory_length
-        time_steps = idxs % self._trajectory_length
+        idxs = np.random.choice(np.arange(self._stored_trajectories * (self._trajectory_length - self._trim_suffix)), batch_size)
+        trajectory_idxs = idxs // (self._trajectory_length - self._trim_suffix)
+        time_steps = idxs % (self._trajectory_length - self._trim_suffix)
 
         batch = self._trajectories[trajectory_idxs, time_steps]
 

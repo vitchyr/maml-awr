@@ -13,6 +13,9 @@ from src.maml_rawr import MAMLRAWR
 
 def get_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
+    parser.add_argument('--exploration_reg', type=float, default=None)
+    parser.add_argument('--trim_suffix', action='store_true')
+    parser.add_argument('--episode_length', type=int, default=None)
     parser.add_argument('--normalize_values_outer', action='store_true')
     parser.add_argument('--normalize_values', action='store_true')
     parser.add_argument('--fixed_exploration_task', type=int, default=None)
@@ -28,6 +31,7 @@ def get_args() -> argparse.Namespace:
     parser.add_argument('--train_exploration', action='store_true')
     parser.add_argument('--sample_exploration_inner', action='store_true')
     parser.add_argument('--cvae', action='store_true')
+    parser.add_argument('--iw_exploration', action='store_true')
     parser.add_argument('--unconditional', action='store_true')
     parser.add_argument('--latent_dim', type=int, default=32)
     parser.add_argument('--n_adaptations', type=int, default=1)
@@ -139,7 +143,7 @@ def get_gym_env(env: str):
     
 def run(args: argparse.Namespace, instance_idx: int = 0):
     if args.train_exploration:
-        assert args.n_adaptations > 1 or args.cvae, "Cannot explore without n_adaptation > 1"
+        assert args.n_adaptations > 1 or args.cvae or args.iw_exploration, "Cannot explore without n_adaptation > 1"
 
     seed = args.seed if args.seed is not None else instance_idx
     random.seed(seed)
@@ -177,6 +181,9 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
             raise NotImplementedError('TODO: eric-mitchell')
             #env = gym.make(args.env)
 
+    if args.episode_length is not None:
+        env._max_episode_steps = args.episode_length
+        
     if args.name is None:
         args.name = 'throwaway_test_run'
     if instance_idx == 0:

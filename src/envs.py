@@ -229,7 +229,7 @@ class HalfCheetahDirEnv(HalfCheetahEnv):
         self._direction = self._task['direction']
 
         super(HalfCheetahDirEnv, self).__init__()
-        self._max_episode_steps = 200
+        self._max_episode_steps = 1000
         
     def step(self, action):
         xposbefore = self.sim.data.qpos[0]
