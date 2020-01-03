@@ -13,8 +13,9 @@ from src.maml_rawr import MAMLRAWR
 
 def get_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
+    parser.add_argument('--exploration_batch_size', type=int, default=64)
     parser.add_argument('--exploration_reg', type=float, default=None)
-    parser.add_argument('--trim_suffix', action='store_true')
+    parser.add_argument('--trim_suffix', type=int, default=0)
     parser.add_argument('--episode_length', type=int, default=None)
     parser.add_argument('--normalize_values_outer', action='store_true')
     parser.add_argument('--normalize_values', action='store_true')
