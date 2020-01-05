@@ -4,10 +4,10 @@ from typing import List, Callable, Optional
 
 
 class DeepSet(nn.Module):
-    def __init__(self, element_dim: int, intermediate_dim: int = 32, encoding_dim: int = 64,
-                 encoder_hidden: List[int] = [128, 64], decoder_hidden: List[int] = [128, 64]):
+    def __init__(self, element_dim: int, encoding_dim: int = 64,
+                 encoder_hidden: List[int] = [128, 128]):
         super().__init__()
-        encoder_hidden = [element_dim] + encoder_hidden + [intermediate_dim]
+        encoder_hidden = [element_dim] + encoder_hidden + [encoding_dim]
         encoders = []
         for idx, (d, d_) in enumerate(zip(encoder_hidden[:-1], encoder_hidden[1:])):
             encoders.append(nn.Conv1d(d, d_, 1))
@@ -15,43 +15,49 @@ class DeepSet(nn.Module):
                 encoders.append(nn.ReLU())
         self.encoder = nn.Sequential(*encoders)
 
-        decoder_hidden = [intermediate_dim] + decoder_hidden + [encoding_dim]
-        self.decoder = MLP(decoder_hidden)
-        
         self.aggregator = lambda x: x.mean(-1)
 
     def forward(self, x):
         encodings = self.encoder(x)
-        encoding = self.aggregator(encodings)
-        return self.decoder(encoding)
+        return self.aggregator(encodings)
 
 
 class CVAE(nn.Module):
     def __init__(self, observation_dim: int, action_dim: int, traj_dim: int, latent_dim: int = 32,
                  encoder_hidden: List[int] = [128, 64], prior_hidden: List[int] = [128, 64], decoder_hidden: List[int] = [128, 64]):
         super().__init__()
-        
-        self._encoder = MLP([observation_dim + action_dim + traj_dim] + encoder_hidden + [latent_dim * 2])
-        self._prior = MLP([observation_dim] + prior_hidden + [latent_dim * 2])
+
+        self._encoder = MLP([traj_dim] + encoder_hidden + [latent_dim * 2])
+        #self._prior = MLP([observation_dim] + prior_hidden + [latent_dim * 2])
         self._decoder = MLP([latent_dim + observation_dim] + decoder_hidden + [action_dim * 2])
         self._traj_encoder = DeepSet(observation_dim + action_dim, encoding_dim=traj_dim)
+
+        self._z = None
+        self._latent_dim = latent_dim
         
     def sample(self, mu_logvar: torch.tensor):
         mu = mu_logvar[:,:mu_logvar.shape[-1] // 2]
         std = (mu_logvar[:,mu_logvar.shape[-1] // 2:] / 2).exp()
         return torch.empty_like(mu).normal_() * std + mu
 
-    def encode(self, obs: torch.tensor, action: torch.tensor, traj: torch.tensor, sample: bool = False):
+    def fix(self):
+        self._z = self.prior(True)[1].detach()
+
+    def unfix(self):
+        self._z = None
+
+    def encode(self, traj: torch.tensor, sample: bool = False):
         traj_encoding = self._traj_encoder(traj)
-        mu_logvar = self._encoder(torch.cat((obs, action, traj_encoding), -1))
+        mu_logvar = self._encoder(traj_encoding)
 
         if sample:
             return mu_logvar, self.sample(mu_logvar)
         else:
             return mu_logvar
 
-    def prior(self, obs: torch.tensor, sample: bool = False):
-        mu_logvar = self._prior(obs)
+    def prior(self, sample: bool = False):
+        d = self._encoder.seq[0].weight.device
+        mu_logvar = torch.zeros(1, self._latent_dim * 2, device=d)
 
         if sample:
             return mu_logvar, self.sample(mu_logvar)
@@ -67,7 +73,10 @@ class CVAE(nn.Module):
             return mu_logvar
 
     def forward(self, obs: torch.tensor, traj: torch.tensor = None):
-        z = self.prior(obs, sample=True)[1]
+        if self._z is not None:
+            z = self._z
+        else:
+            z = self.prior(obs, sample=True)[1]
         mu_logvar = self.decode(z, obs)
         return mu_logvar[:,:mu_logvar.shape[-1] // 2], (mu_logvar[:,mu_logvar.shape[-1] // 2:] / 2).exp()
 

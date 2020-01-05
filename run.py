@@ -13,6 +13,11 @@ from src.maml_rawr import MAMLRAWR
 
 def get_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
+    parser.add_argument('--noclamp', action='store_true')
+    parser.add_argument('--lrlr', type=float, default=1e-4)
+    parser.add_argument('--huber', action='store_true')
+    parser.add_argument('--kld_coef', type=float, default=1.0)
+    parser.add_argument('--cvae_skip', type=int, default=10)
     parser.add_argument('--exploration_batch_size', type=int, default=64)
     parser.add_argument('--exploration_reg', type=float, default=None)
     parser.add_argument('--trim_suffix', type=int, default=0)
@@ -35,7 +40,7 @@ def get_args() -> argparse.Namespace:
     parser.add_argument('--iw_exploration', action='store_true')
     parser.add_argument('--traj_iw_exploration', action='store_true')
     parser.add_argument('--unconditional', action='store_true')
-    parser.add_argument('--latent_dim', type=int, default=32)
+    parser.add_argument('--latent_dim', type=int, default=64)
     parser.add_argument('--n_adaptations', type=int, default=1)
     parser.add_argument('--pre_adapted', action='store_true')
     parser.add_argument('--train_steps', type=int, default=100000)
@@ -88,17 +93,17 @@ def get_metaworld_tasks(env_id: str = 'ml10'):
         env = ML10.get_train_tasks()
 
         task_idxs = set()
-        tasks = [None for _ in range(10)]
-        while len(task_idxs) < 10:
+        tasks = [None for _ in range(9)]
+        while len(task_idxs) < 9:
             task = env.sample_tasks(1)[0]
-            if task['task'] not in task_idxs:
+            if task['task'] not in task_idxs and task['task'] != 0:
                 task_idxs.add(task['task'])
-                tasks[task['task']] = task
+                tasks[task['task'] - 1] = task
         if args.task_idx is not None:
             tasks = [tasks[args.task_idx]]
         env.tasks = tasks
         print(tasks)
-        env.task_description_dim = lambda: 10
+        env.task_description_dim = lambda: 9
 
         def set_task_idx(idx):
             env.set_task(tasks[idx])

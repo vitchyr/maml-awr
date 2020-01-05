@@ -83,6 +83,8 @@ class MAMLRAWR(object):
                                    bias_linear=bias_linear).to(args.device)
         self._value_function = MLP([self._observation_dim] + value_function_hidden_layers + [1],
                                    bias_linear=bias_linear).to(args.device)
+        self._policy_lrs = [nn.Parameter(torch.tensor(args.inner_policy_lr, device=args.device, requires_grad=True)) for _ in self._adaptation_policy.parameters()]
+        self._value_lrs = [nn.Parameter(torch.tensor(args.inner_value_lr, device=args.device, requires_grad=True)) for _ in self._value_function.parameters()]
         print(self._adaptation_policy.seq[0]._linear.weight.mean())
         
         self._adaptation_policy_optimizer = O.Adam(self._adaptation_policy.parameters(), lr=args.outer_policy_lr)
@@ -148,6 +150,9 @@ class MAMLRAWR(object):
         total_reward = 0
         episode_t = 0
 
+        if isinstance(policy, CVAE):
+            policy.fix()
+
         while not done:
             if not random:
                 with torch.no_grad():
@@ -155,7 +160,7 @@ class MAMLRAWR(object):
                     if isinstance(policy, CVAE):
                         mu, action_sigma = policy(torch.tensor(state, device=device).unsqueeze(0).float())
                         mu = mu.squeeze()
-                        action_sigma = action_sigma.squeeze()
+                        action_sigma = action_sigma.squeeze().clamp(max=0.5)
                     else:
                         mu = policy(torch.tensor(state, device=device).unsqueeze(0).float()).squeeze()
 
@@ -180,6 +185,9 @@ class MAMLRAWR(object):
             episode_t += 1
             if episode_t >= env._max_episode_steps:
                 break
+
+        if isinstance(policy, CVAE):
+            policy.unfix()
             
         return trajectory, total_reward
 
@@ -227,14 +235,23 @@ class MAMLRAWR(object):
         exploration_distribution = D.Normal(exploration_mu, exploration_sigma)
         exploration_log_probs = exploration_distribution.log_prob(raveled_batch[:,self._observation_dim:self._observation_dim + self._action_dim]).sum(-1)
 
-        original_trajectory_log_probs = torch.cat([original_log_probs[start:start+len_].sum().unsqueeze(0) for start, len_ in zip(cumlens, lens)])
-        exploration_trajectory_log_probs = torch.cat([exploration_log_probs[start:start+len_].sum().unsqueeze(0) for start, len_ in zip(cumlens, lens)])
-        exploration_weights_logits_ = exploration_trajectory_log_probs - original_trajectory_log_probs
+        original_trajectory_log_probs = torch.cat([original_log_probs[start:start+len_-1].sum().unsqueeze(0) for start, len_ in zip(cumlens, lens)])
+        exploration_trajectory_log_probs = torch.cat([exploration_log_probs[start:start+len_-1].sum().unsqueeze(0) for start, len_ in zip(cumlens, lens)])
+        original_trajectory_action_log_probs = torch.cat([original_log_probs[start+len_-1].unsqueeze(0) for start, len_ in zip(cumlens, lens)])
+        exploration_trajectory_action_log_probs = torch.cat([exploration_log_probs[start+len_-1].unsqueeze(0) for start, len_ in zip(cumlens, lens)])
+        exploration_weights_no_action_logits_ = exploration_trajectory_log_probs - original_trajectory_log_probs
+        exploration_weights_logits_ = exploration_weights_no_action_logits_ + exploration_trajectory_action_log_probs - original_trajectory_action_log_probs
+
         if clamp:
             exploration_weights_logits = exploration_weights_logits_.clamp(min=-1,max=1)
+            exploration_weights_no_action_logits = exploration_weights_no_action_logits_.clamp(min=-1,max=1)
+        else:
+            exploration_weights_logits = exploration_weights_logits_
+            exploration_weights_no_action_logits = exploration_weights_no_action_logits_
         exploration_weights = exploration_weights_logits.exp()
+        exploration_weights_no_action = exploration_weights_no_action_logits.exp()
 
-        return exploration_weights, exploration_weights_logits_
+        return exploration_weights, exploration_weights_no_action, exploration_weights_logits_
 
     #@profile
     def value_function_loss_on_batch(self, value_function, batch, inner: bool = False, task_idx: int = None, iweights: torch.tensor = None):
@@ -252,8 +269,11 @@ class MAMLRAWR(object):
         else:
             factor = 1
 
-        losses = (value_estimates - targets).div(factor).pow(2)
-        #if self._args.iw_exploration and inner:
+        if self._args.huber and not inner:
+            losses = F.smooth_l1_loss(value_estimates / factor, targets / factor, reduction='none')
+        else:
+            losses = (value_estimates - targets).div(factor).pow(2)
+
         if iweights is not None:
             losses = losses * iweights
         
@@ -362,7 +382,7 @@ class MAMLRAWR(object):
                 exploration_loss = exploration_loss + loss
 
         exploration_loss.backward()
-        grad = torch.nn.utils.clip_grad_norm_(self._exploration_policy.parameters(), 1000)
+        grad = torch.nn.utils.clip_grad_norm_(self._exploration_policy.parameters(), self._grad_clip)
         writer.add_scalar(f'Explore_Grad', grad, train_step_idx)
         writer.add_scalar(f'Explore_Loss', exploration_loss.item(), train_step_idx)
 
@@ -379,33 +399,36 @@ class MAMLRAWR(object):
             batch = torch.tensor(batch, device=self._device)
 
             trajectories = torch.tensor(trajectories, device=self._device)
-            traj = trajectories[:,:,:self._observation_dim + self._action_dim].permute(0,2,1)[:,:,::10]
+            traj = trajectories[:,:,:self._observation_dim + self._action_dim].permute(0,2,1)[:,:,::self._args.cvae_skip]
 
             obs = batch[:,:self._observation_dim]
             action = batch[:,self._observation_dim:self._observation_dim + self._action_dim]
             
-            pz_wxy, z = self._exploration_policy.encode(obs, action, traj, sample=True)
-            pz_wx = self._exploration_policy.prior(obs)
+            pz_t, z = self._exploration_policy.encode(traj, sample=True)
+            pz = self._exploration_policy.prior()
 
-            py_wx = self._exploration_policy.decode(z, obs)
-            mu_y = py_wx[:,:py_wx.shape[-1]//2]
-            std_y = (py_wx[:,py_wx.shape[-1]//2:] / 2).exp()
+            py_zs = self._exploration_policy.decode(z, obs)
+            mu_y = py_zs[:,:py_zs.shape[-1]//2]
+            std_y = (py_zs[:,py_zs.shape[-1]//2:] / 2).exp()
 
             d_y = D.Normal(mu_y, std_y)
-            
-            kld_loss += kld(pz_wxy, pz_wx).mean()
+
+            kld_loss += kld(pz_t, pz).mean()
             recon_loss += -d_y.log_prob(action).sum(-1).mean()
 
-        exploration_loss = kld_loss + recon_loss
+        kld_coef = (torch.tensor(train_step_idx).float() / 10000 - 10).sigmoid().to(self._device)
+        exploration_loss = kld_coef * kld_loss + recon_loss
         exploration_loss.backward()
         
-        grad = torch.nn.utils.clip_grad_norm_(self._exploration_policy.parameters(), 1000)
+        grad = torch.nn.utils.clip_grad_norm_(self._exploration_policy.parameters(), self._grad_clip)
 
         writer.add_scalar(f'Explore_Grad', grad, train_step_idx)
         writer.add_scalar(f'Explore_Loss', exploration_loss.item(), train_step_idx)
         writer.add_scalar(f'Explore_Loss_Recon', recon_loss.item(), train_step_idx)
         writer.add_scalar(f'Explore_Loss_KLD', kld_loss.item(), train_step_idx)
-        
+        writer.add_histogram(f'Explore_Mu', mu_y.detach().cpu().numpy(), train_step_idx)
+        writer.add_histogram(f'Explore_Sigma', std_y.detach().cpu().numpy(), train_step_idx)
+
         self._exploration_policy_optimizer.step()
         self._exploration_policy_optimizer.zero_grad()
 
@@ -464,7 +487,7 @@ class MAMLRAWR(object):
             inner_advantages, outer_advantages = [], []
             for j, batch in enumerate(pyt_batch):
                 if self._args.iw_exploration:
-                    iweights_, iweight_logits = self.exploration_weights(pyt_trajectories)
+                    iweights_, iweights_no_action_, iweight_logits = self.exploration_weights(pyt_trajectories, clamp=not self._args.noclamp)
                     iweights = iweights_.detach().cpu().numpy()
                     if train_step_idx % self._visualization_interval == 0:
                         writer.add_histogram(f'IW_Hist/Task_{i}', iweights, train_step_idx)
@@ -473,17 +496,27 @@ class MAMLRAWR(object):
                     writer.add_scalar(f'IW_Median/Task_{i}', np.median(iweights), train_step_idx)
                 else:
                     iweights_ = None
+                    iweights_no_action_ = None
                 ##################################################################################################
                 # Adapt value function and collect meta-gradients
                 ##################################################################################################
                 value_function_j = deepcopy(self._value_function)
-                #value_function_j = self._value_function
                 opt = O.SGD(value_function_j.parameters(), lr=self._inner_value_lr)
+                '''
+                opt = O.SGD([list(value_function_j.parameters())[0]], lr=self._value_lrs[0])
+                first = True
+                for p, lr in zip(value_function_j.parameters(), self._value_lrs):
+                    if first:
+                        first = False
+                        continue
+                    opt.add_param_group({'params': [p], 'lr': lr})
+                with higher.innerloop_ctx(value_function_j, opt, override={'lr': self._value_lrs}) as (f_value_function_j, diff_value_opt):
+                '''
                 with higher.innerloop_ctx(value_function_j, opt) as (f_value_function_j, diff_value_opt):
                     if self._inner_value_lr > 0 and len(self._env.tasks) > 1:
                         for inner_batch in batch:
                             # Compute loss and adapt value function [L9]
-                            loss, value_inner, mc_inner, mc_std_inner = self.value_function_loss_on_batch(f_value_function_j, inner_batch, inner=True, task_idx=i, iweights=iweights_)
+                            loss, value_inner, mc_inner, mc_std_inner = self.value_function_loss_on_batch(f_value_function_j, inner_batch, inner=True, task_idx=i)#, iweights=iweights_no_action_)
                             inner_values.append(value_inner.item())
                             inner_mc_means.append(mc_inner.item())
                             inner_mc_stds.append(mc_std_inner.item())
@@ -494,9 +527,11 @@ class MAMLRAWR(object):
                     #  which is not actually performed here
                     meta_value_function_loss, value, mc, mc_std = self.value_function_loss_on_batch(f_value_function_j, meta_batch, task_idx=i)
                     meta_value_grad_j = A.grad(meta_value_function_loss, f_value_function_j.parameters(time=0), retain_graph=self._args.iw_exploration)
+                    #for lr, grad in zip(self._value_lrs, A.grad(meta_value_function_loss, self._value_lrs, retain_graph=True)):
+                    #    lr.data -= self._args.lrlr * grad
                     if self._args.iw_exploration:
                         value_exploration_grad_j = A.grad(meta_value_function_loss, self._exploration_policy.parameters(), retain_graph=True)
-                    
+
                     outer_values.append(value.item())
                     outer_mc_means.append(mc.item())
                     outer_mc_stds.append(mc_std.item())
@@ -538,8 +573,17 @@ class MAMLRAWR(object):
                 adapted_value_function = value_functions_i[-1]
                 adapted_q_function = q_functions_i[-1] if self._args.q else None
                 adaptation_policy_j = deepcopy(self._adaptation_policy)
-                #adaptation_policy_j = self._adaptation_policy
                 opt = O.SGD(adaptation_policy_j.parameters(), lr=self._inner_policy_lr)
+                '''
+                opt = O.SGD([list(adaptation_policy_j.parameters())[0]], lr=self._policy_lrs[0])
+                first = True
+                for p, lr in zip(adaptation_policy_j.parameters(), self._policy_lrs):
+                    if first:
+                        first = False
+                        continue
+                    opt.add_param_group({'params': [p], 'lr': lr})
+                with higher.innerloop_ctx(adaptation_policy_j, opt, override={'lr': self._policy_lrs}) as (f_adaptation_policy_j, diff_policy_opt):
+                '''
                 with higher.innerloop_ctx(adaptation_policy_j, opt) as (f_adaptation_policy_j, diff_policy_opt):
                     if self._inner_policy_lr > 0 and len(self._env.tasks) > 1:
                         for inner_batch in batch:
@@ -554,8 +598,11 @@ class MAMLRAWR(object):
                     meta_policy_loss, outer_adv, outer_weight = self.adaptation_policy_loss_on_batch(f_adaptation_policy_j, adapted_q_function,
                                                                                                      adapted_value_function, meta_batch)
                     meta_policy_grad_j = A.grad(meta_policy_loss, f_adaptation_policy_j.parameters(time=0), retain_graph=self._args.iw_exploration)
+                    #for lr, grad in zip(self._policy_lrs, A.grad(meta_policy_loss, self._policy_lrs, retain_graph=True, allow_unused=True)):
+                    #    if grad is not None:
+                    #        lr.data -= self._args.lrlr * grad
                     if self._args.iw_exploration:
-                        policy_exploration_grad_j = A.grad(meta_policy_loss, self._exploration_policy.parameters(), retain_graph=True)
+                        policy_exploration_grad_j = A.grad(meta_policy_loss, self._exploration_policy.parameters(), retain_graph=self._args.exploration_reg is not None)
                     
                     # Collect grads for the adaptation policy update in the outer loop [L15],
                     #  which is not actually performed here
@@ -624,6 +671,9 @@ class MAMLRAWR(object):
                 writer.add_scalar(f'Advantage_Mean_Outer/Task_{i}', np.mean(outer_advantages), train_step_idx)
                 writer.add_scalar(f'MC_Mean_Outer/Task_{i}', np.mean(outer_mc_means), train_step_idx)
                 writer.add_scalar(f'MC_std_Outer/Task_{i}', np.mean(outer_mc_stds), train_step_idx)
+                if train_step_idx % 100 == 0:
+                    writer.add_histogram(f'Value_LR', np.asarray(self._value_lrs), train_step_idx)
+                    writer.add_histogram(f'Policy_LR', np.asarray(self._policy_lrs), train_step_idx)
                 if self._args.q:
                     writer.add_scalar(f'Loss_Q_Outer/Task_{i}', np.mean(meta_q_losses), train_step_idx)
                 writer.add_scalar(f'Loss_Value_Outer/Task_{i}', np.mean(meta_value_losses), train_step_idx)
@@ -702,8 +752,8 @@ class MAMLRAWR(object):
                         print_(f'Task {i}, trajectory {j}', self._silent)
                     trajectory, reward = self._rollout_policy(behavior_policy, self._env, random=self._args.random, render=self._args.render_exploration, test=self._args.render_exploration)
                     exploration_rewards[j,i] = reward
-                    if self._args.render_exploration:
-                        print_(f'Reward: {reward}', self._silent)
+                    #if self._args.render_exploration:
+                    print_(f'Reward: {reward}', self._silent)
                     inner_buffer.add_trajectory(trajectory, force=True)
                     if not self._args.load_outer_buffer:
                         outer_buffer.add_trajectory(trajectory, force=True)
