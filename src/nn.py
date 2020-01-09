@@ -24,13 +24,26 @@ class DeepSet(nn.Module):
 
 class CVAE(nn.Module):
     def __init__(self, observation_dim: int, action_dim: int, traj_dim: int, latent_dim: int = 32,
-                 encoder_hidden: List[int] = [128, 64], prior_hidden: List[int] = [128, 64], decoder_hidden: List[int] = [128, 64]):
+                 encoder_hidden: List[int] = [128, 64], prior_hidden: List[int] = [128, 64], decoder_hidden: List[int] = [128, 64],
+                 condition_prior: bool = False, preprocess: bool = False):
         super().__init__()
 
         self._encoder = MLP([traj_dim] + encoder_hidden + [latent_dim * 2])
-        #self._prior = MLP([observation_dim] + prior_hidden + [latent_dim * 2])
-        self._decoder = MLP([latent_dim + observation_dim] + decoder_hidden + [action_dim * 2])
+        if condition_prior:
+            self._prior = MLP([observation_dim] + encoder_hidden + [latent_dim * 2])
+        else:
+            self._prior = None
+
+        decoder_input_dim = latent_dim + observation_dim if not preprocess else latent_dim * 2
+        self._decoder = MLP([decoder_input_dim] + decoder_hidden + [action_dim * 2])
         self._traj_encoder = DeepSet(observation_dim + action_dim, encoding_dim=traj_dim)
+
+        if preprocess:
+            self._state_preprocess = MLP([observation_dim] + decoder_hidden + [latent_dim])
+            self._latent_preprocess = MLP([latent_dim] + decoder_hidden + [latent_dim])
+            self._preprocess = lambda s, l: (self._state_preprocess(s), self._latent_preprocess(l))
+        else:
+            self._preprocess = None
 
         self._z = None
         self._latent_dim = latent_dim
@@ -40,8 +53,8 @@ class CVAE(nn.Module):
         std = (mu_logvar[:,mu_logvar.shape[-1] // 2:] / 2).exp()
         return torch.empty_like(mu).normal_() * std + mu
 
-    def fix(self):
-        self._z = self.prior(True)[1].detach()
+    def fix(self, obs):
+        self._z = self.prior(obs, True)[1].detach()
 
     def unfix(self):
         self._z = None
@@ -55,9 +68,12 @@ class CVAE(nn.Module):
         else:
             return mu_logvar
 
-    def prior(self, sample: bool = False):
-        d = self._encoder.seq[0].weight.device
-        mu_logvar = torch.zeros(1, self._latent_dim * 2, device=d)
+    def prior(self, obs: torch.tensor, sample: bool = False):
+        if self._prior is None:
+            d = self._encoder.seq[0].weight.device
+            mu_logvar = torch.zeros(1, self._latent_dim * 2, device=d)
+        else:
+            mu_logvar = self._prior(obs)
 
         if sample:
             return mu_logvar, self.sample(mu_logvar)
@@ -65,6 +81,8 @@ class CVAE(nn.Module):
             return mu_logvar
 
     def decode(self, latent: torch.tensor, obs: torch.tensor, sample: bool = False):
+        if self._preprocess:
+            obs, latent = self._preprocess(obs, latent)
         mu_logvar = self._decoder(torch.cat((latent, obs), -1))
 
         if sample:

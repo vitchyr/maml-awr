@@ -1,3 +1,4 @@
+from typing import Optional, List
 import argparse
 import gym
 import numpy as np
@@ -13,11 +14,15 @@ from src.maml_rawr import MAMLRAWR
 
 def get_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
+    parser.add_argument('--mltest', action='store_true')
+    parser.add_argument('--vae_steps', type=int, default=None)
     parser.add_argument('--noclamp', action='store_true')
     parser.add_argument('--lrlr', type=float, default=1e-4)
     parser.add_argument('--huber', action='store_true')
     parser.add_argument('--kld_coef', type=float, default=1.0)
     parser.add_argument('--cvae_skip', type=int, default=10)
+    parser.add_argument('--cvae_prior_conditional', action='store_true')
+    parser.add_argument('--cvae_preprocess', action='store_true')
     parser.add_argument('--exploration_batch_size', type=int, default=64)
     parser.add_argument('--exploration_reg', type=float, default=None)
     parser.add_argument('--trim_suffix', type=int, default=0)
@@ -88,32 +93,43 @@ def get_args() -> argparse.Namespace:
 
 
 def get_metaworld_tasks(env_id: str = 'ml10'):
+    def _extract_tasks(env_, skip_task_idxs: Optional[List[int]] = []):
+        task_idxs = set()
+        tasks = [None for _ in range(env.num_tasks - len(skip_task_idxs))]
+        while len(task_idxs) < env.num_tasks - len(skip_task_idxs):
+            task_dict = env.sample_tasks(1)[0]
+            task_idx = task_dict['task']
+            if task_idx not in task_idxs and task_idx not in skip_task_idxs:
+                task_idxs.add(task_idx)
+                tasks[task_idx - len(skip_task_idxs)] = task_dict
+        return tasks
+
     if env_id == 'ml10':
         from metaworld.benchmarks import ML10
-        env = ML10.get_train_tasks()
+        if args.mltest:
+            env = ML10.get_test_tasks()
+            tasks = _extract_tasks(env)
+        else:
+            env = ML10.get_train_tasks()
+            tasks = _extract_tasks(env, skip_task_idxs=[0])
 
-        task_idxs = set()
-        tasks = [None for _ in range(9)]
-        while len(task_idxs) < 9:
-            task = env.sample_tasks(1)[0]
-            if task['task'] not in task_idxs and task['task'] != 0:
-                task_idxs.add(task['task'])
-                tasks[task['task'] - 1] = task
         if args.task_idx is not None:
             tasks = [tasks[args.task_idx]]
+
         env.tasks = tasks
         print(tasks)
-        env.task_description_dim = lambda: 9
 
         def set_task_idx(idx):
             env.set_task(tasks[idx])
-        env.set_task_idx = set_task_idx
         def task_description(batch: None, one_hot: bool = True):
             one_hot = env.active_task_one_hot.astype(np.float32)
             if batch:
                 one_hot = one_hot[None,:].repeat(batch, 0)
             return one_hot
+
+        env.set_task_idx = set_task_idx
         env.task_description = task_description
+        env.task_description_dim = lambda: len(env.tasks)
         env._max_episode_steps = 150
 
         return env
@@ -208,6 +224,9 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
+
+    if args.vae_steps is None:
+        args.vae_steps = args.gradient_steps_per_iteration
 
     maml_rawr = MAMLRAWR(args, env, args.log_dir, name, network_shape, network_shape, training_iterations=args.train_steps,
                          visualization_interval=args.vis_interval, silent=instance_idx > 0,

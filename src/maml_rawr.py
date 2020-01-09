@@ -72,7 +72,8 @@ class MAMLRAWR(object):
                                       bias_linear=bias_linear,
                                       extra_head_layers=policy_head).to(args.device)
         if args.cvae:
-            self._exploration_policy = CVAE(self._observation_dim, self._action_dim, args.latent_dim).to(args.device)
+            self._exploration_policy = CVAE(self._observation_dim, self._action_dim, args.latent_dim,
+                                            condition_prior=args.cvae_prior_conditional, preprocess=args.cvae_preprocess).to(args.device)
         else:
             self._exploration_policy = MLP([self._observation_dim] +
                                            policy_hidden_layers +
@@ -152,8 +153,9 @@ class MAMLRAWR(object):
         episode_t = 0
 
         if isinstance(policy, CVAE):
-            policy.fix()
+            policy.fix(torch.tensor(state, device=device).unsqueeze(0).float())
 
+        success = False
         while not done:
             if not random:
                 with torch.no_grad():
@@ -177,6 +179,8 @@ class MAMLRAWR(object):
                 log_prob = math.log(1 / 2 ** env.action_space.shape[0])
 
             next_state, reward, done, info_dict = env.step(action)
+            if 'success' in info_dict and info_dict['success']:
+                success = True
             reward += self._args.reward_offset
             if render:
                 env.render()
@@ -190,7 +194,7 @@ class MAMLRAWR(object):
         if isinstance(policy, CVAE):
             policy.unfix()
         policy.to(old_device)
-        return trajectory, total_reward
+        return trajectory, total_reward, success
 
     #@profile
     def mc_value_estimates_on_batch(self, value_function, batch):
@@ -392,45 +396,67 @@ class MAMLRAWR(object):
 
     #@profile
     def train_vae_exploration(self, train_step_idx: int, writer: SummaryWriter):
-        kld_loss = 0
-        recon_loss = 0
-        for i, buf in enumerate(self._outer_buffers):
-            batch, trajectories = buf.sample(self._args.exploration_batch_size, trajectory=True, complete=True)
-            batch = torch.tensor(batch, device=self._device)
+        grads = []
+        losses = []
+        recon_losses = []
+        kld_losses = []
+        mu_ys = []
+        std_ys = []
+        mu_zs = []
+        std_zs = []
+        for step in range(self._args.vae_steps):
+            kld_loss = 0
+            recon_loss = 0
+            for i, buf in enumerate(self._outer_buffers):
+                batch, trajectories = buf.sample(self._args.exploration_batch_size, trajectory=True, complete=True)
+                batch = torch.tensor(batch, device=self._device)
 
-            trajectories = torch.tensor(trajectories, device=self._device)
-            traj = trajectories[:,:,:self._observation_dim + self._action_dim].permute(0,2,1)[:,:,::self._args.cvae_skip]
+                trajectories = torch.tensor(trajectories, device=self._device)
+                traj = trajectories[:,:,:self._observation_dim + self._action_dim].permute(0,2,1)[:,:,::self._args.cvae_skip]
 
-            obs = batch[:,:self._observation_dim]
-            action = batch[:,self._observation_dim:self._observation_dim + self._action_dim]
+                obs = batch[:,:self._observation_dim]
+                action = batch[:,self._observation_dim:self._observation_dim + self._action_dim]
+
+                pz_t, z = self._exploration_policy.encode(traj, sample=True)
+                pz = self._exploration_policy.prior(obs)
+
+                py_zs = self._exploration_policy.decode(z, obs)
+                mu_y = py_zs[:,:py_zs.shape[-1]//2]
+                std_y = (py_zs[:,py_zs.shape[-1]//2:] / 2).exp()
+
+                d_y = D.Normal(mu_y, std_y)
+
+                kld_loss += kld(pz_t, pz).mean()
+                recon_loss += -d_y.log_prob(action).sum(-1).mean()
+
+            #kld_coef = (torch.tensor(train_step_idx).float() / 10000 - 10).sigmoid().to(self._device)
+            kld_coef = self._args.kld_coef
+
+            exploration_loss = kld_coef * kld_loss + recon_loss
+            exploration_loss.backward()
+
+            grad = torch.nn.utils.clip_grad_norm_(self._exploration_policy.parameters(), self._grad_clip)
+            self._exploration_policy_optimizer.step()
+            self._exploration_policy_optimizer.zero_grad()
+
+            grads.append(grad)
+            losses.append(exploration_loss.item())
+            recon_losses.append(recon_loss.item())
+            kld_losses.append(kld_loss.item())
+            mu_ys.append(mu_y.detach().cpu().numpy())
+            std_ys.append(std_y.detach().cpu().numpy())
+            mu_zs.append(pz_t[:,:pz_t.shape[-1]//2:].detach().cpu().numpy())
+            std_zs.append(pz_t[:,pz_t.shape[-1]//2:].div(2).exp().detach().cpu().numpy())
             
-            pz_t, z = self._exploration_policy.encode(traj, sample=True)
-            pz = self._exploration_policy.prior()
+        writer.add_scalar(f'Explore_Grad', np.mean(grads), train_step_idx)
+        writer.add_scalar(f'Explore_Loss', np.mean(losses), train_step_idx)
+        writer.add_scalar(f'Explore_Loss_Recon', np.mean(recon_losses), train_step_idx)
+        writer.add_scalar(f'Explore_Loss_KLD', np.mean(kld_losses), train_step_idx)
+        writer.add_histogram(f'Explore_Mu', np.mean(mu_ys), train_step_idx)
+        writer.add_histogram(f'Explore_Sigma', np.mean(std_ys), train_step_idx)
+        writer.add_histogram(f'Explore_ZMu', np.mean(mu_zs), train_step_idx)
+        writer.add_histogram(f'Explore_ZSigma', np.mean(std_zs), train_step_idx)
 
-            py_zs = self._exploration_policy.decode(z, obs)
-            mu_y = py_zs[:,:py_zs.shape[-1]//2]
-            std_y = (py_zs[:,py_zs.shape[-1]//2:] / 2).exp()
-
-            d_y = D.Normal(mu_y, std_y)
-
-            kld_loss += kld(pz_t, pz).mean()
-            recon_loss += -d_y.log_prob(action).sum(-1).mean()
-
-        kld_coef = (torch.tensor(train_step_idx).float() / 10000 - 10).sigmoid().to(self._device)
-        exploration_loss = kld_coef * kld_loss + recon_loss
-        exploration_loss.backward()
-        
-        grad = torch.nn.utils.clip_grad_norm_(self._exploration_policy.parameters(), self._grad_clip)
-
-        writer.add_scalar(f'Explore_Grad', grad, train_step_idx)
-        writer.add_scalar(f'Explore_Loss', exploration_loss.item(), train_step_idx)
-        writer.add_scalar(f'Explore_Loss_Recon', recon_loss.item(), train_step_idx)
-        writer.add_scalar(f'Explore_Loss_KLD', kld_loss.item(), train_step_idx)
-        writer.add_histogram(f'Explore_Mu', mu_y.detach().cpu().numpy(), train_step_idx)
-        writer.add_histogram(f'Explore_Sigma', std_y.detach().cpu().numpy(), train_step_idx)
-
-        self._exploration_policy_optimizer.step()
-        self._exploration_policy_optimizer.zero_grad()
 
     # This function is the body of the main training loop [L4]
     # At every iteration, it adds rollouts from the exploration policy and one of the adapted policies
@@ -450,6 +476,7 @@ class MAMLRAWR(object):
         test_rewards = []
         train_rewards = []
         rollouts = []
+        successes = []
         for i, (inner_buffer, outer_buffer) in enumerate(zip(self._inner_buffers, self._outer_buffers)):
             self._env.set_task_idx(i)
             
@@ -585,23 +612,27 @@ class MAMLRAWR(object):
 
             # Sample adapted policy trajectory, add to replay buffer i [L12]
             if train_step_idx % self._gradient_steps_per_iteration == 0:
-                adapted_trajectory, adapted_reward = self._rollout_policy(adaptation_policies[-1], self._env, test=False)
+                adapted_trajectory, adapted_reward, success = self._rollout_policy(adaptation_policies[-1], self._env, test=False)
                 train_rewards.append(adapted_reward)
+                successes.append(success)
 
                 if not (self._args.offline or self._args.offline_inner):
                     if self._args.sample_exploration_inner:
-                        exploration_trajectory, _ = self._rollout_policy(self._exploration_policy, self._env, test=False)
+                        exploration_trajectory, _, _ = self._rollout_policy(self._exploration_policy, self._env, test=False)
                         inner_buffer.add_trajectory(exploration_trajectory)
                     else:
                         inner_buffer.add_trajectory(adapted_trajectory)
                 if not (self._args.offline or self._args.offline_outer):
                     outer_buffer.add_trajectory(adapted_trajectory)
-
+            else:
+                success = False
+                    
             if train_step_idx % self._visualization_interval == 0:
                 if self._args.render:
                     print_(f'Visualizing task {i}, test rollout', self._silent)
-                test_trajectory, test_reward = self._rollout_policy(adaptation_policies[-1], self._env, test=False,
+                test_trajectory, test_reward, success_ = self._rollout_policy(adaptation_policies[-1], self._env, test=False,
                                                                     render=self._args.render)
+                successes.append(max(success, success_))
                 if self._args.render:
                     print_(f'Reward: {test_reward}', self._silent)
                 rollouts.append(test_trajectory)
@@ -636,7 +667,7 @@ class MAMLRAWR(object):
                     writer.add_scalar(f'Reward_Train/Task_{i}', adapted_reward, train_step_idx)
 
         if self._args.eval:
-            return rollouts, test_rewards, train_rewards, meta_value_losses, meta_policy_losses, value_functions[-1]
+            return rollouts, test_rewards, train_rewards, meta_value_losses, meta_policy_losses, value_functions[-1], successes
 
         # Meta-update value function [L14]
         grad = self.update_model_with_grads(self._value_function, meta_value_grads, self._value_function_optimizer, self._grad_clip)
@@ -659,7 +690,8 @@ class MAMLRAWR(object):
         ############################################################################3
         if self._args.train_exploration:
             if self._args.cvae:
-                self.train_vae_exploration(train_step_idx, writer)
+                if train_step_idx % self._args.gradient_steps_per_iteration == 0:
+                    self.train_vae_exploration(train_step_idx, writer)
             elif self._args.iw_exploration:
                 if self._args.exploration_reg is not None:
                     exploration_reg_loss = self._args.exploration_reg * iweight_logits.pow(2).mean()
@@ -675,7 +707,7 @@ class MAMLRAWR(object):
                 self.train_awr_exploration(train_step_idx, batches, meta_batches, adaptation_policies, value_functions, writer)
         ############################################################################3
 
-        return rollouts, test_rewards, train_rewards, meta_value_losses, meta_policy_losses, value_functions
+        return rollouts, test_rewards, train_rewards, meta_value_losses, meta_policy_losses, value_functions, successes
 
     #@profile
     def train(self):
@@ -700,12 +732,12 @@ class MAMLRAWR(object):
                 for i, (inner_buffer, outer_buffer) in enumerate(zip(self._inner_buffers, self._outer_buffers)):
                     print_(f'{j+1,i+1}/{self._args.initial_rollouts,len(self._inner_buffers)}\r', self._silent, end='')
                     self._env.set_task_idx(i)
-                    if self._args.render_exploration:
-                        print_(f'Task {i}, trajectory {j}', self._silent)
-                    trajectory, reward = self._rollout_policy(behavior_policy, self._env, random=self._args.random, render=self._args.render_exploration, test=self._args.render_exploration)
+                    #if self._args.render_exploration:
+                    print_(f'Task {i}, trajectory {j}', self._silent)
+                    trajectory, reward, success = self._rollout_policy(behavior_policy, self._env, random=self._args.random, render=self._args.render_exploration, test=self._args.render_exploration)
                     exploration_rewards[j,i] = reward
                     #if self._args.render_exploration:
-                    print_(f'Reward: {reward}', self._silent)
+                    print_(f'Reward: {reward} {success}', self._silent)
                     inner_buffer.add_trajectory(trajectory, force=True)
                     if not self._args.load_outer_buffer:
                         outer_buffer.add_trajectory(trajectory, force=True)
@@ -715,9 +747,11 @@ class MAMLRAWR(object):
                 print_(f'Positive exploration rewards: {(exploration_rewards>0).mean(0)}', self._silent)
 
         rewards = []
+        successes = []
         reward_count = 0
         for t in range(self._training_iterations):
-            rollouts, test_rewards, train_rewards, value, policy, vfs = self.train_step(t, summary_writer)
+            #with A.detect_anomaly():
+            rollouts, test_rewards, train_rewards, value, policy, vfs, success = self.train_step(t, summary_writer)
 
             if not self._silent:
                 if len(test_rewards):
@@ -725,11 +759,18 @@ class MAMLRAWR(object):
                     if self._args.eval:
                         if reward_count == 0:
                             rewards = test_rewards
+                            successes = [float(s) for s in success]
                         else:
                             factor = 1 / (reward_count + 1)
                             rewards = [r + (r_ - r) * factor for r, r_ in zip(rewards, test_rewards)]
+                            print('*************')
+                            print(success)
+                            print('*************')
+                            successes = [s + (float(s_) - s) * factor for s, s_ in zip(successes, success)]
+                            
                         reward_count += 1
                         print_(f'Rewards: {rewards}, {np.mean(rewards)}', self._silent)
+                        print_(f'Successes: {successes}, {np.mean(successes)}', self._silent)
                         if self._args.debug:
                             for idx, vf in enumerate(vfs):
                                 print_(idx, argmax(vf, torch.zeros(self._observation_dim, device=self._device)), self._silent)
