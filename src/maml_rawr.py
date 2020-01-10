@@ -53,8 +53,7 @@ class MAMLRAWR(object):
                  policy_hidden_layers: List[int] = [32, 32], value_function_hidden_layers: List[int] = [32, 32],
                  training_iterations: int = 20000, action_sigma: float = 0.2,
                  visualization_interval: int = 100, silent: bool = False, replay_buffer_length: int = 1000,
-                 gradient_steps_per_iteration: int = 1, discount_factor: float = 0.99, grad_clip: float = 100.,
-                 bias_linear: bool = False):
+                 gradient_steps_per_iteration: int = 1, discount_factor: float = 0.99, grad_clip: float = 100.):
         self._env = env
         self._log_dir = log_dir
         self._name = name if name is not None else 'throwaway_test_run'
@@ -69,7 +68,7 @@ class MAMLRAWR(object):
                                       policy_hidden_layers +
                                       [self._action_dim],
                                       final_activation=torch.tanh,
-                                      bias_linear=bias_linear,
+                                      bias_linear=not args.no_bias_linear,
                                       extra_head_layers=policy_head).to(args.device)
         if args.cvae:
             self._exploration_policy = CVAE(self._observation_dim, self._action_dim, args.latent_dim,
@@ -81,11 +80,10 @@ class MAMLRAWR(object):
                                            final_activation=torch.tanh).to(args.device)
 
         self._q_function = MLP([self._observation_dim + self._action_dim] + value_function_hidden_layers + [1],
-                                   bias_linear=bias_linear).to(args.device)
+                                   bias_linear=not args.no_bias_linear).to(args.device)
         self._value_function = MLP([self._observation_dim] + value_function_hidden_layers + [1],
-                                   bias_linear=bias_linear).to(args.device)
-        self._policy_lrs = [nn.Parameter(torch.tensor(args.inner_policy_lr, device=args.device, requires_grad=True)) for _ in self._adaptation_policy.parameters()]
-        self._value_lrs = [nn.Parameter(torch.tensor(args.inner_value_lr, device=args.device, requires_grad=True)) for _ in self._value_function.parameters()]
+                                   bias_linear=not args.no_bias_linear).to(args.device)
+
         print(self._adaptation_policy.seq[0]._linear.weight.mean())
         
         self._adaptation_policy_optimizer = O.Adam(self._adaptation_policy.parameters(), lr=args.outer_policy_lr)
@@ -109,12 +107,12 @@ class MAMLRAWR(object):
         self._inner_buffers = [ReplayBuffer(self._env._max_episode_steps, self._env.observation_space.shape[0], env_action_dim(self._env),
                                             max_trajectories=replay_buffer_length, discount_factor=discount_factor,
                                             immutable=args.offline or args.offline_inner, load_from=inner_buffer[i], silent=silent,
-                                            trim_suffix=args.trim_suffix)
+                                            trim_suffix=args.trim_episodes)
                                for i, task in enumerate(self._env.tasks)]
         self._outer_buffers = [ReplayBuffer(self._env._max_episode_steps, self._env.observation_space.shape[0], env_action_dim(self._env),
                                             max_trajectories=replay_buffer_length, discount_factor=discount_factor,
                                             immutable=args.offline or args.offline_outer, load_from=outer_buffer[i], silent=silent,
-                                            trim_suffix=args.trim_suffix)
+                                            trim_suffix=args.trim_episodes)
                                for i, task in enumerate(self._env.tasks)]
 
         self._training_iterations = training_iterations
