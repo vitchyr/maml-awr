@@ -105,12 +105,12 @@ class MAMLRAWR(object):
         inner_buffer = args.buffer_paths if args.load_inner_buffer else [None for _ in self._env.tasks]
         outer_buffer = args.buffer_paths if args.load_outer_buffer else [None for _ in self._env.tasks]
         self._inner_buffers = [ReplayBuffer(self._env._max_episode_steps, self._env.observation_space.shape[0], env_action_dim(self._env),
-                                            max_trajectories=replay_buffer_length, discount_factor=discount_factor,
+                                            self._env.info_dim, max_trajectories=replay_buffer_length, discount_factor=discount_factor,
                                             immutable=args.offline or args.offline_inner, load_from=inner_buffer[i], silent=silent,
                                             trim_suffix=args.trim_episodes)
                                for i, task in enumerate(self._env.tasks)]
         self._outer_buffers = [ReplayBuffer(self._env._max_episode_steps, self._env.observation_space.shape[0], env_action_dim(self._env),
-                                            max_trajectories=replay_buffer_length, discount_factor=discount_factor,
+                                            self._env.info_dim, max_trajectories=replay_buffer_length, discount_factor=discount_factor,
                                             immutable=args.offline or args.offline_outer, load_from=outer_buffer[i], silent=silent,
                                             trim_suffix=args.trim_episodes)
                                for i, task in enumerate(self._env.tasks)]
@@ -182,7 +182,11 @@ class MAMLRAWR(object):
             reward += self._args.reward_offset
             if render:
                 env.render()
-            trajectory.append(Experience(state, action, next_state, reward, done, log_prob))
+            if 'info' in info_dict:
+                trajectory.append(Experience(state, action, next_state, reward, done, log_prob,
+                                             info_dict['info'], info_dict['next_info']))
+            else:
+                trajectory.append(Experience(state, action, next_state, reward, done, log_prob))
             state = next_state
             total_reward += reward
             episode_t += 1
@@ -652,9 +656,6 @@ class MAMLRAWR(object):
                 writer.add_scalar(f'Advantage_Mean_Outer/Task_{i}', np.mean(outer_advantages), train_step_idx)
                 writer.add_scalar(f'MC_Mean_Outer/Task_{i}', np.mean(outer_mc_means), train_step_idx)
                 writer.add_scalar(f'MC_std_Outer/Task_{i}', np.mean(outer_mc_stds), train_step_idx)
-                if train_step_idx % 100 == 0:
-                    writer.add_histogram(f'Value_LR', np.asarray(self._value_lrs), train_step_idx)
-                    writer.add_histogram(f'Policy_LR', np.asarray(self._policy_lrs), train_step_idx)
                 if self._args.q:
                     writer.add_scalar(f'Loss_Q_Outer/Task_{i}', np.mean(meta_q_losses), train_step_idx)
                 writer.add_scalar(f'Loss_Value_Outer/Task_{i}', np.mean(meta_value_losses), train_step_idx)

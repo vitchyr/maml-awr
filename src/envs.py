@@ -152,15 +152,28 @@ class HalfCheetahVelEnv(HalfCheetahEnv):
         model-based control", 2012 
         (https://homes.cs.washington.edu/~todorov/papers/TodorovIROS12.pdf)
     """
-    def __init__(self, tasks: List[dict] = None, task_idx: int = 0):
+    def __init__(self, tasks: List[dict] = None, task_idx: int = 0, single_task: bool = False):
         if tasks is None:
             tasks = [{'velocity': v} for v in np.linspace(0,2,5)]
         self.tasks = tasks
         self._task = tasks[task_idx]
+        if single_task:
+            self.tasks = self.tasks[task_idx:task_idx+1]
         self._velocity = self._task['velocity']
         super(HalfCheetahVelEnv, self).__init__()
         self._max_episode_steps = 200
-        
+        self.info_dim = 1
+
+    def compute_reward(self, observation: np.ndarray, action: np.ndarray, next_observation: np.ndarray):
+        xpos_idx = 0
+        xposbefore = observation[xpos_idx]
+        xposafter = next_observation[xpos_idx]
+        forward_vel = (xposafter - xposbefore) / self.dt
+        forward_reward = -1.0 * abs(forward_vel - self._velocity)
+        ctrl_cost = 0.5 * 1e-1 * np.sum(np.square(action))
+
+        return forward_reward - ctrl_cost
+
     def step(self, action):
         xposbefore = self.sim.data.qpos[0]
         self.do_simulation(action, self.frame_skip)
@@ -174,7 +187,8 @@ class HalfCheetahVelEnv(HalfCheetahEnv):
         reward = forward_reward - ctrl_cost
         done = False
         infos = dict(reward_forward=forward_reward,
-                     reward_ctrl=-ctrl_cost, task=self._velocity)
+                     reward_ctrl=-ctrl_cost, task=self._velocity,
+                     info=xposbefore, next_info=xposafter)
         return (observation, reward, done, infos)
 
     def sample_tasks(self, num_tasks):
@@ -221,16 +235,19 @@ class HalfCheetahDirEnv(HalfCheetahEnv):
         model-based control", 2012 
         (https://homes.cs.washington.edu/~todorov/papers/TodorovIROS12.pdf)
     """
-    def __init__(self, tasks: List[dict] = None, task_idx: int = 0):
+    def __init__(self, tasks: List[dict] = None, task_idx: int = 0, single_task: bool = False):
         if tasks is None:
             tasks = [{'direction': 1}, {'direction': -1}]
         self.tasks = tasks
         self._task = tasks[task_idx]
+        if single_task:
+            self.tasks = self.tasks[task_idx:task_idx+1]
         self._direction = self._task['direction']
 
         super(HalfCheetahDirEnv, self).__init__()
-        self._max_episode_steps = 1000
-        
+        self._max_episode_steps = 200
+        self.info_dim = 1
+
     def step(self, action):
         xposbefore = self.sim.data.qpos[0]
         self.do_simulation(action, self.frame_skip)
@@ -244,7 +261,8 @@ class HalfCheetahDirEnv(HalfCheetahEnv):
         reward = forward_reward - ctrl_cost
         done = False
         infos = dict(reward_forward=forward_reward,
-            reward_ctrl=-ctrl_cost, task=self._task)
+                     reward_ctrl=-ctrl_cost, task=self._task,
+                     info=xposbefore, next_info=xposafter)
         return (observation, reward, done, infos)
 
     def set_task(self, task):

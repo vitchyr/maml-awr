@@ -70,7 +70,7 @@ def get_args() -> argparse.Namespace:
     parser.add_argument('--adaptation_temp', type=float, default=1)
     parser.add_argument('--exploration_temp', type=float, default=1)
     parser.add_argument('--no_bias_linear', action='store_true')
-    parser.add_argument('--advantage_head_coef', type=float, default=0.1)
+    parser.add_argument('--advantage_head_coef', type=float, default=None)
     parser.add_argument('--eval', action='store_true')
     parser.add_argument('--target_reward', type=float, default=None)
     parser.add_argument('--save_buffers', action='store_true')

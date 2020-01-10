@@ -113,9 +113,9 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
         if args.env == 'ant_goal':
             env = AntGoalEnv(task_idx=args.task_idx)
         elif args.env == 'cheetah_dir':
-            env = HalfCheetahDirEnv(task_idx=args.task_idx)
+            env = HalfCheetahDirEnv(task_idx=args.task_idx, single_task=True)
         elif args.env == 'cheetah_vel':
-            env = HalfCheetahVelEnv(task_idx=args.task_idx)
+            env = HalfCheetahVelEnv(task_idx=args.task_idx, single_task=True)
         elif args.env == 'ml10':
             env = get_metaworld_tasks(args.env)
         elif args.env == 'point_mass':
