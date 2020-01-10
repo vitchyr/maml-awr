@@ -731,12 +731,12 @@ class MAMLRAWR(object):
                 for i, (inner_buffer, outer_buffer) in enumerate(zip(self._inner_buffers, self._outer_buffers)):
                     print_(f'{j+1,i+1}/{self._args.initial_rollouts,len(self._inner_buffers)}\r', self._silent, end='')
                     self._env.set_task_idx(i)
-                    #if self._args.render_exploration:
-                    print_(f'Task {i}, trajectory {j}', self._silent)
+                    if self._args.render_exploration:
+                        print_(f'Task {i}, trajectory {j}', self._silent)
                     trajectory, reward, success = self._rollout_policy(behavior_policy, self._env, random=self._args.random, render=self._args.render_exploration, test=self._args.render_exploration)
                     exploration_rewards[j,i] = reward
-                    #if self._args.render_exploration:
-                    print_(f'Reward: {reward} {success}', self._silent)
+                    if self._args.render_exploration:
+                        print_(f'Reward: {reward} {success}', self._silent)
                     inner_buffer.add_trajectory(trajectory, force=True)
                     if not self._args.load_outer_buffer:
                         outer_buffer.add_trajectory(trajectory, force=True)
@@ -749,12 +749,19 @@ class MAMLRAWR(object):
         successes = []
         reward_count = 0
         for t in range(self._training_iterations):
-            #with A.detect_anomaly():
             rollouts, test_rewards, train_rewards, value, policy, vfs, success = self.train_step(t, summary_writer)
 
             if not self._silent:
                 if len(test_rewards):
-                    print_(f'{t}: {test_rewards}, {np.mean(value)}, {np.mean(policy)}, {time.time() - self._start_time}', self._silent)
+                    #print_(f'{t}: {test_rewards}, {np.mean(value)}, {np.mean(policy)}, {time.time() - self._start_time}', self._silent)
+                    print_('', self._silent)
+                    print_(f'Step {t} Rewards:', self._silent)
+                    for idx, r in enumerate(test_rewards):
+                        print_(f'Task {idx}: {r}', self._silent)
+                    print_(f'Mean Value Function Outer Loss: {np.mean(value)}', self._silent)
+                    print_(f'Mean Policy Outer Loss: {np.mean(policy)}', self._silent)
+                    print_(f'Elapsed time (secs): {time.time() - self._start_time}', self._silent)
+
                     if self._args.eval:
                         if reward_count == 0:
                             rewards = test_rewards
