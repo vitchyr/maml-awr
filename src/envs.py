@@ -164,15 +164,25 @@ class HalfCheetahVelEnv(HalfCheetahEnv):
         self._max_episode_steps = 200
         self.info_dim = 1
 
-    def compute_reward(self, observation: np.ndarray, action: np.ndarray, next_observation: np.ndarray):
+    def compute_reward(self, observation: np.ndarray, action: np.ndarray, next_observation: np.ndarray, info: np.ndarray, next_info: np.ndarray):
+        batch_shape = observation.shape[:-1]
+
+        observation = observation.reshape((-1, observation.shape[-1]))
+        action = action.reshape((-1, action.shape[-1]))
+        next_observation = next_observation.reshape((-1, next_observation.shape[-1]))
+        info = info.reshape((-1, info.shape[-1]))
+        next_info = next_info.reshape((-1, next_info.shape[-1]))
+
         xpos_idx = 0
-        xposbefore = observation[xpos_idx]
-        xposafter = next_observation[xpos_idx]
+        xposbefore = info[:,0]
+        xposafter = next_info[:,0]
         forward_vel = (xposafter - xposbefore) / self.dt
         forward_reward = -1.0 * abs(forward_vel - self._velocity)
-        ctrl_cost = 0.5 * 1e-1 * np.sum(np.square(action))
+        ctrl_cost = 0.5 * 1e-1 * np.square(action).sum(-1)
 
-        return forward_reward - ctrl_cost
+        rewards = forward_reward - ctrl_cost
+
+        return rewards.reshape(batch_shape)
 
     def step(self, action):
         xposbefore = self.sim.data.qpos[0]
