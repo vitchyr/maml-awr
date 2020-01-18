@@ -72,7 +72,9 @@ class Experience(NamedTuple):
     reward: float
     done: bool
     log_prob: float
-
+    info: np.ndarray = None
+    next_info: np.ndarray = None
+    
 
 class MiniBatch(object):
     def __init__(self, samples: np.ndarray, action_dim: int, observation_dim: int):
@@ -114,15 +116,28 @@ class MiniBatch(object):
 
 
 class ReplayBuffer(object):
-    def __init__(self, trajectory_length: int, state_dim: int, action_dim: int, max_trajectories: int = 10000,
+    @staticmethod
+    #def join(buffers: List[ReplayBuffer]) -> ReplayBuffer:
+    def join(buffers):
+        b0 = buffers[0]
+        trajectories = np.concatenate([b._trajectories for b in buffers])
+        new_buffer = ReplayBuffer(trajectories.shape[0], b0._state_dim, b0._action_dim, b0._info_dim, b0._max_trajectories,
+                                  b0._discount_factor, b0._immutable, b0._trim_suffix)
+        new_buffer._trajectories = trajectories
+        new_buffer._stored_trajectories = trajectories.shape[0]
+
+        return new_buffer
+
+    def __init__(self, trajectory_length: int, state_dim: int, action_dim: int, info_dim: int = 0, max_trajectories: int = 10000,
                  discount_factor: float = 0.99, immutable: bool = False, load_from: str = None, silent: bool = False, trim_suffix: int = 0):
-        self._trajectories = np.empty((max_trajectories, trajectory_length, state_dim + action_dim + state_dim + state_dim + 1 + 1 + 1 + 1 + 1), dtype=np.float32)
+        self._trajectories = np.empty((max_trajectories, trajectory_length, state_dim + action_dim + state_dim + state_dim + info_dim * 2 + 1 + 1 + 1 + 1 + 1), dtype=np.float32)
         self._stored_trajectories = 0
         self._new_trajectory_idx = 0
         self._max_trajectories = max_trajectories
         self._trajectory_length = trajectory_length
         self._state_dim = state_dim
         self._action_dim = action_dim
+        self._info_dim = info_dim
         self._discount_factor = discount_factor
         self._immutable = immutable
         self._trim_suffix = trim_suffix
@@ -132,8 +147,11 @@ class ReplayBuffer(object):
             trajectories = np.load(load_from)
             if trajectories.shape[1:] != self._trajectories.shape[1:]:
                 raise RuntimeError(f'Loaded old trajectories with mismatching shape (old/new {trajectories.shape}/{self._trajectories.shape})')
-
             n_seed_trajectories = min(trajectories.shape[0], self._max_trajectories)
+            if trajectories.shape[0] != self._trajectories.shape[0]:
+                if not silent:
+                    print(f'Attempted to load {trajectories.shape[0]} offline trajectories into buffer of size {self._trajectories.shape[0]}.' \
+                          f'Loading only {n_seed_trajectories} trajectories from offline buffer')
             self._trajectories[:n_seed_trajectories] = trajectories[:n_seed_trajectories]
             self._stored_trajectories = n_seed_trajectories
             self._new_trajectory_idx = n_seed_trajectories % self._max_trajectories
@@ -170,6 +188,13 @@ class ReplayBuffer(object):
             
             self._trajectories[self._new_trajectory_idx, -(idx + 1), slice_idx:slice_idx + self._state_dim] = terminal_state
             slice_idx += self._state_dim
+
+            if experience.info is not None:
+                self._trajectories[self._new_trajectory_idx, -(idx + 1), slice_idx:slice_idx + self._info_dim] = experience.info
+                slice_idx += self._info_dim
+
+                self._trajectories[self._new_trajectory_idx, -(idx + 1), slice_idx:slice_idx + self._info_dim] = experience.next_info
+                slice_idx += self._info_dim
 
             self._trajectories[self._new_trajectory_idx, -(idx + 1), slice_idx:slice_idx + 1] = experience.log_prob
             slice_idx += 1

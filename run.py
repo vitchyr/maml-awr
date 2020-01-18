@@ -1,3 +1,4 @@
+from typing import Optional, List
 import argparse
 import gym
 import numpy as np
@@ -9,111 +10,47 @@ import metaworld
 from src.tp_envs.ant_goal import AntGoalEnv
 from src.envs import PointMass1DEnv, HalfCheetahDirEnv, HalfCheetahVelEnv
 from src.maml_rawr import MAMLRAWR
-
-
-def get_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--noclamp', action='store_true')
-    parser.add_argument('--lrlr', type=float, default=1e-4)
-    parser.add_argument('--huber', action='store_true')
-    parser.add_argument('--kld_coef', type=float, default=1.0)
-    parser.add_argument('--cvae_skip', type=int, default=10)
-    parser.add_argument('--exploration_batch_size', type=int, default=64)
-    parser.add_argument('--exploration_reg', type=float, default=None)
-    parser.add_argument('--trim_suffix', type=int, default=0)
-    parser.add_argument('--episode_length', type=int, default=None)
-    parser.add_argument('--normalize_values_outer', action='store_true')
-    parser.add_argument('--normalize_values', action='store_true')
-    parser.add_argument('--fixed_exploration_task', type=int, default=None)
-    parser.add_argument('--random_task_percent', type=float, default=None)
-    parser.add_argument('--no_norm', action='store_true')
-    parser.add_argument('--no_bootstrap', action='store_true')
-    parser.add_argument('--q', action='store_true')
-    parser.add_argument('--reward_offset', type=float, default=0.)
-    parser.add_argument('--debug', action='store_true')
-    parser.add_argument('--render_exploration', action='store_true')
-    parser.add_argument('--seed', type=int, default=None)
-    parser.add_argument('--random', action='store_true')
-    parser.add_argument('--train_exploration', action='store_true')
-    parser.add_argument('--sample_exploration_inner', action='store_true')
-    parser.add_argument('--cvae', action='store_true')
-    parser.add_argument('--iw_exploration', action='store_true')
-    parser.add_argument('--traj_iw_exploration', action='store_true')
-    parser.add_argument('--unconditional', action='store_true')
-    parser.add_argument('--latent_dim', type=int, default=64)
-    parser.add_argument('--n_adaptations', type=int, default=1)
-    parser.add_argument('--pre_adapted', action='store_true')
-    parser.add_argument('--train_steps', type=int, default=100000)
-    parser.add_argument('--batch_size', type=int, default=256)
-    parser.add_argument('--inner_batch_size', type=int, default=256)
-    parser.add_argument('--inner_policy_lr', type=float, default=0.015)
-    parser.add_argument('--inner_value_lr', type=float, default=0.1)
-    parser.add_argument('--outer_policy_lr', type=float, default=1e-4)
-    parser.add_argument('--outer_value_lr', type=float, default=1e-4)
-    parser.add_argument('--exploration_lr', type=float, default=1e-4)
-    parser.add_argument('--device', type=str, default='cpu')
-    parser.add_argument('--vis_interval', type=int, default=200)
-    parser.add_argument('--log_dir', type=str, default='log')
-    parser.add_argument('--task_idx', type=int, default=None)
-    parser.add_argument('--instances', type=int, default=1)
-    parser.add_argument('--name', type=str, default=None)
-    parser.add_argument('--render', action='store_true')
-    parser.add_argument('--env', type=str, default='point_mass')
-    parser.add_argument('--gradient_steps_per_iteration', type=int, default=10)
-    parser.add_argument('--replay_buffer_size', type=int, default=1000)
-    parser.add_argument('--discount_factor', type=float, default=0.99)
-    parser.add_argument('--profile', action='store_true')
-    parser.add_argument('--vf_archive', type=str, default=None)
-    parser.add_argument('--ap_archive', type=str, default=None)
-    parser.add_argument('--ep_archive', type=str, default=None)
-    parser.add_argument('--initial_rollouts', type=int, default=40)
-    parser.add_argument('--offline', action='store_true')
-    parser.add_argument('--offline_outer', action='store_true')
-    parser.add_argument('--offline_inner', action='store_true')
-    parser.add_argument('--grad_clip', type=float, default=1e9) # Essentially no clip, but use this to measure the size of gradients
-    parser.add_argument('--exp_advantage_clip', type=float, default=10.0)
-    parser.add_argument('--maml_steps', type=int, default=1)
-    parser.add_argument('--adaptation_temp', type=float, default=1)
-    parser.add_argument('--exploration_temp', type=float, default=1)
-    parser.add_argument('--bias_linear', action='store_true')
-    parser.add_argument('--advantage_head_coef', type=float, default=None)
-    parser.add_argument('--eval', action='store_true')
-    parser.add_argument('--target_reward', type=float, default=None)
-    parser.add_argument('--save_buffers', action='store_true')
-    parser.add_argument('--ratio_clip', type=float, default=0.5)
-    parser.add_argument('--buffer_paths', type=str, nargs='+', default=None)
-    parser.add_argument('--load_inner_buffer', action='store_true')
-    parser.add_argument('--load_outer_buffer', action='store_true')
-    return parser.parse_args()
+from src.args import get_args
 
 
 def get_metaworld_tasks(env_id: str = 'ml10'):
+    def _extract_tasks(env_, skip_task_idxs: Optional[List[int]] = []):
+        task_idxs = set()
+        tasks = [None for _ in range(env.num_tasks - len(skip_task_idxs))]
+        while len(task_idxs) < env.num_tasks - len(skip_task_idxs):
+            task_dict = env.sample_tasks(1)[0]
+            task_idx = task_dict['task']
+            if task_idx not in task_idxs and task_idx not in skip_task_idxs:
+                task_idxs.add(task_idx)
+                tasks[task_idx - len(skip_task_idxs)] = task_dict
+        return tasks
+
     if env_id == 'ml10':
         from metaworld.benchmarks import ML10
-        env = ML10.get_train_tasks()
+        if args.mltest:
+            env = ML10.get_test_tasks()
+            tasks = _extract_tasks(env)
+        else:
+            env = ML10.get_train_tasks()
+            tasks = _extract_tasks(env, skip_task_idxs=[0])
 
-        task_idxs = set()
-        tasks = [None for _ in range(9)]
-        while len(task_idxs) < 9:
-            task = env.sample_tasks(1)[0]
-            if task['task'] not in task_idxs and task['task'] != 0:
-                task_idxs.add(task['task'])
-                tasks[task['task'] - 1] = task
         if args.task_idx is not None:
             tasks = [tasks[args.task_idx]]
+
         env.tasks = tasks
         print(tasks)
-        env.task_description_dim = lambda: 9
 
         def set_task_idx(idx):
             env.set_task(tasks[idx])
-        env.set_task_idx = set_task_idx
         def task_description(batch: None, one_hot: bool = True):
             one_hot = env.active_task_one_hot.astype(np.float32)
             if batch:
                 one_hot = one_hot[None,:].repeat(batch, 0)
             return one_hot
+
+        env.set_task_idx = set_task_idx
         env.task_description = task_description
+        env.task_description_dim = lambda: len(env.tasks)
         env._max_episode_steps = 150
 
         return env
@@ -176,9 +113,9 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
         if args.env == 'ant_goal':
             env = AntGoalEnv(task_idx=args.task_idx)
         elif args.env == 'cheetah_dir':
-            env = HalfCheetahDirEnv(task_idx=args.task_idx)
+            env = HalfCheetahDirEnv(task_idx=args.task_idx, single_task=True)
         elif args.env == 'cheetah_vel':
-            env = HalfCheetahVelEnv(task_idx=args.task_idx)
+            env = HalfCheetahVelEnv(task_idx=args.task_idx, single_task=True)
         elif args.env == 'ml10':
             env = get_metaworld_tasks(args.env)
         elif args.env == 'point_mass':
@@ -209,17 +146,24 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
 
+    if args.vae_steps is None:
+        args.vae_steps = args.gradient_steps_per_iteration
+
     maml_rawr = MAMLRAWR(args, env, args.log_dir, name, network_shape, network_shape, training_iterations=args.train_steps,
                          visualization_interval=args.vis_interval, silent=instance_idx > 0,
                          gradient_steps_per_iteration=args.gradient_steps_per_iteration,
                          replay_buffer_length=args.replay_buffer_size, discount_factor=args.discount_factor,
-                         grad_clip=args.grad_clip, bias_linear=args.bias_linear)
+                         grad_clip=args.grad_clip)
 
     maml_rawr.train()
 
 
 if __name__ == '__main__':
     args = get_args()
+    print("ARGS", args.offline)
+    print("ARGS_inner", args.offline_inner)
+    print("ARGS_outer", args.offline_outer)
+
     if args.instances == 1:
         if args.profile:
             import cProfile
