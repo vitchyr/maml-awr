@@ -32,7 +32,7 @@ def get_metaworld_tasks(env_id: str = 'ml10'):
             tasks = _extract_tasks(env)
         else:
             env = ML10.get_train_tasks()
-            tasks = _extract_tasks(env, skip_task_idxs=[0])
+            tasks = _extract_tasks(env)# skip_task_idxs=[0])
 
         if args.task_idx is not None:
             tasks = [tasks[args.task_idx]]
@@ -138,7 +138,7 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
     if args.env == 'point_mass':
         network_shape = [32, 32]
     else:
-        network_shape = [64, 64, 32, 32]
+        network_shape = [128, 128, 64, 32]
         
     seed = args.seed if args.seed is not None else instance_idx
     random.seed(seed)
@@ -160,10 +160,7 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
 
 if __name__ == '__main__':
     args = get_args()
-    print("ARGS", args.offline)
-    print("ARGS_inner", args.offline_inner)
-    print("ARGS_outer", args.offline_outer)
-
+    
     if args.instances == 1:
         if args.profile:
             import cProfile
