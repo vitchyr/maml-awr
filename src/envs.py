@@ -154,7 +154,7 @@ class HalfCheetahVelEnv(HalfCheetahEnv):
     """
     def __init__(self, tasks: List[dict] = None, task_idx: int = 0, single_task: bool = False):
         if tasks is None:
-            tasks = [{'velocity': v} for v in np.linspace(0,2,5)]
+            tasks = [{'velocity': v} for v in np.linspace(0,3,41)[1:]]
         self.tasks = tasks
         self._task = tasks[task_idx]
         if single_task:
@@ -163,6 +163,14 @@ class HalfCheetahVelEnv(HalfCheetahEnv):
         super(HalfCheetahVelEnv, self).__init__()
         self._max_episode_steps = 200
         self.info_dim = 1
+    
+    def _get_obs(self):
+        return np.concatenate([
+            self.sim.data.qpos.flat[1:],
+            self.sim.data.qvel.flat,
+            self.get_body_com("torso").flat,
+            np.array([self._velocity]),
+            ]).astype(np.float32).flatten()
 
     def compute_reward(self, observation: np.ndarray, action: np.ndarray, next_observation: np.ndarray, info: np.ndarray, next_info: np.ndarray):
         batch_shape = observation.shape[:-1]

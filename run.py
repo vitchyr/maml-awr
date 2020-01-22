@@ -138,7 +138,7 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
     if args.env == 'point_mass':
         network_shape = [32, 32]
     else:
-        network_shape = [128, 128, 64, 32]
+        network_shape = [256, 128, 64, 32]
         
     seed = args.seed if args.seed is not None else instance_idx
     random.seed(seed)
