@@ -1,14 +1,13 @@
 import numpy as np
-from typing import List
 
 from src.tp_envs.ant import AntEnv
 # from gym.envs.mujoco.ant import AntEnv
 
 class MultitaskAntEnv(AntEnv):
-    def __init__(self, tasks: List[dict], task_idx, **kwargs):
-        self.tasks = tasks
-        self._task = tasks[task_idx]
-        self._goal = self.tasks[task_idx]['goal']
+    def __init__(self, task={}, n_tasks=2, **kwargs):
+        self._task = task
+        self.tasks = self.sample_tasks(n_tasks)
+        self._goal = self.tasks[0]['goal']
         super(MultitaskAntEnv, self).__init__(**kwargs)
 
     """
@@ -29,11 +28,11 @@ class MultitaskAntEnv(AntEnv):
         return (observation, reward, done, infos)
     """
 
-    def set_task_idx(self, idx):
-        self._task = self.tasks[idx]
-        self._task_idx = idx
-        self._goal = self._task['goal']
 
-    def set_task(self, task):
-        self._task = task
-        self._goal = self._task['goal']
+    def get_all_task_idx(self):
+        return range(len(self.tasks))
+
+    def reset_task(self, idx):
+        self._task = self.tasks[idx]
+        self._goal = self._task['goal'] # assume parameterization of task by single vector
+        self.reset()
