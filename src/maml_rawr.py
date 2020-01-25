@@ -827,18 +827,19 @@ class MAMLRAWR(object):
                         image = env.render_rollout(rollout, f'{log_path}/{t}_{idx}.png')
                 except Exception as e:
                     pass
-
-        torch.save(self._value_function.state_dict(), f'{log_path}/vf_LATEST.pt')
-        torch.save(self._value_function.state_dict(), f'{log_path}/vf_LATEST_.pt')
-        torch.save(self._adaptation_policy.state_dict(), f'{log_path}/ap_LATEST.pt')
-        torch.save(self._adaptation_policy.state_dict(), f'{log_path}/ap_LATEST_.pt')
-        if self._args.train_exploration:
-            torch.save(self._exploration_policy.state_dict(), f'{log_path}/ep_LATEST.pt')
-            torch.save(self._exploration_policy.state_dict(), f'{log_path}/ep_LATEST_.pt')
-        if self._args.save_buffers:
-            for i, (inner_buffer, outer_buffer, full_buffer) in enumerate(zip(self._inner_buffers, self._outer_buffers, self._full_buffers)):
-                print(f'{log_path}/outer_buffer_{i}')
-                inner_buffer.save(f'{log_path}/inner_buffer_{i}')
-                outer_buffer.save(f'{log_path}/outer_buffer_{i}')
-                full_buffer.save(f'{log_path}/full_buffer_{i}')
+                
+            if t % 1000 == 0:
+                torch.save(self._value_function.state_dict(), f'{log_path}/vf_LATEST.pt')
+                torch.save(self._value_function.state_dict(), f'{log_path}/vf_LATEST_.pt')
+                torch.save(self._adaptation_policy.state_dict(), f'{log_path}/ap_LATEST.pt')
+                torch.save(self._adaptation_policy.state_dict(), f'{log_path}/ap_LATEST_.pt')
+                if self._args.train_exploration:
+                    torch.save(self._exploration_policy.state_dict(), f'{log_path}/ep_LATEST.pt')
+                    torch.save(self._exploration_policy.state_dict(), f'{log_path}/ep_LATEST_.pt')
+                if self._args.save_buffers:
+                    for i, (inner_buffer, outer_buffer, full_buffer) in enumerate(zip(self._inner_buffers, self._outer_buffers, self._full_buffers)):
+                        print(f'{log_path}/outer_buffer_{i}')
+                        inner_buffer.save(f'{log_path}/inner_buffer_{i}')
+                        outer_buffer.save(f'{log_path}/outer_buffer_{i}')
+                        full_buffer.save(f'{log_path}/full_buffer_{i}')
                     

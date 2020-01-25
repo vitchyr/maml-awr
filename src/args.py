@@ -48,6 +48,7 @@ def get_args() -> argparse.Namespace:
     parser.add_argument('--device', type=str, default='cpu')
     parser.add_argument('--vis_interval', type=int, default=1000)
     parser.add_argument('--log_dir', type=str, default='log')
+    parser.add_argument('--include_goal', action='store_true')
     parser.add_argument('--task_idx', type=int, default=None)
     parser.add_argument('--instances', type=int, default=1)
     parser.add_argument('--name', type=str, default=None)
