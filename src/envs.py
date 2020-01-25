@@ -41,7 +41,7 @@ class HalfCheetahDirEnv(HalfCheetahDirEnv_):
             except:
                 pass
             one_hot = np.zeros(len(self.tasks), dtype=np.float32)
-            one_hot[idx] = 1
+            one_hot[idx] = 1.0
             obs = super()._get_obs()
             obs = np.concatenate([obs, one_hot])
         else:
@@ -122,8 +122,15 @@ class AntDirEnv(AntDirEnv_):
         
     def _get_obs(self):
         if self.include_goal:
+            idx = 0
+            try:
+                idx = self.tasks.index(self._task)
+            except:
+                pass
+            one_hot = np.zeros(len(self.tasks), dtype=np.float32)
+            one_hot[idx] = 1.0
             obs = super()._get_obs()
-            obs = np.concatenate([obs, np.array([np.cos(self._goal), np.sin(self._goal)])])
+            obs = np.concatenate([obs, one_hot])
         else:
             obs = super()._get_obs()
         return obs
@@ -220,14 +227,30 @@ class HumanoidDirEnv(HumanoidDirEnv_):
 class WalkerRandParamsWrappedEnv(WalkerRandParamsWrappedEnv_):
     def __init__(self, tasks: List[dict] = None, task_idx: int = 0, single_task: bool = False, include_goal: bool = False):
         self.include_goal = include_goal
-        super(WalkerRandParamsWrappedEnv, self).__init__()
-        if tasks is None:
-            tasks = self.sample_tasks(50) #Only backward-forward tasks
-        self.tasks = tasks
-        self._task = tasks[task_idx]
+        super(WalkerRandParamsWrappedEnv, self).__init__(n_tasks=50)
+#        if tasks is None:
+#            tasks = self.sample_tasks(50) 
+#        self.tasks = tasks
+        self._task = self.tasks[task_idx]
         if single_task:
             self.tasks = self.tasks[task_idx:task_idx+1]
         self._max_episode_steps = 200
+        
+    def _get_obs(self):
+        if self.include_goal:
+            idx = 0
+            try:
+                idx = self._goal
+            except:
+                pass
+#            one_hot = np.zeros(len(self.tasks), dtype=np.float32)
+            one_hot = np.zeros(50, dtype=np.float32)
+            one_hot[idx] = 1.0
+            obs = super()._get_obs()
+            obs = np.concatenate([obs, one_hot])
+        else:
+            obs = super()._get_obs()
+        return obs
         
 #    def step(self, action):
 #        obs, rew, done, info = super().step(action)
