@@ -119,7 +119,14 @@ class AntDirEnv(AntDirEnv_):
         self._goal = self._task['goal']
         self._max_episode_steps = 200
         self.info_dim = 1
-        
+    
+    def step(self, action):
+        obs, rew, done, info = super().step(action)
+        if done == True:
+            rew = rew - 1.0
+            done = False
+        return (obs, rew, done, info)
+    
     def _get_obs(self):
         if self.include_goal:
             idx = 0
@@ -209,10 +216,12 @@ class HumanoidDirEnv(HumanoidDirEnv_):
             obs = super()._get_obs()
         return obs
     
-#    def step(self, action):
-#        obs, rew, done, info = super().step(action)
-#        info['info'] = self._goal
-#        return (obs, rew, done, info)
+    def step(self, action):
+        obs, rew, done, info = super().step(action)
+        if done == True:
+            rew = rew - 5.0
+            done = False
+        return (obs, rew, done, info)
     
     def set_task(self, task):
         self._task = task
@@ -252,11 +261,13 @@ class WalkerRandParamsWrappedEnv(WalkerRandParamsWrappedEnv_):
             obs = super()._get_obs()
         return obs
         
-#    def step(self, action):
-#        obs, rew, done, info = super().step(action)
-#        info['info'] = self._goal
-#        return (obs, rew, done, info)
-    
+    def step(self, action):
+        obs, rew, done, info = super().step(action)
+        if done == True:
+            rew = rew - 1.0
+            done = False
+        return (obs, rew, done, info)
+        
     def set_task_idx(self, idx):
         self._task = self.tasks[idx]
         self._goal = idx
