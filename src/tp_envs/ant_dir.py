@@ -25,11 +25,15 @@ class AntDirEnv(MultitaskAntEnv):
         contact_cost = 0.5 * 1e-3 * np.sum(
             np.square(np.clip(self.sim.data.cfrc_ext, -1, 1)))
         survive_reward = 1.0
-        reward = forward_reward - ctrl_cost - contact_cost + survive_reward
         state = self.state_vector()
         notdone = np.isfinite(state).all() \
                   and state[2] >= 0.2 and state[2] <= 1.0
-        done = not notdone
+        #done = not notdone
+        done = False
+        survive_reward = 1.0 * notdone
+        
+        reward = forward_reward - ctrl_cost - contact_cost + survive_reward
+
         ob = self._get_obs()
         return ob, reward, done, dict(
             reward_forward=forward_reward,
