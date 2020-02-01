@@ -49,7 +49,7 @@ def argmax(module: nn.Module, arg: torch.tensor):
         if d < 1e-4:
             print('breaking')
             break
-    print(f'Final d: {d}')
+    #print(f'Final d: {d}')
     return arg, out
 
 
@@ -71,7 +71,7 @@ class Experience(NamedTuple):
     next_state: np.ndarray
     reward: float
     done: bool
-    log_prob: float
+    #log_prob: float
     info: np.ndarray = None
     next_info: np.ndarray = None
     
@@ -196,8 +196,8 @@ class ReplayBuffer(object):
                 self._trajectories[self._new_trajectory_idx, -(idx + 1), slice_idx:slice_idx + self._info_dim] = experience.next_info
                 slice_idx += self._info_dim
 
-            self._trajectories[self._new_trajectory_idx, -(idx + 1), slice_idx:slice_idx + 1] = experience.log_prob
-            slice_idx += 1
+            #self._trajectories[self._new_trajectory_idx, -(idx + 1), slice_idx:slice_idx + 1] = experience.log_prob
+            #slice_idx += 1
             
             terminal_factor *= self._discount_factor
             self._trajectories[self._new_trajectory_idx, -(idx + 1), slice_idx:slice_idx + 1] = terminal_factor

@@ -57,7 +57,7 @@ def get_metaworld_tasks(env_id: str = 'ml10'):
         raise NotImplementedError()
     
 def main(args):
-    ml = 'train'
+    ml = 'mltrain'
     if args.env == 'ant_dir':
         env = AntDirEnv(task_idx=args.task_idx, single_task=True, include_goal = args.include_goal)
     elif args.env == 'ant_goal':
@@ -84,7 +84,8 @@ def main(args):
         env.action_space = gym.spaces.box.Box(env.action_space.low, env.action_space.high)
         env = TimeLimit(env, max_episode_steps = 200)
         pickle.dump(env.unwrapped._task, open(args.save_dir + '/env_{}_{}_task{}.pkl'.format(args.env, ml, args.task_idx), "wb" ))
-
+    print('test/train:', ml)
+    print('buffer_sizes:', args.replay_buffer_size, args.full_buffer_size)     
     model = SAC(MlpPolicy, #CustomSACPolicy, 
                 env, 
                 verbose=1, 
@@ -94,8 +95,9 @@ def main(args):
                 buffer_size = env._max_episode_steps * args.replay_buffer_size, 
                 full_size = args.full_buffer_size,
                 batch_size = args.batch_size, 
+                learning_starts = 1000,
                 policy_kwargs={'layers': [128, 64, 32]},
-                learning_rate = 1e-4,
+                learning_rate = 3e-4,
                 gamma = 0.99)
     
     model.learn(total_timesteps = env._max_episode_steps * args.full_buffer_size, log_interval = 10)

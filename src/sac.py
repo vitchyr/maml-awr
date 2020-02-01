@@ -484,7 +484,7 @@ class SAC(OffPolicyRLModel):
                         obs = self.env.reset()
                     episode_rewards.append(0.0)
 
-                    maybe_is_success = info.get('is_success')
+                    maybe_is_success = info.get('success')
                     if maybe_is_success is not None:
                         episode_successes.append(float(maybe_is_success))
 
