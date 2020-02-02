@@ -156,8 +156,9 @@ class SAC(OffPolicyRLModel):
                 self.sess = tf_util.make_session(num_cpu=self.n_cpu_tf_sess, graph=self.graph)
 
                 self.replay_buffer = ReplayBuffer(self.buffer_size)
-                self.traj_buffer = TrajBuffer(self.env._max_episode_steps, self.env.observation_space.shape[0], self.env.action_space.shape[0],
-                                            0, max_trajectories=self.full_size, discount_factor=self.gamma)
+                self.traj_buffers = [TrajBuffer(self.env._max_episode_steps, self.env.observation_space.shape[0], self.env.action_space.shape[0],
+                                            0, max_trajectories=self.full_size, discount_factor=self.gamma) for _ in range(len(self.env.unwrapped.tasks))]
+                self.env.task_idx = 0
                 with tf.variable_scope("input", reuse=False):
                     # Create policy and target TF objects
                     self.policy_tf = self.policy(self.sess, self.observation_space, self.action_space,
@@ -479,12 +480,14 @@ class SAC(OffPolicyRLModel):
                     if self.action_noise is not None:
                         self.action_noise.reset()
                     if not isinstance(self.env, VecEnv):
-                        self.traj_buffer.add_trajectory(trajectory)
+                        self.traj_buffers[self.env.task_idx].add_trajectory(trajectory)
+                        self.env.task_idx = (self.env.task_idx + 1) % len(self.env.unwrapped.tasks)
+                        self.env.unwrapped.set_task_idx(self.env.task_idx)
                         trajectory= []
                         obs = self.env.reset()
                     episode_rewards.append(0.0)
 
-                    maybe_is_success = info.get('success')
+                    maybe_is_success = info.get('is_success')
                     if maybe_is_success is not None:
                         episode_successes.append(float(maybe_is_success))
 
@@ -518,8 +521,10 @@ class SAC(OffPolicyRLModel):
                     infos_values = []
                 
                 if step % 1000==0:
-                    self.traj_buffer.save(self.buffer_log + '_{}'.format(self.task))
-            self.traj_buffer.save(self.buffer_log + 'task_{}'.format(self.task))
+                    for i, buffer in enumerate(self.traj_buffers):
+                        buffer.save(self.buffer_log + 'task_{}'.format(i))
+            for i, buffer in enumerate(self.traj_buffers):
+                buffer.save(self.buffer_log + 'task_{}'.format(i))
             return self
 
     def action_probability(self, observation, state=None, mask=None, actions=None, logp=False):
