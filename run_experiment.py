@@ -57,19 +57,19 @@ def get_metaworld_tasks(env_id: str = 'ml10'):
         raise NotImplementedError()
     
 def main(args):
-    ml = 'mltrain'
+    ml = 'train'
     if args.env == 'ant_dir':
-        env = AntDirEnv(task_idx=args.task_idx, single_task=True, include_goal = args.include_goal)
+        env = AntDirEnv(task_idx=args.task_idx, single_task=False, include_goal = args.include_goal)
     elif args.env == 'ant_goal':
-        env = AntGoalEnv(task_idx=args.task_idx, single_task=True, include_goal = args.include_goal)
+        env = AntGoalEnv(task_idx=args.task_idx, single_task=False, include_goal = args.include_goal)
     elif args.env == 'cheetah_dir':
-        env = HalfCheetahDirEnv(task_idx=args.task_idx, single_task=True, include_goal = args.include_goal)
+        env = HalfCheetahDirEnv(task_idx=args.task_idx, single_task=False, include_goal = args.include_goal)
     elif args.env == 'cheetah_vel':
-        env = HalfCheetahVelEnv(task_idx=args.task_idx, single_task=True, include_goal = args.include_goal)
+        env = HalfCheetahVelEnv(task_idx=args.task_idx, single_task=False, include_goal = args.include_goal)
     elif args.env == 'humanoid_dir':
-        env = HumanoidDirEnv(task_idx=args.task_idx, single_task=True, include_goal = args.include_goal)
+        env = HumanoidDirEnv(task_idx=args.task_idx, single_task=False, include_goal = args.include_goal)
     elif args.env == 'walker_param':
-        env = WalkerRandParamsWrappedEnv(task_idx=args.task_idx, single_task=True, include_goal = args.include_goal)
+        env = WalkerRandParamsWrappedEnv(task_idx=args.task_idx, single_task=False, include_goal = args.include_goal)
     elif args.env == 'ml10':
         env = get_metaworld_tasks(args.env)
         env.set_task_idx(0)
@@ -83,9 +83,8 @@ def main(args):
         env.observation_space = gym.spaces.box.Box(env.observation_space.low, env.observation_space.high)
         env.action_space = gym.spaces.box.Box(env.action_space.low, env.action_space.high)
         env = TimeLimit(env, max_episode_steps = 200)
-        pickle.dump(env.unwrapped._task, open(args.save_dir + '/env_{}_{}_task{}.pkl'.format(args.env, ml, args.task_idx), "wb" ))
-    print('test/train:', ml)
-    print('buffer_sizes:', args.replay_buffer_size, args.full_buffer_size)     
+        pickle.dump(env.unwrapped.tasks, open(args.save_dir + '/env_{}_{}_task{}.pkl'.format(args.env, ml, args.task_idx), "wb" ))
+
     model = SAC(MlpPolicy, #CustomSACPolicy, 
                 env, 
                 verbose=1, 
@@ -95,12 +94,11 @@ def main(args):
                 buffer_size = env._max_episode_steps * args.replay_buffer_size, 
                 full_size = args.full_buffer_size,
                 batch_size = args.batch_size, 
-                learning_starts = 1000,
-                policy_kwargs={'layers': [128, 64, 32]},
-                learning_rate = 3e-4,
+                policy_kwargs={'layers': [128, 64]},
+                learning_rate = 1e-4,
                 gamma = 0.99)
     
-    model.learn(total_timesteps = env._max_episode_steps * args.full_buffer_size, log_interval = 10)
+    model.learn(total_timesteps = env._max_episode_steps * args.full_buffer_size * len(env.unwrapped.tasks), log_interval = 10)
 
 if __name__ == '__main__':
     random.seed(17)
@@ -111,11 +109,6 @@ if __name__ == '__main__':
     args.task_idx = int(args.task_idx)
     
     main(args)
-
-
-
-
-
 
 
 
