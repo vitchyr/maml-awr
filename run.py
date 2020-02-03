@@ -102,6 +102,8 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
             env = AntDirEnv(include_goal = args.include_goal)
         elif args.env == 'ant_goal':
             env = AntGoalEnv(include_goal = args.include_goal)
+        elif args.env == 'happy_ant_goal':
+            env = AntGoalEnv(include_goal = args.include_goal, reward_offset = 4.0, can_die = True)
         elif args.env == 'cheetah_dir':
             env = HalfCheetahDirEnv(include_goal = args.include_goal)
         elif args.env == 'cheetah_vel':
@@ -126,6 +128,8 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
             env = AntDirEnv(task_idx=args.task_idx, single_task=True, include_goal = args.include_goal)
         elif args.env == 'ant_goal':
             env = AntGoalEnv(task_idx=args.task_idx, single_task=True, include_goal = args.include_goal)
+        elif args.env == 'happy_ant_goal':
+            env = AntGoalEnv(task_idx=args.task_idx, single_task=True, include_goal = args.include_goal, reward_offset = 4.0, can_die = True)
         elif args.env == 'cheetah_dir':
             env = HalfCheetahDirEnv(task_idx=args.task_idx, single_task=True, include_goal = args.include_goal)
         elif args.env == 'cheetah_vel':

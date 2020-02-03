@@ -217,7 +217,7 @@ class MAMLRAWR(object):
             state = next_state
             total_reward += reward
             episode_t += 1
-            if episode_t >= env._max_episode_steps:
+            if episode_t >= env._max_episode_steps or done:
                 break
 
         if isinstance(policy, CVAE):

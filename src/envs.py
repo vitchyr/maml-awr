@@ -158,9 +158,10 @@ class AntDirEnv(AntDirEnv_):
         self.reset()
         
 class AntGoalEnv(AntGoalEnv_):
-    def __init__(self, tasks: List[dict] = None, task_idx: int = 0, single_task: bool = False, include_goal: bool = False):
+    def __init__(self, tasks: List[dict] = None, task_idx: int = 0, single_task: bool = False, include_goal: bool = False,
+                 reward_offset: float = 0.0, can_die: bool = False):
         self.include_goal = include_goal
-        super(AntGoalEnv, self).__init__()
+        super().__init__()
         if tasks is None:
             tasks = self.sample_tasks(130) #Only backward-forward tasks
         self.tasks = tasks
@@ -170,6 +171,8 @@ class AntGoalEnv(AntGoalEnv_):
         self._goal = self._task['goal']
         self._max_episode_steps = 200
         self.info_dim = 2
+        self.reward_offset = reward_offset
+        self.can_die = can_die
     
     def _get_obs(self):
         if self.include_goal:
