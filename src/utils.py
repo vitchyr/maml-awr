@@ -172,8 +172,8 @@ class ReplayBuffer(object):
 
         mc_reward = 0
         terminal_state = None
-        terminal_factor = 1
         missing_elements = self._trajectory_length - len(trajectory)
+        terminal_factor = 1 if missing_elements == 0 else 0 # For incomplete trajectories, we don't want any bootstrap value estimation
         for idx, experience in enumerate(trajectory[::-1]):
             if terminal_state is None:
                 terminal_state = experience.next_state
