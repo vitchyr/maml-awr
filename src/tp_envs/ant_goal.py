@@ -9,7 +9,6 @@ from . import register_env
 class AntGoalEnv(MultitaskAntEnv):
     def __init__(self, task={}, n_tasks=2, randomize_tasks=True, **kwargs):
         super().__init__(task, n_tasks, **kwargs)
-
         
     def step(self, action):
         self.do_simulation(action, self.frame_skip)
@@ -20,7 +19,6 @@ class AntGoalEnv(MultitaskAntEnv):
         self.data.site_xpos[goal_marker_idx,-1] = 1
 
         xposafter = np.array(self.get_body_com("torso"))
-
         goal_reward = self.reward_offset - np.sum(np.abs(xposafter[:2] - self._goal)) # make it happy, not suicidal
 
         ctrl_cost = .1 * np.square(action).sum()

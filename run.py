@@ -107,7 +107,7 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
         elif args.env == 'cheetah_dir':
             env = HalfCheetahDirEnv(include_goal = args.include_goal)
         elif args.env == 'cheetah_vel':
-            env = HalfCheetahVelEnv(include_goal = args.include_goal)
+            env = HalfCheetahVelEnv(include_goal = args.include_goal, train=not args.eval, one_hot_goal=args.one_hot_goal)
         elif args.env == 'humanoid_dir':
             env = HumanoidDirEnv(include_goal = args.include_goal)
         elif args.env == 'walker_param':
@@ -119,11 +119,10 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
             #envs = [PointMass1DEnv(0), PointMass1DEnv(-1)]
         else:
             env = get_gym_env(args.env)
-            
+
         with open(args.env + '_tasks', 'wb') as tasks_list:
             pickle.dump(env.tasks, tasks_list)
-    else:
-        
+    else:        
         if args.env == 'ant_dir':
             env = AntDirEnv(task_idx=args.task_idx, single_task=True, include_goal = args.include_goal)
         elif args.env == 'ant_goal':

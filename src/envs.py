@@ -6,6 +6,7 @@ from src.tp_envs.ant_dir import AntDirEnv as AntDirEnv_
 from src.tp_envs.ant_goal import AntGoalEnv as AntGoalEnv_
 from src.tp_envs.humanoid_dir import HumanoidDirEnv as HumanoidDirEnv_
 from src.tp_envs.walker_rand_params_wrapper import WalkerRandParamsWrappedEnv as WalkerRandParamsWrappedEnv_
+from gym.spaces import Box
 
 
 class Env(object):
@@ -66,27 +67,47 @@ class HalfCheetahDirEnv(HalfCheetahDirEnv_):
         self.reset()
         
 class HalfCheetahVelEnv(HalfCheetahVelEnv_):
-    def __init__(self, tasks: List[dict] = None, task_idx: int = 0, single_task: bool = False, include_goal: bool = False):
+    def __init__(self, tasks: List[dict] = None, task_idx: int = 0, single_task: bool = False, include_goal: bool = False, train: bool = True, one_hot_goal: bool = False):
         self.include_goal = include_goal
-        super(HalfCheetahVelEnv, self).__init__()        
-        if tasks is None:
-            #tasks = [{'velocity': v} for v in np.linspace(0,3,41)[1:]]
-            tasks = self.sample_tasks(130)
-        self.tasks = tasks
-        self._task = tasks[task_idx]
+        self.one_hot_goal = one_hot_goal
+        self.train = train
+        tasks = self.sample_tasks(50)
+        tasks = tasks[::2] if train else tasks[1::2]
         if single_task:
-            self.tasks = self.tasks[task_idx:task_idx+1]
-        self._goal_vel = self._task['velocity']
-        self._goal = self._goal_vel
+            tasks = tasks[task_idx:task_idx+1]
+        super(HalfCheetahVelEnv, self).__init__(tasks)
         self._max_episode_steps = 200
         self.info_dim = 1
-    
+        '''
+        if self.include_goal:
+            if one_hot_goal:
+                low = np.concatenate((self.observation_space.low, np.zeros((len(self.tasks),))))
+                high = np.concatenate((self.observation_space.high, np.ones((len(self.tasks),))))
+            else:
+                low = np.concatenate((self.observation_space.low, np.zeros((1,))))
+                high = np.concatenate((self.observation_space.high, 3 * np.ones((1,))))
+            self.observation_space = Box(low, high)
+        '''
+
     def _get_obs(self):
         if self.include_goal:
             obs = super()._get_obs()
-            obs = np.concatenate([obs, np.array([self._goal_vel])])
+            if self.one_hot_goal:
+                if self.train:
+                    goal = np.zeros((len(self.tasks),))
+                    goal[self.tasks.index(self._task)] = 1
+                else:
+                    goal = np.ones((len(self.tasks),))
+                    goal /= goal.sum()
+            else:
+                if self.train:
+                    goal = np.array([self._goal_vel])
+                else:
+                    goal = np.array([-1.])
+            obs = np.concatenate([obs, goal])
         else:
             obs = super()._get_obs()
+
         return obs
         
 #    def step(self, action):
@@ -161,6 +182,8 @@ class AntGoalEnv(AntGoalEnv_):
     def __init__(self, tasks: List[dict] = None, task_idx: int = 0, single_task: bool = False, include_goal: bool = False,
                  reward_offset: float = 0.0, can_die: bool = False):
         self.include_goal = include_goal
+        self.reward_offset = reward_offset
+        self.can_die = can_die
         super().__init__()
         if tasks is None:
             tasks = self.sample_tasks(130) #Only backward-forward tasks
@@ -171,8 +194,6 @@ class AntGoalEnv(AntGoalEnv_):
         self._goal = self._task['goal']
         self._max_episode_steps = 200
         self.info_dim = 2
-        self.reward_offset = reward_offset
-        self.can_die = can_die
     
     def _get_obs(self):
         if self.include_goal:

@@ -7,6 +7,7 @@ import math
 import random
 import time
 import json
+import pickle
 
 import higher
 import numpy as np
@@ -67,6 +68,7 @@ class MAMLRAWR(object):
         self._name = name if name is not None else 'throwaway_test_run'
         self._args = args
         self._start_time = time.time()
+
         self._observation_dim = env.observation_space.shape[0]
         self._action_dim = env_action_dim(env)
 
@@ -745,7 +747,8 @@ class MAMLRAWR(object):
 
         with open(f'{log_path}/args.txt', 'w') as args_file:
             json.dump(self._args.__dict__, args_file)
-
+        with open(f'{log_path}/tasks.pkl', 'wb') as tasks_file:
+            pickle.dump(self._env.tasks, tasks_file)
         tensorboard_log_path = f'{log_path}/tb'
         if not os.path.exists(tensorboard_log_path):
             os.makedirs(tensorboard_log_path)
