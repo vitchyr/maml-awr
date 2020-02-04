@@ -65,15 +65,25 @@ def kld(p, q):
     return torch.distributions.kl_divergence(dp, dq).sum(-1)
     
 
-class Experience(NamedTuple):
-    state: np.ndarray
-    action: np.ndarray
-    next_state: np.ndarray
-    reward: float
-    done: bool
-    #log_prob: float
-    info: np.ndarray = None
-    next_info: np.ndarray = None
+class Experience():
+    def __init__(self,
+        state: np.ndarray,
+        action: np.ndarray,
+        next_state: np.ndarray,
+        reward: float,
+        done: bool,
+        #log_prob: float,
+        info: np.ndarray = None,
+        next_info: np.ndarray = None):
+
+        self.state = state
+        self.action = action
+        self.next_state = next_state
+        self.reward = reward
+        self.done = done
+        self.info = info
+        self.next_info = next_info
+        return
     
 
 class MiniBatch(object):
@@ -144,15 +154,15 @@ class ReplayBuffer(object):
         self._trim_suffix = trim_suffix
         if load_from is not None:
             if not silent:
-                print(f'Loading trajectories from {load_from}')
+                print('Loading trajectories from')
             trajectories = np.load(load_from)
             if trajectories.shape[1:] != self._trajectories.shape[1:]:
-                raise RuntimeError(f'Loaded old trajectories with mismatching shape (old/new {trajectories.shape}/{self._trajectories.shape})')
+                raise RuntimeError('Loaded old trajectories with mismatching shape (old/new)')
             n_seed_trajectories = min(trajectories.shape[0], self._max_trajectories)
             if trajectories.shape[0] != self._trajectories.shape[0]:
                 if not silent:
-                    print(f'Attempted to load {trajectories.shape[0]} offline trajectories into buffer of size {self._trajectories.shape[0]}.' \
-                          f'Loading only {n_seed_trajectories} trajectories from offline buffer')
+                    print('Attempted to load offline trajectories into buffer of size.' \
+                          'Loading only trajectories from offline buffer')
             self._trajectories[:n_seed_trajectories] = trajectories[:n_seed_trajectories]
             self._stored_trajectories = n_seed_trajectories
             self._new_trajectory_idx = n_seed_trajectories % self._max_trajectories
