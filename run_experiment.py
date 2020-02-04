@@ -59,17 +59,17 @@ def get_metaworld_tasks(env_id: str = 'ml10'):
 def main(args):
     ml = 'train'
     if args.env == 'ant_dir':
-        env = AntDirEnv(task_idx=args.task_idx, single_task=False, include_goal = args.include_goal)
+        env = AntDirEnv(task_idx=args.task_idx, single_task=True, include_goal = args.include_goal)
     elif args.env == 'ant_goal':
-        env = AntGoalEnv(task_idx=args.task_idx, single_task=False, include_goal = args.include_goal)
+        env = AntGoalEnv(task_idx=args.task_idx, single_task=True, include_goal = args.include_goal)
     elif args.env == 'cheetah_dir':
-        env = HalfCheetahDirEnv(task_idx=args.task_idx, single_task=False, include_goal = args.include_goal)
+        env = HalfCheetahDirEnv(task_idx=args.task_idx, single_task=True, include_goal = args.include_goal)
     elif args.env == 'cheetah_vel':
-        env = HalfCheetahVelEnv(task_idx=args.task_idx, single_task=False, include_goal = args.include_goal)
+        env = HalfCheetahVelEnv(task_idx=args.task_idx, single_task=True, include_goal = args.include_goal)
     elif args.env == 'humanoid_dir':
-        env = HumanoidDirEnv(task_idx=args.task_idx, single_task=False, include_goal = args.include_goal)
+        env = HumanoidDirEnv(task_idx=args.task_idx, single_task=True, include_goal = args.include_goal)
     elif args.env == 'walker_param':
-        env = WalkerRandParamsWrappedEnv(task_idx=args.task_idx, single_task=False, include_goal = args.include_goal)
+        env = WalkerRandParamsWrappedEnv(task_idx=args.task_idx, single_task=True, include_goal = args.include_goal)
     elif args.env == 'ml10':
         env = get_metaworld_tasks(args.env)
         env.set_task_idx(0)
