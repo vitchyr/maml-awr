@@ -59,17 +59,17 @@ def get_metaworld_tasks(env_id: str = 'ml10'):
 def main(args):
     ml = 'train'
     if args.env == 'ant_dir':
-        env = AntDirEnv(task_idx=args.task_idx, single_task=False, include_goal = args.include_goal)
+        env = AntDirEnv(task_idx=args.task_idx, single_task=args.single_task, include_goal = args.include_goal)
     elif args.env == 'ant_goal':
-        env = AntGoalEnv(task_idx=args.task_idx, single_task=False, include_goal = args.include_goal)
+        env = AntGoalEnv(task_idx=args.task_idx, single_task=args.single_task, include_goal = args.include_goal)
     elif args.env == 'cheetah_dir':
-        env = HalfCheetahDirEnv(task_idx=args.task_idx, single_task=False, include_goal = args.include_goal)
+        env = HalfCheetahDirEnv(task_idx=args.task_idx, single_task=args.single_task, include_goal = args.include_goal)
     elif args.env == 'cheetah_vel':
-        env = HalfCheetahVelEnv(task_idx=args.task_idx, single_task=False, include_goal = args.include_goal)
+        env = HalfCheetahVelEnv(task_idx=args.task_idx, single_task=args.single_task, include_goal = args.include_goal)
     elif args.env == 'humanoid_dir':
-        env = HumanoidDirEnv(task_idx=args.task_idx, single_task=False, include_goal = args.include_goal)
+        env = HumanoidDirEnv(task_idx=args.task_idx, single_task=args.single_task, include_goal = args.include_goal)
     elif args.env == 'walker_param':
-        env = WalkerRandParamsWrappedEnv(task_idx=args.task_idx, single_task=False, include_goal = args.include_goal)
+        env = WalkerRandParamsWrappedEnv(task_idx=args.task_idx, single_task=True, include_goal = args.include_goal)
     elif args.env == 'ml10':
         env = get_metaworld_tasks(args.env)
         env.set_task_idx(0)
@@ -94,8 +94,8 @@ def main(args):
                 buffer_size = env._max_episode_steps * args.replay_buffer_size, 
                 full_size = args.full_buffer_size,
                 batch_size = args.batch_size, 
-                policy_kwargs={'layers': [128, 64]},
-                learning_rate = 1e-4,
+                policy_kwargs={'layers': [256, 256]},
+                learning_rate = 3e-4,
                 gamma = 0.99)
     
     model.learn(total_timesteps = env._max_episode_steps * args.full_buffer_size * len(env.unwrapped.tasks), log_interval = 10)
@@ -109,16 +109,3 @@ if __name__ == '__main__':
     args.task_idx = int(args.task_idx)
     
     main(args)
-
-
-
-
-
-
-
-
-
-
-
-
-
