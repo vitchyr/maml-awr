@@ -3,6 +3,13 @@ import argparse
 
 def get_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
+    parser.add_argument('--action_sigma', type=float, default=0.2)
+    parser.add_argument('--traj_hold_out_test', dest='traj_hold_out_train', action='store_false')
+    parser.add_argument('--traj_hold_out_train', action='store_true', default=None)
+    parser.add_argument('--trim_obs', type=int, default=None)
+    parser.add_argument('--n_tasks', type=int, default=None)
+    parser.add_argument('--multitask_eval', action='store_true')
+    parser.add_argument('--multitask_bias_only', action='store_true')
     parser.add_argument('--mltest', action='store_true')
     parser.add_argument('--vae_steps', type=int, default=None)
     parser.add_argument('--noclamp', action='store_true')
@@ -63,7 +70,7 @@ def get_args() -> argparse.Namespace:
     parser.add_argument('--vf_archive', type=str, default=None)
     parser.add_argument('--ap_archive', type=str, default=None)
     parser.add_argument('--ep_archive', type=str, default=None)
-    parser.add_argument('--initial_rollouts', type=int, default=50)
+    parser.add_argument('--initial_rollouts', type=int, default=30)
     parser.add_argument('--offline', action='store_true')
     parser.add_argument('--offline_outer', action='store_true')
     parser.add_argument('--offline_inner', action='store_true')

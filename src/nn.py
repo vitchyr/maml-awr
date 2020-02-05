@@ -126,7 +126,8 @@ class MLP(nn.Module):
         self._head = extra_head_layers is not None
 
         linear = BiasLinear if bias_linear else nn.Linear
-
+        self.bias_linear = bias_linear
+        
         for idx in range(len(layer_widths) - 1):
             self.seq.add_module(f'fc_{idx}', linear(layer_widths[idx], layer_widths[idx + 1]))
             if idx < len(layer_widths) - 2:
@@ -143,7 +144,10 @@ class MLP(nn.Module):
                 self.head_seq.add_module(f'fc_{idx}', linear(extra_head_layers[idx], extra_head_layers[idx + 1]))
                 if idx < len(extra_head_layers) - 2:
                     self.seq.add_module(f'relu_{idx}', nn.ReLU())
-                
+
+    def bias_parameters(self):
+        return [self.seq[0]._linear.bias] if self.bias_linear else [self.seq[0].bias]
+                    
     def forward(self, x: torch.tensor, acts: Optional[torch.tensor] = None):
         if self._head and acts is not None:
             h = self.pre_seq(x)

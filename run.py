@@ -96,8 +96,7 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
     
-
-    if args.task_idx is None:
+    if args.task_idx is None:        
         if args.env == 'ant_dir':
             env = AntDirEnv(include_goal = args.include_goal)
         elif args.env == 'ant_goal':
@@ -107,7 +106,7 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
         elif args.env == 'cheetah_dir':
             env = HalfCheetahDirEnv(include_goal = args.include_goal)
         elif args.env == 'cheetah_vel':
-            env = HalfCheetahVelEnv(include_goal = args.include_goal, train=not args.eval, one_hot_goal=args.one_hot_goal)
+            env = HalfCheetahVelEnv(include_goal = args.include_goal, train=not args.multitask_eval, one_hot_goal=args.one_hot_goal, n_tasks=args.n_tasks)
         elif args.env == 'humanoid_dir':
             env = HumanoidDirEnv(include_goal = args.include_goal)
         elif args.env == 'walker_param':
@@ -132,7 +131,7 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
         elif args.env == 'cheetah_dir':
             env = HalfCheetahDirEnv(task_idx=args.task_idx, single_task=True, include_goal = args.include_goal)
         elif args.env == 'cheetah_vel':
-            env = HalfCheetahVelEnv(task_idx=args.task_idx, single_task=True, include_goal = args.include_goal)
+            env = HalfCheetahVelEnv(n_tasks=args.n_tasks, task_idx=args.task_idx, single_task=True, include_goal = args.include_goal, one_hot_goal=args.one_hot_goal, train=not args.multitask_eval)
         elif args.env == 'humanoid_dir':
             env = HumanoidDirEnv(task_idx=args.task_idx, single_task=True, include_goal = args.include_goal)
         elif args.env == 'walker_param':
@@ -143,6 +142,8 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
         else:
             raise NotImplementedError('TODO: eric-mitchell')
             #env = gym.make(args.env)
+
+    print(env.tasks)
             
     if args.episode_length is not None:
         env._max_episode_steps = args.episode_length
@@ -158,7 +159,7 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
         network_shape = [32, 32]
     else:
         network_shape = [256, 128, 64, 32]
-        
+
     seed = args.seed if args.seed is not None else instance_idx
     random.seed(seed)
     np.random.seed(seed)

@@ -129,9 +129,10 @@ class ReplayBuffer(object):
         return new_buffer
 
     def __init__(self, trajectory_length: int, state_dim: int, action_dim: int, info_dim: int = 0, max_trajectories: int = 10000,
-                 discount_factor: float = 0.99, immutable: bool = False, load_from: str = None, silent: bool = False, trim_suffix: int = 0):
-        self._trajectories = np.empty((max_trajectories, trajectory_length, state_dim + action_dim + state_dim + state_dim + info_dim * 2 + 1 + 1 + 1 + 1), dtype=np.float32)
-        self._trajectories.fill(np.float('nan'))
+                 discount_factor: float = 0.99, immutable: bool = False, load_from: str = None, silent: bool = False, trim_suffix: int = 0,
+                 trim_obs: int = None):
+        self._trajectories = np.empty((max_trajectories, trajectory_length, state_dim + action_dim + state_dim + state_dim + info_dim * 2 + 1 + 1 + 1 + 1 + int(load_from is not None)), dtype=np.float32)
+        #self._trajectories.fill(np.float('nan'))
         self._stored_trajectories = 0
         self._new_trajectory_idx = 0
         self._max_trajectories = max_trajectories
@@ -142,6 +143,8 @@ class ReplayBuffer(object):
         self._discount_factor = discount_factor
         self._immutable = immutable
         self._trim_suffix = trim_suffix
+        self._trim_obs = trim_obs
+        self.has_nan = False
         if load_from is not None:
             if not silent:
                 print(f'Loading trajectories from {load_from}')
@@ -156,6 +159,10 @@ class ReplayBuffer(object):
             self._trajectories[:n_seed_trajectories] = trajectories[:n_seed_trajectories]
             self._stored_trajectories = n_seed_trajectories
             self._new_trajectory_idx = n_seed_trajectories % self._max_trajectories
+            self.has_nan = np.isnan(self._trajectories).any()
+            if (self._trajectories[:,:,-1] == 0).all():
+                print('chopping off zeros')
+                self._trajectories = self._trajectories[:,:,:-1]
 
     def __len__(self):
         return self._stored_trajectories
@@ -173,6 +180,8 @@ class ReplayBuffer(object):
         mc_reward = 0
         terminal_state = None
         missing_elements = self._trajectory_length - len(trajectory)
+        if missing_elements > 0:
+            self.has_nan = True
         terminal_factor = 1 if missing_elements == 0 else 0 # For incomplete trajectories, we don't want any bootstrap value estimation
         for idx, experience in enumerate(trajectory[::-1]):
             if terminal_state is None:
@@ -226,18 +235,34 @@ class ReplayBuffer(object):
         for trajectory in trajectories:
             self.add_trajectory(trajectory, force)
 
-    def sample(self, batch_size, trajectory: bool = False, complete: bool = False):
-        valid = (~np.isnan(self._trajectories)).all(-1)
-        all_trajectory_idxs, all_time_steps = np.where(valid)
-        idxs = np.random.choice(all_trajectory_idxs.shape[0], batch_size)
-        trajectory_idxs = all_trajectory_idxs[idxs]
-        time_steps = all_time_steps[idxs]
-        #idxs = np.random.choice(np.arange(self._stored_trajectories * (self._trajectory_length - self._trim_suffix)), batch_size)
-        #trajectory_idxs = idxs // (self._trajectory_length - self._trim_suffix)
-        #time_steps = idxs % (self._trajectory_length - self._trim_suffix)
+    def sample(self, batch_size, trajectory: bool = False, complete: bool = False, train: bool = None):
+        if self.has_nan:
+            valid = (~np.isnan(self._trajectories)).all(-1)
+            all_trajectory_idxs, all_time_steps = np.where(valid)
+            idxs = np.random.choice(all_trajectory_idxs.shape[0], batch_size)
+            trajectory_idxs = all_trajectory_idxs[idxs]
+            time_steps = all_time_steps[idxs]
+        else:
+            idxs = np.random.choice(np.arange(self._stored_trajectories * (self._trajectory_length - self._trim_suffix)), batch_size)
+            trajectory_idxs = idxs // (self._trajectory_length - self._trim_suffix)
+            time_steps = idxs % (self._trajectory_length - self._trim_suffix)
+
+        if train is not None:    
+            if train:
+                odd = trajectory_idxs % 2 == 1
+                trajectory_idxs[odd] = trajectory_idxs[odd] - 1
+            else:
+                even = trajectory_idxs % 2 == 0
+                trajectory_idxs[even] = trajectory_idxs[even] - 1
+                trajectory_idxs[trajectory_idxs < 0] = 1
 
         batch = self._trajectories[trajectory_idxs, time_steps]
         if not trajectory:
+            if self._trim_obs is not None:
+                batch[:,self._state_dim-self._trim_obs:self._state_dim] = 0
+                batch[:,self._state_dim+self._action_dim+self._state_dim-self._trim_obs:self._state_dim+self._action_dim+self._state_dim] = 0
+                batch[:,self._state_dim+self._action_dim+self._state_dim*2-self._trim_obs:self._state_dim+self._action_dim+self._state_dim*2] = 0
+                
             return batch
         else:
             if complete:
@@ -259,7 +284,7 @@ def generate_test_trajectory(state_dim: int, action_dim: int, trajectory_length:
         next_state = np.random.uniform(0,1,(state_dim,))
         reward = np.random.uniform()
         trajectory.append(Experience(state, action, next_state, reward, idx == trajectory_length - 1))
-
+        
     return trajectory
 
 if __name__ == '__main__':    
