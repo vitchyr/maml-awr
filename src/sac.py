@@ -522,9 +522,9 @@ class SAC(OffPolicyRLModel):
                 
                 if step % 1000==0:
                     for i, buffer in enumerate(self.traj_buffers):
-                        buffer.save(self.buffer_log + 'task_{}'.format(i))
+                        buffer.save(self.buffer_log + 'sub_task_{}'.format(i))
             for i, buffer in enumerate(self.traj_buffers):
-                buffer.save(self.buffer_log + 'task_{}'.format(i))
+                buffer.save(self.buffer_log + 'sub_task_{}'.format(i))
             return self
 
     def action_probability(self, observation, state=None, mask=None, actions=None, logp=False):
