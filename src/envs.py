@@ -141,11 +141,6 @@ class AntDirEnv(AntDirEnv_):
         else:
             obs = super()._get_obs()
         return obs
-        
-#    def step(self, action):
-#        obs, rew, done, info = super().step(action)
-#        info['info'] = self._goal
-#        return (obs, rew, done, info)
     
     def set_task(self, task):
         self._task = task
@@ -165,6 +160,7 @@ class AntGoalEnv(AntGoalEnv_):
             tasks = self.sample_tasks(130) #Only backward-forward tasks
         self.tasks = tasks
         self._task = tasks[task_idx]
+        self.task = tasks[task_idx]
         if single_task:
             self.tasks = self.tasks[task_idx:task_idx+1]
         self._goal = self._task['goal']
@@ -237,9 +233,9 @@ class WalkerRandParamsWrappedEnv(WalkerRandParamsWrappedEnv_):
     def __init__(self, tasks: List[dict] = None, task_idx: int = 0, single_task: bool = False, include_goal: bool = False):
         self.include_goal = include_goal
         super(WalkerRandParamsWrappedEnv, self).__init__(n_tasks=50)
-#        if tasks is None:
-#            tasks = self.sample_tasks(50) 
-#        self.tasks = tasks
+        if tasks is None:
+            tasks = self.sample_tasks(50) 
+        self.tasks = tasks
         self._task = self.tasks[task_idx]
         if single_task:
             self.tasks = self.tasks[task_idx:task_idx+1]
@@ -261,12 +257,12 @@ class WalkerRandParamsWrappedEnv(WalkerRandParamsWrappedEnv_):
             obs = super()._get_obs()
         return obs
         
-    def step(self, action):
-        obs, rew, done, info = super().step(action)
-        if done == True:
-            rew = rew - 1.0
-            done = False
-        return (obs, rew, done, info)
+#    def step(self, action):
+#        obs, rew, done, info = super().step(action)
+#        if done == True:
+#            rew = rew - 1.0
+#            done = False
+#        return (obs, rew, done, info)
         
     def set_task_idx(self, idx):
         self._task = self.tasks[idx]
