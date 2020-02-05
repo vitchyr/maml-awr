@@ -31,7 +31,7 @@ def run_experiments(args):
 		if not os.path.exists(curr_output_dir):
 			os.mkdir(curr_output_dir)
 			
-		subprocess.call(cmd, shell=False)
+		subprocess.Popen(cmd)
 	
 	return
 
