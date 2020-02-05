@@ -3,53 +3,42 @@ import sys
 import time
 import subprocess
 import numpy as np
+import argparse
+import subprocess
 
 output_dir = "output/"
 
-def fetch(loop_sleep_secs):
-    loop = (loop_sleep_secs != 0)
+cmd_template = "python3 run_experiment.py --replay_buffer_size 500 --full_buffer_size 10000 --single_task True --env walker_param --task_idx {:d} --save_dir {:s}"
 
-    instances = np.genfromtxt(inst_file, dtype="str")
-    if len(instances.shape) == 1:
-        instances = [instances]
+def get_args():
+	parser = argparse.ArgumentParser()
+	parser.add_argument('--task_beg', type=int, default=0)
+	parser.add_argument('--task_end', type=int, default=1)
+	return parser.parse_args()
 	
-    print("Instances:")
-    print(instances)
+def run_experiments(args):
+	task_beg = args.task_beg
+	task_end = args.task_end
+	print("Task beg: ", task_beg)
+	print("Task end: ", task_end)
+	
+	for task_id in range(task_beg, task_end):
+		curr_output_dir = os.path.join(output_dir, "task_{0:03d}".format(task_id))
+		cmd = cmd_template.format(task_id, curr_output_dir)
+		
+		print("cmd". cmd)
+		
+		if not os.path.exists(curr_output_dir):
+			os.mkdir(curr_output_dir)
+			
+		subprocess.call(cmd, shell=True)
+	
+	return
 
-    if not os.path.exists(output_dir):
-        os.mkdir(output_dir)
-
-    while True:
-        for inst in instances:
-            id = inst[0]
-            if not id.startswith("#"):
-                addr = inst[1]
-                inst_dir = output_dir + id + "/"
-    
-                if not os.path.exists(inst_dir):
-                    os.mkdir(inst_dir)
-
-                for src_file in src_files:
-                    if id.startswith("aws"):
-                        cmd = "pscp -i \"xbpeng_aws.ppk\" ec2-user@{:s}:/home/ec2-user/compsci_stuff/maml-awr/output/{:s} {:s}/".format(addr, src_file, inst_dir)
-                    elif id.startswith("gce"):
-                        cmd = "pscp -i \"xbpeng_gce.ppk\" xbpeng@{:s}:/home/xbpeng/compsci_stuff/maml-awr/output/{:s} {:s}/".format(addr, src_file, inst_dir)
-                    else:
-                        assert False, "Unsupportd instance {:s}".format(id)
-
-                    print("cmd: " + cmd)
-                    subprocess.call(cmd, shell=True)
-
-        if (loop):
-            time.sleep(loop_sleep_secs)
-        else:
-            break
-
-    return
-    
 def main():
-    fetch(0)
-    return
+	args = get_args()
+	run_experiments(args)
+	return
 
 if __name__ == '__main__':
-    main()
+	main()
