@@ -89,7 +89,7 @@ def main(args):
                 env, 
                 verbose=1, 
                 tensorboard_log = args.save_dir + '/tensorboard/log_{}_{}_task_{}'.format(args.env, ml, args.task_idx),
-                buffer_log = args.save_dir + '/buffers_{}_{}_'.format(args.env, ml),
+                buffer_log = args.save_dir + '/buffers_{}_{}_{}_'.format(args.env, ml, args.task_idx),
                 task = args.task_idx,
                 buffer_size = env._max_episode_steps * args.replay_buffer_size, 
                 full_size = args.full_buffer_size,
