@@ -8,7 +8,7 @@ import subprocess
 
 output_dir = "output/"
 
-cmd_template = "python3 run_experiment.py --replay_buffer_size 500 --full_buffer_size 10000 --single_task true --env walker_param --task_idx {:d} --save_dir {:s}"
+cmd_template = "python3 run_experiment.py --replay_buffer_size 500 --full_buffer_size 10000 --single_task --env walker_param --task_idx {:d} --save_dir {:s}"
 
 def get_args():
 	parser = argparse.ArgumentParser()
