@@ -109,9 +109,9 @@ class HalfCheetahVelEnv(HalfCheetahVelEnv_):
 class AntDirEnv(AntDirEnv_):
     def __init__(self, tasks: List[dict] = None, task_idx: int = 0, single_task: bool = False, include_goal: bool = False):
         self.include_goal = include_goal
-        super(AntDirEnv, self).__init__(forward_backward=True)
+        super(AntDirEnv, self).__init__(forward_backward=False)
         if tasks is None:
-            tasks = self.sample_tasks(2) #Only backward-forward tasks
+            tasks = self.sample_tasks(50) #Only backward-forward tasks
         self.tasks = tasks
         self._task = tasks[task_idx]
         if single_task:
@@ -120,12 +120,12 @@ class AntDirEnv(AntDirEnv_):
         self._max_episode_steps = 200
         self.info_dim = 1
     
-    def step(self, action):
-        obs, rew, done, info = super().step(action)
-        if done == True:
-            rew = rew - 1.0
-            done = False
-        return (obs, rew, done, info)
+#    def step(self, action):
+#        obs, rew, done, info = super().step(action)
+#        if done == True:
+#            rew = rew - 1.0
+#            done = False
+#        return (obs, rew, done, info)
     
     def _get_obs(self):
         if self.include_goal:
