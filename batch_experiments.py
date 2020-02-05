@@ -26,7 +26,7 @@ def run_experiments(args):
 		curr_output_dir = os.path.join(output_dir, "task_{0:03d}".format(task_id))
 		cmd = cmd_template.format(task_id, curr_output_dir)
 		
-		print("cmd". cmd)
+		print("cmd", cmd)
 		
 		if not os.path.exists(curr_output_dir):
 			os.mkdir(curr_output_dir)
