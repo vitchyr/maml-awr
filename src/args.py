@@ -3,6 +3,7 @@ import argparse
 
 def get_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
+    parser.add_argument('--task_batch_size', type=int, default=None)
     parser.add_argument('--action_sigma', type=float, default=0.2)
     parser.add_argument('--traj_hold_out_test', dest='traj_hold_out_train', action='store_false')
     parser.add_argument('--traj_hold_out_train', action='store_true', default=None)
@@ -86,7 +87,9 @@ def get_args() -> argparse.Namespace:
     parser.add_argument('--save_buffers', action='store_true')
     parser.add_argument('--save_dir', type=str, default='./save/')
     parser.add_argument('--ratio_clip', type=float, default=0.5)
+    parser.add_argument('--task_config', type=str, default=None)
     parser.add_argument('--buffer_paths', type=str, nargs='+', default=None)
+    parser.add_argument('--test_buffer_paths', type=str, nargs='+', default=None)
     parser.add_argument('--load_inner_buffer', action='store_true')
     parser.add_argument('--load_outer_buffer', action='store_true')
     return parser.parse_args()

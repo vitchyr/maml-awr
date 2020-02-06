@@ -20,7 +20,10 @@ class Env(object):
         raise NotImplementedError()
 
 class HalfCheetahDirEnv(HalfCheetahDirEnv_):
-    def __init__(self, tasks: List[dict] = None, task_idx: int = 0, single_task: bool = False, include_goal: bool = False):
+    def __init__(self, n_tasks: int, tasks: List[dict] = None, task_idx: int = 0, single_task: bool = False, include_goal: bool = False):
+        if n_tasks != 2:
+            raise ValueError('Can only have 2 tasks for direction task')
+
         self.include_goal = include_goal
         super(HalfCheetahDirEnv, self).__init__()
         if tasks is None:
