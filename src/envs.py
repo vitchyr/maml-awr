@@ -121,11 +121,13 @@ class HalfCheetahVelEnv(HalfCheetahVelEnv_):
         self.reset()
 
 class AntDirEnv(AntDirEnv_):
-    def __init__(self, tasks: List[dict] = None, task_idx: int = 0, single_task: bool = False, include_goal: bool = False):
+    def __init__(self, tasks: List[dict] = None, task_idx: int = 0, single_task: bool = False, include_goal: bool = False, n_tasks: int = None):
+        if n_tasks is None:
+            n_tasks = 2
         self.include_goal = include_goal
-        super(AntDirEnv, self).__init__(forward_backward=True)
+        super(AntDirEnv, self).__init__(forward_backward=False)
         if tasks is None:
-            tasks = self.sample_tasks(2) #Only backward-forward tasks
+            tasks = self.sample_tasks(n_tasks)
         self.tasks = tasks
         self._task = tasks[task_idx]
         if single_task:

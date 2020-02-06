@@ -130,8 +130,8 @@ class ReplayBuffer(object):
 
     def __init__(self, trajectory_length: int, state_dim: int, action_dim: int, info_dim: int = 0, max_trajectories: int = 10000,
                  discount_factor: float = 0.99, immutable: bool = False, load_from: str = None, silent: bool = False, trim_suffix: int = 0,
-                 trim_obs: int = None):
-        self._trajectories = np.empty((max_trajectories, trajectory_length, state_dim + action_dim + state_dim + state_dim + info_dim * 2 + 1 + 1 + 1 + 1 + int(load_from is not None)), dtype=np.float32)
+                 trim_obs: int = None, pad: bool = False):
+        self._trajectories = np.empty((max_trajectories, trajectory_length, state_dim + action_dim + state_dim + state_dim + info_dim * 2 + 1 + 1 + 1 + 1 + int(pad)), dtype=np.float32)
         #self._trajectories.fill(np.float('nan'))
         self._stored_trajectories = 0
         self._new_trajectory_idx = 0
@@ -149,8 +149,9 @@ class ReplayBuffer(object):
             if not silent:
                 print(f'Loading trajectories from {load_from}')
             trajectories = np.load(load_from)
+
             if trajectories.shape[1:] != self._trajectories.shape[1:]:
-                raise RuntimeError(f'Loaded old trajectories with mismatching shape (old/new {trajectories.shape}/{self._trajectories.shape})')
+                raise RuntimeError(f'Loaded old trajectories with mismatching shape [do you need to pad?] (old/new {trajectories.shape}/{self._trajectories.shape})')
             n_seed_trajectories = min(trajectories.shape[0], self._max_trajectories)
             if trajectories.shape[0] != self._trajectories.shape[0]:
                 if not silent:
@@ -163,6 +164,10 @@ class ReplayBuffer(object):
             if (self._trajectories[:,:,-1] == 0).all():
                 print('chopping off zeros')
                 self._trajectories = self._trajectories[:,:,:-1]
+
+            if self._immutable:
+                valid = (~np.isnan(self._trajectories)).all(-1)
+                self.all_traj_idxs, self.all_time_steps = np.where(valid)
 
     def __len__(self):
         return self._stored_trajectories
@@ -237,8 +242,11 @@ class ReplayBuffer(object):
 
     def sample(self, batch_size, trajectory: bool = False, complete: bool = False, train: bool = None):
         if self.has_nan:
-            valid = (~np.isnan(self._trajectories)).all(-1)
-            all_trajectory_idxs, all_time_steps = np.where(valid)
+            if self.all_traj_idxs is None:
+                valid = (~np.isnan(self._trajectories)).all(-1)
+                all_trajectory_idxs, all_time_steps = np.where(valid)
+            else:
+                all_trajectory_idxs, all_time_steps = self.all_traj_idxs, self.all_time_steps
             idxs = np.random.choice(all_trajectory_idxs.shape[0], batch_size)
             trajectory_idxs = all_trajectory_idxs[idxs]
             time_steps = all_time_steps[idxs]
@@ -262,7 +270,7 @@ class ReplayBuffer(object):
                 batch[:,self._state_dim-self._trim_obs:self._state_dim] = 0
                 batch[:,self._state_dim+self._action_dim+self._state_dim-self._trim_obs:self._state_dim+self._action_dim+self._state_dim] = 0
                 batch[:,self._state_dim+self._action_dim+self._state_dim*2-self._trim_obs:self._state_dim+self._action_dim+self._state_dim*2] = 0
-                
+            assert not np.isnan(batch).any()
             return batch
         else:
             if complete:

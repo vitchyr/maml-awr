@@ -3,6 +3,7 @@ import argparse
 
 def get_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
+    parser.add_argument('--pad_buffers', action='store_true')
     parser.add_argument('--task_batch_size', type=int, default=None)
     parser.add_argument('--action_sigma', type=float, default=0.2)
     parser.add_argument('--traj_hold_out_test', dest='traj_hold_out_train', action='store_false')

@@ -94,7 +94,6 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
 
     with open(args.task_config, 'r') as f:
         task_config = json.load(f, object_hook=lambda d: namedtuple('X', d.keys())(*d.values()))
-        print(task_config)
 
     seed = args.seed if args.seed is not None else instance_idx
     random.seed(seed)
@@ -104,7 +103,11 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
     
     if args.task_idx is None:        
         if args.env == 'ant_dir':
-            env = AntDirEnv(include_goal = args.include_goal)
+            tasks = []
+            for idx in range(task_config.total_tasks):
+                with open(task_config.task_path_prefix + f'{idx}.pkl', 'rb') as f:
+                    tasks.append(pickle.load(f)[0])
+            env = AntDirEnv(tasks=tasks, include_goal = args.include_goal, n_tasks=task_config.total_tasks)
         elif args.env == 'ant_goal':
             env = AntGoalEnv(include_goal = args.include_goal)
         elif args.env == 'happy_ant_goal':
@@ -150,8 +153,8 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
             raise NotImplementedError('TODO: eric-mitchell')
             #env = gym.make(args.env)
 
-    print(env.tasks)
             
+    print(env.tasks)
     if args.episode_length is not None:
         env._max_episode_steps = args.episode_length
         

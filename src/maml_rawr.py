@@ -49,6 +49,15 @@ def print_(s: str, c: bool, end=None):
             print(s)
 
 
+def check_config(config):
+    assert len(config.train_tasks) == len(config.train_buffers), f'{len(config.train_tasks)}, {len(config.train_buffers)}'
+    assert len(config.test_tasks) == len(config.test_buffers), f'{len(config.test_tasks)}, {len(config.test_buffers)}'
+    if len(set(config.train_tasks).intersection(set(config.test_tasks))) > 0:
+        print('WARNING: TEST AND TRAIN TASKS NOT DISJOINT')
+    if len(set(config.train_buffers).intersection(set(config.test_buffers))) > 0:
+        print('WARNING: TEST AND TRAIN BUFFERS NOT DISJOINT')
+
+
 class MAMLRAWR(object):
     def __init__(self, args: argparse.Namespace, task_config: dict, env: Env, log_dir: str, 
                  name: str = None,
@@ -67,6 +76,8 @@ class MAMLRAWR(object):
         self._args = args
         self._start_time = time.time()
         self.task_config = task_config
+
+        check_config(task_config)
         
         self._observation_dim = env.observation_space.shape[0] + (args.trim_obs if args.trim_obs else 0)
         self._action_dim = env_action_dim(env)
@@ -140,22 +151,22 @@ class MAMLRAWR(object):
         self._test_buffers = [ReplayBuffer(self._env._max_episode_steps, self._observation_dim, env_action_dim(self._env),
                                             0, max_trajectories=replay_buffer_length, discount_factor=discount_factor,
                                             immutable=True, load_from=test_buffers[i], silent=silent,
-                                            trim_suffix=args.trim_episodes, trim_obs=args.trim_obs)
+                                            trim_suffix=args.trim_episodes, trim_obs=args.trim_obs, pad=args.pad_buffers)
                                for i, task in enumerate(self.task_config.test_tasks)]
         self._inner_buffers = [ReplayBuffer(self._env._max_episode_steps, self._observation_dim, env_action_dim(self._env),
                                             0, max_trajectories=replay_buffer_length, discount_factor=discount_factor,
                                             immutable=args.offline or args.offline_inner, load_from=inner_buffers[i], silent=silent,
-                                            trim_suffix=args.trim_episodes, trim_obs=args.trim_obs)
+                                            trim_suffix=args.trim_episodes, trim_obs=args.trim_obs, pad=args.pad_buffers)
                                for i, task in enumerate(self.task_config.train_tasks)]
         self._outer_buffers = [ReplayBuffer(self._env._max_episode_steps, self._observation_dim, env_action_dim(self._env),
                                             0, max_trajectories=replay_buffer_length, discount_factor=discount_factor,
                                             immutable=args.offline or args.offline_outer, load_from=outer_buffers[i], silent=silent,
-                                            trim_suffix=args.trim_episodes, trim_obs=args.trim_obs)
+                                            trim_suffix=args.trim_episodes, trim_obs=args.trim_obs, pad=args.pad_buffers)
                                for i, task in enumerate(self.task_config.train_tasks)]
         self._full_buffers = [ReplayBuffer(self._env._max_episode_steps, self._observation_dim, env_action_dim(self._env),
                                            0, max_trajectories=args.full_buffer_size, discount_factor=discount_factor,
                                            immutable=args.offline or args.offline_outer, silent=silent,
-                                           trim_suffix=args.trim_episodes, trim_obs=args.trim_obs)
+                                           trim_suffix=args.trim_episodes, trim_obs=args.trim_obs, pad=args.pad_buffers)
                               for i, task in enumerate(self.task_config.train_tasks)]
         
         self._training_iterations = training_iterations
@@ -412,6 +423,9 @@ class MAMLRAWR(object):
             rewards.append(adapted_reward)
             successes.append(success)
             writer.add_scalar(f'Eval_Reward/Task_{i}', adapted_reward, train_step_idx)
+
+        writer.add_scalar(f'Eval_Reward/Mean', np.mean(rewards), train_step_idx)
+
         return trajectories, rewards, successes
 
     # This function is the body of the main training loop [L4]
@@ -443,17 +457,15 @@ class MAMLRAWR(object):
 
             # Sample J training batches for independent adaptations [L7]
             if self._args.iw_exploration:
-                np_batch, np_trajectories = inner_buffer.sample(self._args.inner_batch_size * self._args.maml_steps, trajectory=True,
-                                                                train=self._args.traj_hold_out_train)
+                np_batch, np_trajectories = inner_buffer.sample(self._args.inner_batch_size * self._args.maml_steps, trajectory=True)
                 pyt_trajectories = [torch.tensor(np_traj, requires_grad=False).to(self._device) for np_traj in np_trajectories]
             else:
-                np_batch = inner_buffer.sample(self._args.inner_batch_size * self._args.maml_steps, trajectory=False,
-                                               train=self._args.traj_hold_out_train)
+                np_batch = inner_buffer.sample(self._args.inner_batch_size * self._args.maml_steps, trajectory=False)
             np_batch = np_batch.reshape((self._args.maml_steps, self._args.inner_batch_size, -1))
             pyt_batch = torch.tensor(np_batch, requires_grad=False).to(self._device)
             batches.append(pyt_batch)
 
-            meta_batch = torch.tensor(outer_buffer.sample(self._args.batch_size, train=self._args.traj_hold_out_train),
+            meta_batch = torch.tensor(outer_buffer.sample(self._args.batch_size),
                                       requires_grad=False).to(self._device)
             meta_batches.append(meta_batch)
 

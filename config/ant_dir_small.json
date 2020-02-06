@@ -1,0 +1,28 @@
+{
+    "total_tasks": 50,
+    "train_tasks": [26,27,29,
+		    31,32,34,35,36,37,38,39,
+		    40],
+    "test_tasks": [28,30,33,42],
+    "task_path_prefix": "offline_data/ant_dir/tasks/env_ant_dir_train_task",
+    "train_buffers": [
+	"offline_data/ant_dir/buffers/buffers_ant_dir_train_26_sub_task_0.npy",
+	"offline_data/ant_dir/buffers/buffers_ant_dir_train_27_sub_task_0.npy",
+	"offline_data/ant_dir/buffers/buffers_ant_dir_train_29_sub_task_0.npy",
+	"offline_data/ant_dir/buffers/buffers_ant_dir_train_31_sub_task_0.npy",
+	"offline_data/ant_dir/buffers/buffers_ant_dir_train_32_sub_task_0.npy",
+	"offline_data/ant_dir/buffers/buffers_ant_dir_train_34_sub_task_0.npy",
+	"offline_data/ant_dir/buffers/buffers_ant_dir_train_35_sub_task_0.npy",
+	"offline_data/ant_dir/buffers/buffers_ant_dir_train_36_sub_task_0.npy",
+	"offline_data/ant_dir/buffers/buffers_ant_dir_train_37_sub_task_0.npy",
+	"offline_data/ant_dir/buffers/buffers_ant_dir_train_38_sub_task_0.npy",
+	"offline_data/ant_dir/buffers/buffers_ant_dir_train_39_sub_task_0.npy",
+	"offline_data/ant_dir/buffers/buffers_ant_dir_train_40_sub_task_0.npy"
+    ],
+    "test_buffers": [
+	"offline_data/ant_dir/buffers/buffers_ant_dir_train_28_sub_task_0.npy",
+	"offline_data/ant_dir/buffers/buffers_ant_dir_train_30_sub_task_0.npy",
+	"offline_data/ant_dir/buffers/buffers_ant_dir_train_33_sub_task_0.npy",
+	"offline_data/ant_dir/buffers/buffers_ant_dir_train_42_sub_task_0.npy"
+    ]
+}
