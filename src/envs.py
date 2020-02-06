@@ -256,6 +256,9 @@ class WalkerRandParamsWrappedEnv(WalkerRandParamsWrappedEnv_):
     def __init__(self, tasks: List[dict] = None, task_idx: int = 0, single_task: bool = False, include_goal: bool = False):
         self.include_goal = include_goal
         super(WalkerRandParamsWrappedEnv, self).__init__(n_tasks=50)
+        if tasks is not None:
+            self.tasks = tasks
+            self.reset_task(task_idx)
 #        if tasks is None:
 #            tasks = self.sample_tasks(50) 
 #        self.tasks = tasks

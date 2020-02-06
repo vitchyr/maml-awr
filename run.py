@@ -120,7 +120,14 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
         elif args.env == 'humanoid_dir':
             env = HumanoidDirEnv(include_goal = args.include_goal)
         elif args.env == 'walker_param':
-            env = WalkerRandParamsWrappedEnv(include_goal = args.include_goal)
+            tasks = []
+            for idx in range(task_config.total_tasks):
+                try:
+                    with open(task_config.task_path_prefix.format(idx, idx), 'rb') as f:
+                        tasks.append(pickle.load(f)[0])
+                except Exception as e:
+                    tasks.append(None)
+            env = WalkerRandParamsWrappedEnv(tasks=tasks, include_goal = args.include_goal)
         elif args.env == 'ml10':
             env = get_metaworld_tasks(args.env)
         elif args.env == 'point_mass':                
