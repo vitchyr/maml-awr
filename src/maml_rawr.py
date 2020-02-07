@@ -158,11 +158,14 @@ class MAMLRAWR(object):
                                             immutable=args.offline or args.offline_inner, load_from=inner_buffers[i], silent=silent,
                                             trim_suffix=args.trim_episodes, trim_obs=args.trim_obs, pad=args.pad_buffers)
                                for i, task in enumerate(self.task_config.train_tasks)]
-        self._outer_buffers = [ReplayBuffer(self._env._max_episode_steps, self._observation_dim, env_action_dim(self._env),
-                                            0, max_trajectories=replay_buffer_length, discount_factor=discount_factor,
-                                            immutable=args.offline or args.offline_outer, load_from=outer_buffers[i], silent=silent,
-                                            trim_suffix=args.trim_episodes, trim_obs=args.trim_obs, pad=args.pad_buffers)
-                               for i, task in enumerate(self.task_config.train_tasks)]
+        if not args.offline:
+            self._outer_buffers = [ReplayBuffer(self._env._max_episode_steps, self._observation_dim, env_action_dim(self._env),
+                                                0, max_trajectories=replay_buffer_length, discount_factor=discount_factor,
+                                                immutable=args.offline or args.offline_outer, load_from=outer_buffers[i], silent=silent,
+                                                trim_suffix=args.trim_episodes, trim_obs=args.trim_obs, pad=args.pad_buffers)
+                                   for i, task in enumerate(self.task_config.train_tasks)]
+        else:
+            self._outer_buffers = self._inner_buffers
         self._full_buffers = [ReplayBuffer(self._env._max_episode_steps, self._observation_dim, env_action_dim(self._env),
                                            0, max_trajectories=args.full_buffer_size, discount_factor=discount_factor,
                                            immutable=args.offline or args.offline_outer, silent=silent,
@@ -410,13 +413,15 @@ class MAMLRAWR(object):
             batch = torch.tensor(test_buffer.sample(self._args.inner_batch_size), requires_grad=False).to(self._device)
             opt = O.SGD(self._value_function.parameters(), lr=self._inner_value_lr)
             with higher.innerloop_ctx(self._value_function, opt) as (f_value_function, diff_value_opt):
-                loss, _, _, _ = self.value_function_loss_on_batch(f_value_function, batch, task_idx=test_task_idx, inner=True)
-                diff_value_opt.step(loss)
+                for _ in range(1):
+                    loss, _, _, _ = self.value_function_loss_on_batch(f_value_function, batch, task_idx=test_task_idx, inner=True)
+                    diff_value_opt.step(loss)
 
             opt = O.SGD(self._adaptation_policy.parameters(), lr=self._inner_policy_lr)
             with higher.innerloop_ctx(self._adaptation_policy, opt) as (f_adaptation_policy, diff_policy_opt):
-                loss, _, _ = self.adaptation_policy_loss_on_batch(f_adaptation_policy, None, f_value_function, batch, inner=True)
-                diff_policy_opt.step(loss)
+                for _ in range(self._args.maml_steps):
+                    loss, _, _ = self.adaptation_policy_loss_on_batch(f_adaptation_policy, None, f_value_function, batch, inner=True)
+                    diff_policy_opt.step(loss)
 
             adapted_trajectory, adapted_reward, success = self._rollout_policy(f_adaptation_policy, self._env, test=True)
             trajectories.append(adapted_trajectory)
@@ -457,11 +462,11 @@ class MAMLRAWR(object):
 
             # Sample J training batches for independent adaptations [L7]
             if self._args.iw_exploration:
-                np_batch, np_trajectories = inner_buffer.sample(self._args.inner_batch_size * self._args.maml_steps, trajectory=True)
+                np_batch, np_trajectories = inner_buffer.sample(self._args.inner_batch_size, trajectory=True)
                 pyt_trajectories = [torch.tensor(np_traj, requires_grad=False).to(self._device) for np_traj in np_trajectories]
             else:
-                np_batch = inner_buffer.sample(self._args.inner_batch_size * self._args.maml_steps, trajectory=False)
-            np_batch = np_batch.reshape((self._args.maml_steps, self._args.inner_batch_size, -1))
+                np_batch = inner_buffer.sample(self._args.inner_batch_size, trajectory=False)
+
             pyt_batch = torch.tensor(np_batch, requires_grad=False).to(self._device)
             batches.append(pyt_batch)
 
@@ -500,9 +505,9 @@ class MAMLRAWR(object):
             opt = O.SGD(self._value_function.parameters(), lr=self._inner_value_lr)
             with higher.innerloop_ctx(self._value_function, opt) as (f_value_function, diff_value_opt):
                 if self._inner_value_lr > 0 and len(self._env.tasks) > 1:
-                    for inner_batch in pyt_batch:
+                    for _ in range(1):
                         # Compute loss and adapt value function [L9]
-                        loss, value_inner, mc_inner, mc_std_inner = self.value_function_loss_on_batch(f_value_function, inner_batch, inner=True, task_idx=i)#, iweights=iweights_no_action_)
+                        loss, value_inner, mc_inner, mc_std_inner = self.value_function_loss_on_batch(f_value_function, pyt_batch, inner=True, task_idx=i)#, iweights=iweights_no_action_)
                         inner_values.append(value_inner.item())
                         inner_mc_means.append(mc_inner.item())
                         inner_mc_stds.append(mc_std_inner.item())
@@ -556,10 +561,10 @@ class MAMLRAWR(object):
             opt = O.SGD(self._adaptation_policy.parameters(), lr=self._inner_policy_lr)
             with higher.innerloop_ctx(self._adaptation_policy, opt) as (f_adaptation_policy, diff_policy_opt):
                 if self._inner_policy_lr > 0 and len(self._env.tasks) > 1:
-                    for inner_batch in pyt_batch:
+                    for _ in range(self._args.maml_steps):
                         # Compute loss and adapt policy [L10]
                         loss, adv, weight = self.adaptation_policy_loss_on_batch(f_adaptation_policy, adapted_q_function,
-                                                                                 adapted_value_function, inner_batch, inner=True, iweights=iweights_)
+                                                                                 adapted_value_function, pyt_batch, inner=True, iweights=iweights_)
                         diff_policy_opt.step(loss)
                         inner_policy_losses.append(loss.item())
                         inner_advantages.append(adv.item())
