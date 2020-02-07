@@ -107,15 +107,15 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
             for idx in range(task_config.total_tasks):
                 with open(task_config.task_path_prefix + f'{idx}.pkl', 'rb') as f:
                     tasks.append(pickle.load(f)[0])
-            env = AntDirEnv(tasks=tasks, include_goal = args.include_goal, n_tasks=task_config.total_tasks)
+            env = AntDirEnv(tasks=tasks, include_goal = args.include_goal or args.multitask, n_tasks=task_config.total_tasks)
         elif args.env == 'ant_goal':
             env = AntGoalEnv(include_goal = args.include_goal)
         elif args.env == 'happy_ant_goal':
             env = AntGoalEnv(include_goal = args.include_goal, reward_offset = 4.0, can_die = True)
         elif args.env == 'cheetah_dir':
-            env = HalfCheetahDirEnv(include_goal = args.include_goal, n_tasks=task_config.total_tasks)
+            env = HalfCheetahDirEnv(include_goal = args.include_goal or args.multitask, n_tasks=task_config.total_tasks)
         elif args.env == 'cheetah_vel':
-            env = HalfCheetahVelEnv(include_goal = args.include_goal, train=not args.multitask_eval, one_hot_goal=args.one_hot_goal,
+            env = HalfCheetahVelEnv(include_goal = args.include_goal or args.multitask, train=not args.multitask_eval, one_hot_goal=args.one_hot_goal or args.multitask,
                                     n_tasks=task_config.total_tasks)
         elif args.env == 'humanoid_dir':
             env = HumanoidDirEnv(include_goal = args.include_goal)
@@ -127,7 +127,7 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
                         tasks.append(pickle.load(f)[0])
                 except Exception as e:
                     tasks.append(None)
-            env = WalkerRandParamsWrappedEnv(tasks=tasks, include_goal = args.include_goal)
+            env = WalkerRandParamsWrappedEnv(tasks=tasks, include_goal = args.include_goal or args.multitask)
         elif args.env == 'ml10':
             env = get_metaworld_tasks(args.env)
         elif args.env == 'point_mass':                

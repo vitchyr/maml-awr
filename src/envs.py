@@ -23,7 +23,7 @@ class HalfCheetahDirEnv(HalfCheetahDirEnv_):
     def __init__(self, n_tasks: int, tasks: List[dict] = None, task_idx: int = 0, single_task: bool = False, include_goal: bool = False):
         if n_tasks != 2:
             raise ValueError('Can only have 2 tasks for direction task')
-
+        self.n_tasks = n_tasks
         self.include_goal = include_goal
         super(HalfCheetahDirEnv, self).__init__()
         if tasks is None:
@@ -129,6 +129,7 @@ class AntDirEnv(AntDirEnv_):
         if tasks is None:
             tasks = self.sample_tasks(n_tasks)
         self.tasks = tasks
+        self.n_tasks = len(self.tasks)
         self._task = tasks[task_idx]
         if single_task:
             self.tasks = self.tasks[task_idx:task_idx+1]
@@ -150,7 +151,7 @@ class AntDirEnv(AntDirEnv_):
                 idx = self.tasks.index(self._task)
             except:
                 pass
-            one_hot = np.zeros(len(self.tasks), dtype=np.float32)
+            one_hot = np.zeros(50, dtype=np.float32)
             one_hot[idx] = 1.0
             obs = super()._get_obs()
             obs = np.concatenate([obs, one_hot])
@@ -249,15 +250,17 @@ class HumanoidDirEnv(HumanoidDirEnv_):
 
     def set_task_idx(self, idx):
         self._task = self.tasks[idx]
-        self._goal = self._task['goal']    
+        self._goal = self._task['goal']
         self.reset()
-    
+
 class WalkerRandParamsWrappedEnv(WalkerRandParamsWrappedEnv_):
     def __init__(self, tasks: List[dict] = None, task_idx: int = 0, single_task: bool = False, include_goal: bool = False):
         self.include_goal = include_goal
+        self.n_tasks = len(tasks)
         super(WalkerRandParamsWrappedEnv, self).__init__(n_tasks=50)
         if tasks is not None:
             self.tasks = tasks
+            self.n_tasks = len(self.tasks)
             self.reset_task(task_idx)
 #        if tasks is None:
 #            tasks = self.sample_tasks(50) 
@@ -275,7 +278,7 @@ class WalkerRandParamsWrappedEnv(WalkerRandParamsWrappedEnv_):
             except:
                 pass
 #            one_hot = np.zeros(len(self.tasks), dtype=np.float32)
-            one_hot = np.zeros(50, dtype=np.float32)
+            one_hot = np.zeros(self.n_tasks, dtype=np.float32)
             one_hot[idx] = 1.0
             obs = super()._get_obs()
             obs = np.concatenate([obs, one_hot])
