@@ -17,6 +17,12 @@ class AntDirEnv(MultitaskAntEnv):
         direct = (np.cos(self._goal), np.sin(self._goal))
 
         self.do_simulation(action, self.frame_skip)
+
+        goal_marker_idx = self.sim.model.site_name2id('goal')
+
+        self.data.site_xpos[goal_marker_idx,:2] = 5 * np.array([np.cos(self._goal), np.sin(self._goal)])
+        self.data.site_xpos[goal_marker_idx,-1] = 1
+
         torso_xyz_after = np.array(self.get_body_com("torso"))
         torso_velocity = torso_xyz_after - torso_xyz_before
         forward_reward = np.dot((torso_velocity[:2]/self.dt), direct)

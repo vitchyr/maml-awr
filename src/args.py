@@ -4,6 +4,7 @@ import argparse
 def get_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument('--goal_dim', type=int, default=0)
+    parser.add_argument('--info_dim', type=int, default=0)
     parser.add_argument('--multitask', action='store_true')
     parser.add_argument('--mt_value_lr', type=float, default=1e-2)
     parser.add_argument('--mt_policy_lr', type=float, default=1e-2)

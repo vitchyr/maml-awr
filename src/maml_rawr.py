@@ -150,26 +150,26 @@ class MAMLRAWR(object):
         outer_buffers = task_config.train_buffers if args.load_outer_buffer and not args.render else [None for _ in self._env.tasks]
         test_buffers = task_config.test_buffers
         self._test_buffers = [ReplayBuffer(self._env._max_episode_steps, self._observation_dim, env_action_dim(self._env),
-                                            0, max_trajectories=replay_buffer_length, discount_factor=discount_factor,
-                                            immutable=True, load_from=test_buffers[i], silent=silent,
-                                            trim_suffix=args.trim_episodes, trim_obs=args.trim_obs, pad=args.pad_buffers)
+                                           args.info_dim, max_trajectories=replay_buffer_length, discount_factor=discount_factor,
+                                           immutable=True, load_from=test_buffers[i], silent=silent,
+                                           trim_suffix=args.trim_episodes, trim_obs=args.trim_obs, pad=args.pad_buffers)
                                for i, task in enumerate(self.task_config.test_tasks)]
         self._inner_buffers = [ReplayBuffer(self._env._max_episode_steps, self._observation_dim, env_action_dim(self._env),
-                                            0, max_trajectories=replay_buffer_length, discount_factor=discount_factor,
+                                            args.info_dim, max_trajectories=replay_buffer_length, discount_factor=discount_factor,
                                             immutable=args.offline or args.offline_inner, load_from=inner_buffers[i], silent=silent,
                                             trim_suffix=args.trim_episodes, trim_obs=args.trim_obs, pad=args.pad_buffers)
                                for i, task in enumerate(self.task_config.train_tasks)]
-        if not args.offline:
+        if args.offline and args.load_inner_buffer and args.load_outer_buffer:
+            self._outer_buffers = self._inner_buffers
+        else:
             self._outer_buffers = [ReplayBuffer(self._env._max_episode_steps, self._observation_dim, env_action_dim(self._env),
-                                                0, max_trajectories=replay_buffer_length, discount_factor=discount_factor,
+                                                args.info_dim, max_trajectories=replay_buffer_length, discount_factor=discount_factor,
                                                 immutable=args.offline or args.offline_outer, load_from=outer_buffers[i], silent=silent,
                                                 trim_suffix=args.trim_episodes, trim_obs=args.trim_obs, pad=args.pad_buffers)
                                    for i, task in enumerate(self.task_config.train_tasks)]
-        else:
-            self._outer_buffers = self._inner_buffers
 
         self._full_buffers = [ReplayBuffer(self._env._max_episode_steps, self._observation_dim, env_action_dim(self._env),
-                                           0, max_trajectories=args.full_buffer_size, discount_factor=discount_factor,
+                                           args.info_dim, max_trajectories=args.full_buffer_size, discount_factor=discount_factor,
                                            immutable=args.offline or args.offline_outer, silent=silent,
                                            trim_suffix=args.trim_episodes, trim_obs=args.trim_obs, pad=args.pad_buffers)
                               for i, task in enumerate(self.task_config.train_tasks)]
@@ -360,7 +360,7 @@ class MAMLRAWR(object):
 
         if iweights is not None:
             losses = losses * iweights
-        
+
         return losses.mean(), value_estimates.mean(), mc_value_estimates.mean(), mc_value_estimates.std()
 
     #@profile
@@ -394,11 +394,14 @@ class MAMLRAWR(object):
         if iweights is not None:
             losses = losses * iweights
         
+        adv_prediction_loss = None
         if inner:
             if self._args.advantage_head_coef is not None:
-                losses = losses + self._args.advantage_head_coef * (advantage_prediction.squeeze() - advantages) ** 2
+                adv_prediction_loss = self._args.advantage_head_coef * (advantage_prediction.squeeze() - advantages) ** 2
+                losses = losses + adv_prediction_loss
+                adv_prediction_loss = adv_prediction_loss.mean()
 
-        return losses.mean(), advantages.mean(), weights.mean()
+        return losses.mean(), advantages.mean(), weights.mean(), adv_prediction_loss
 
     def update_model_with_grads(self, model: nn.Module, grads: list, optimizer: torch.optim.Optimizer, clip: float = None, extra_grad: list = None):
         for idx, parameter in enumerate(model.parameters()):
@@ -436,7 +439,7 @@ class MAMLRAWR(object):
                     vf_loss.backward()
                     opt.step()
                     opt.zero_grad()
-                    ap_loss, _, _ = self.adaptation_policy_loss_on_batch(ap, None, vf, batch, None, inner=True)
+                    ap_loss, _, _, _ = self.adaptation_policy_loss_on_batch(ap, None, vf, batch, None, inner=True)
                     ap_loss.backward()
                     ap_opt.step()
                     ap_opt.zero_grad()
@@ -465,7 +468,7 @@ class MAMLRAWR(object):
                 opt = O.SGD(self._adaptation_policy.parameters(), lr=self._inner_policy_lr)
                 with higher.innerloop_ctx(self._adaptation_policy, opt) as (f_adaptation_policy, diff_policy_opt):
                     for _ in range(self._args.maml_steps):
-                        loss, _, _ = self.adaptation_policy_loss_on_batch(f_adaptation_policy, None, f_value_function, batch, test_task_idx, inner=True)
+                        loss, _, _, _ = self.adaptation_policy_loss_on_batch(f_adaptation_policy, None, f_value_function, batch, test_task_idx, inner=True)
                         diff_policy_opt.step(loss)
 
                 adapted_trajectory, adapted_reward, success = self._rollout_policy(f_adaptation_policy, self._env, test=True, render=self._args.render)
@@ -533,6 +536,7 @@ class MAMLRAWR(object):
             inner_value_losses = []
             meta_value_losses = []
             inner_policy_losses = []
+            adv_policy_losses = []
             meta_policy_losses = []
             inner_mc_means, inner_mc_stds = [], []
             outer_mc_means, outer_mc_stds = [], []
@@ -615,14 +619,15 @@ class MAMLRAWR(object):
                 if self._inner_policy_lr > 0 and len(self._env.tasks) > 1:
                     for _ in range(self._args.maml_steps):
                         # Compute loss and adapt policy [L10]
-                        loss, adv, weight = self.adaptation_policy_loss_on_batch(f_adaptation_policy, adapted_q_function,
-                                                                                 adapted_value_function, pyt_batch, train_task_idx, inner=True, iweights=iweights_)
+                        loss, adv, weight, adv_loss = self.adaptation_policy_loss_on_batch(f_adaptation_policy, adapted_q_function,
+                                                                                           adapted_value_function, pyt_batch, train_task_idx, inner=True, iweights=iweights_)
                         diff_policy_opt.step(loss)
                         inner_policy_losses.append(loss.item())
+                        adv_policy_losses.append(adv_loss.item())
                         inner_advantages.append(adv.item())
                         inner_weights.append(weight.item())
 
-                meta_policy_loss, outer_adv, outer_weight = self.adaptation_policy_loss_on_batch(f_adaptation_policy, adapted_q_function,
+                meta_policy_loss, outer_adv, outer_weight, _ = self.adaptation_policy_loss_on_batch(f_adaptation_policy, adapted_q_function,
                                                                                                  adapted_value_function, meta_batch, train_task_idx)
                 meta_policy_grad = A.grad(meta_policy_loss, f_adaptation_policy.parameters(time=0), retain_graph=self._args.iw_exploration)
                 if self._args.iw_exploration:
@@ -667,6 +672,7 @@ class MAMLRAWR(object):
                         writer.add_scalar(f'Loss_Q_Inner/Task_{i}', np.mean(inner_q_losses), train_step_idx)
                     writer.add_scalar(f'Loss_Value_Inner/Task_{i}', np.mean(inner_value_losses), train_step_idx)
                     writer.add_scalar(f'Loss_Policy_Inner/Task_{i}', np.mean(inner_policy_losses), train_step_idx)
+                    writer.add_scalar(f'Loss_Policy_Adv_Inner/Task_{i}', np.mean(adv_policy_losses), train_step_idx)
                     writer.add_scalar(f'Value_Mean_Inner/Task_{i}', np.mean(inner_values), train_step_idx)
                     writer.add_scalar(f'Advantage_Mean_Inner/Task_{i}', np.mean(inner_advantages), train_step_idx)
                     writer.add_scalar(f'Weight_Mean_Inner/Task_{i}', np.mean(inner_weights), train_step_idx)

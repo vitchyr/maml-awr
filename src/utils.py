@@ -131,7 +131,7 @@ class ReplayBuffer(object):
     def __init__(self, trajectory_length: int, state_dim: int, action_dim: int, info_dim: int = 0, max_trajectories: int = 10000,
                  discount_factor: float = 0.99, immutable: bool = False, load_from: str = None, silent: bool = False, trim_suffix: int = 0,
                  trim_obs: int = None, pad: bool = False):
-        self._trajectories = np.empty((max_trajectories, trajectory_length, state_dim + action_dim + state_dim + state_dim + info_dim * 2 + 1 + 1 + 1 + 1 + int(pad)), dtype=np.float32)
+        self._trajectories = np.zeros((max_trajectories, trajectory_length, state_dim + action_dim + state_dim + state_dim + info_dim * 2 + 1 + 1 + 1 + 1 + int(pad)), dtype=np.float32)
         #self._trajectories.fill(np.float('nan'))
         self._stored_trajectories = 0
         self._new_trajectory_idx = 0
@@ -213,7 +213,7 @@ class ReplayBuffer(object):
                 self._trajectories[self._new_trajectory_idx, -(idx + 1), slice_idx:slice_idx + self._info_dim] = experience.next_info
                 slice_idx += self._info_dim
 
-            #self._trajectories[self._new_trajectory_idx, -(idx + 1), slice_idx:slice_idx + 1] = experience.log_prob
+            #self._trajectories[self._new_trajectory_idx, -(idx + 1), slice_idx:slice_idx + 1] = 0experience.log_prob
             #slice_idx += 1
             
             terminal_factor *= self._discount_factor
@@ -270,6 +270,8 @@ class ReplayBuffer(object):
                 batch[:,self._state_dim-self._trim_obs:self._state_dim] = 0
                 batch[:,self._state_dim+self._action_dim+self._state_dim-self._trim_obs:self._state_dim+self._action_dim+self._state_dim] = 0
                 batch[:,self._state_dim+self._action_dim+self._state_dim*2-self._trim_obs:self._state_dim+self._action_dim+self._state_dim*2] = 0
+            if np.isnan(batch).any():
+                import pdb; pdb.set_trace()
             assert not np.isnan(batch).any()
             return batch
         else:
