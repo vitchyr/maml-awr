@@ -59,7 +59,7 @@ def get_metaworld_tasks(env_id: str = 'ml10'):
         return env
     else:
         raise NotImplementedError()
-        
+
 
 def get_gym_env(env: str):
     if env == 'ant':
@@ -86,8 +86,8 @@ def get_gym_env(env: str):
     env.task_description = task_description
 
     return env
-    
-    
+
+
 def run(args: argparse.Namespace, instance_idx: int = 0):
     if args.train_exploration:
         assert args.n_adaptations > 1 or args.cvae or args.iw_exploration, "Cannot explore without n_adaptation > 1"
@@ -160,7 +160,7 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
             raise NotImplementedError('TODO: eric-mitchell')
             #env = gym.make(args.env)
 
-            
+
     print(env.tasks)
     if args.episode_length is not None:
         env._max_episode_steps = args.episode_length

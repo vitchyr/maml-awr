@@ -145,9 +145,8 @@ class MAMLRAWR(object):
         #                                    trim_suffix=args.trim_episodes)
         #                       for i, task in enumerate(self._env.tasks)]
 
-
-        inner_buffers = task_config.train_buffers if args.load_inner_buffer and not args.render else [None for _ in self._env.tasks]
-        outer_buffers = task_config.train_buffers if args.load_outer_buffer and not args.render else [None for _ in self._env.tasks]
+        inner_buffers = task_config.train_buffers if args.load_inner_buffer and not (args.render or args.eval) else [None for _ in self._env.tasks]
+        outer_buffers = task_config.train_buffers if args.load_outer_buffer and not (args.render or args.eval) else [None for _ in self._env.tasks]
         test_buffers = task_config.test_buffers
         self._test_buffers = [ReplayBuffer(self._env._max_episode_steps, self._observation_dim, env_action_dim(self._env),
                                            args.info_dim, max_trajectories=replay_buffer_length, discount_factor=discount_factor,
@@ -455,30 +454,55 @@ class MAMLRAWR(object):
             rewards = reward_dict[log_steps[-1]]
         else:
             trajectories, rewards, successes = [], [], []
+            rewards = np.empty((len(self.task_config.test_tasks), self._args.eval_maml_steps+1))
+
             for i, (test_task_idx, test_buffer) in enumerate(zip(self.task_config.test_tasks, self._test_buffers)):
                 self._env.set_task_idx(test_task_idx)
+                self._args.no_bootstrap = False
+
+                if self._args.eval:
+                    adapted_trajectory, adapted_reward, success = self._rollout_policy(self._adaptation_policy, self._env, test=True, render=self._args.render)
+                    trajectories.append(adapted_trajectory)
+                    rewards[i,0] = adapted_reward
+                    successes.append(success)
+                    writer.add_scalar(f'Eval_Reward/Task_{test_task_idx}', adapted_reward, 0)
 
                 batch = torch.tensor(test_buffer.sample(self._args.inner_batch_size), requires_grad=False).to(self._device)
-                opt = O.SGD(self._value_function.parameters(), lr=self._inner_value_lr)
-                with higher.innerloop_ctx(self._value_function, opt) as (f_value_function, diff_value_opt):
-                    for _ in range(1):
+                value_step_sizes = [self._inner_value_lr] + [self._inner_value_lr*1e-3] + [self._inner_value_lr*0] * (self._args.eval_maml_steps - 2)
+                policy_step_sizes = [self._inner_policy_lr] + [self._inner_policy_lr*0.1] + [self._inner_policy_lr*0.1] * (self._args.eval_maml_steps - 2)
+                value_function = deepcopy(self._value_function)
+                policy = deepcopy(self._adaptation_policy)
+                for eval_step in range(self._args.eval_maml_steps):
+                    opt = O.SGD(value_function.parameters(), lr=value_step_sizes[eval_step])
+                    with higher.innerloop_ctx(value_function, opt) as (f_value_function, diff_value_opt):
+                        if eval_step > 0:                            
+                            self._args.no_bootstrap = True
+                        else:
+                            self._args.no_bootstrap = False
                         loss, _, _, _ = self.value_function_loss_on_batch(f_value_function, batch, task_idx=test_task_idx, inner=True)
+                        print('stepping value on:', value_step_sizes[eval_step], i, eval_step, loss.item())
                         diff_value_opt.step(loss)
+                        copy_model_with_grads(f_value_function, value_function)
 
-                opt = O.SGD(self._adaptation_policy.parameters(), lr=self._inner_policy_lr)
-                with higher.innerloop_ctx(self._adaptation_policy, opt) as (f_adaptation_policy, diff_policy_opt):
-                    for _ in range(self._args.maml_steps):
-                        loss, _, _, _ = self.adaptation_policy_loss_on_batch(f_adaptation_policy, None, f_value_function, batch, test_task_idx, inner=True)
+                    opt = O.SGD(policy.parameters(), lr=policy_step_sizes[eval_step])
+                    with higher.innerloop_ctx(policy, opt) as (f_adaptation_policy, diff_policy_opt):
+                        loss, _, _, _ = self.adaptation_policy_loss_on_batch(f_adaptation_policy, None, f_value_function, batch, test_task_idx, inner=eval_step==0)
+                        print('stepping policy on:', policy_step_sizes[eval_step], i, eval_step, loss.item())
                         diff_policy_opt.step(loss)
+                        copy_model_with_grads(f_adaptation_policy, policy)
 
-                adapted_trajectory, adapted_reward, success = self._rollout_policy(f_adaptation_policy, self._env, test=True, render=self._args.render)
-                trajectories.append(adapted_trajectory)
-                rewards.append(adapted_reward)
-                successes.append(success)
-                writer.add_scalar(f'Eval_Reward/Task_{i}', adapted_reward, train_step_idx)
+                    adapted_trajectory, adapted_reward, success = self._rollout_policy(policy, self._env, test=True, render=self._args.render)
+                    trajectories.append(adapted_trajectory)
+                    rewards[i,eval_step+1] = adapted_reward
+                    print('r', adapted_reward)
+                    successes.append(success)
+                    writer.add_scalar(f'Eval_Reward/Task_{test_task_idx}', adapted_reward, (eval_step + 1) if self._args.eval else train_step_idx)
 
-        writer.add_scalar(f'Eval_Reward/Mean', np.mean(rewards), train_step_idx)
-        return trajectories, rewards, successes
+        for idx, r in enumerate(rewards.mean(0)):
+            writer.add_scalar(f'Eval_Reward/Mean', r, idx if self._args.eval else train_step_idx)
+
+        return trajectories, rewards[:,-1], successes
+
 
     # This function is the body of the main training loop [L4]
     # At every iteration, it adds rollouts from the exploration policy and one of the adapted policies
@@ -494,6 +518,7 @@ class MAMLRAWR(object):
             successes = []
             
         if self._args.eval:
+            import pdb; pdb.set_trace()
             return test_rollouts, test_rewards, test_rewards, [0], [0], self._value_function, successes
 
         batches = []

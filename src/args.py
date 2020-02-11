@@ -83,6 +83,7 @@ def get_args() -> argparse.Namespace:
     parser.add_argument('--offline_inner', action='store_true')
     parser.add_argument('--grad_clip', type=float, default=1e9) # Essentially no clip, but use this to measure the size of gradients
     parser.add_argument('--exp_advantage_clip', type=float, default=10.0)
+    parser.add_argument('--eval_maml_steps', type=int, default=1)
     parser.add_argument('--maml_steps', type=int, default=1)
     parser.add_argument('--adaptation_temp', type=float, default=1)
     parser.add_argument('--exploration_temp', type=float, default=1)
