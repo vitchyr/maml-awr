@@ -1,5 +1,6 @@
 from typing import NamedTuple, List
 
+import h5py
 import numpy as np
 import torch
 import torch.nn as nn
@@ -71,54 +72,146 @@ class Experience(NamedTuple):
     next_state: np.ndarray
     reward: float
     done: bool
-    #log_prob: float
-    info: np.ndarray = None
-    next_info: np.ndarray = None
-    
 
-class MiniBatch(object):
-    def __init__(self, samples: np.ndarray, action_dim: int, observation_dim: int):
-        self._samples = torch.tensor(samples).float()
-        self._observation_dim = observation_dim
-        self._action_dim = action_dim
+
+class NewReplayBuffer(object):
+    def __init__(self, size: int, obs_dim: int, action_dim: int, discount_factor: float = 0.99,
+                 immutable: bool = False, load_from: str = None, silent: bool = False, trim_suffix: int = 0):
+        self._immutable = immutable
         
-    def to(self, device: torch.device):
-        self._samples = self._samples.to(device)
+        self._obs = np.full((size, obs_dim), float('nan'), dtype=np.float32)
+        self._actions = np.full((size, action_dim), float('nan'), dtype=np.float32)
+        self._rewards = np.full((size, 1), float('nan'), dtype=np.float32)
+        self._mc_rewards = np.full((size, 1), float('nan'), dtype=np.float32)
+        self._terminals = np.full((size, 1), False, dtype=np.bool)
+        self._terminal_obs = np.full((size, obs_dim), float('nan'), dtype=np.float32)
+        self._terminal_discounts = np.full((size, 1), float('nan'), dtype=np.float32)
+        self._next_obs = np.full((size, obs_dim), float('nan'), dtype=np.float32)
 
-        return self
+        self._size = size
+        if load_from is None:
+            self._stored_steps = 0
+            self._discount_factor = discount_factor
+        else:
+            if not silent:
+                print(f'Loading trajectories from {load_from}')
+            f = h5py.File(load_from, 'r')
+            if f['obs'].shape[-1] != self.obs_dim:
+                raise RuntimeError(f"Loaded data has different obs_dim from new buffer ({f['obs'].shape[-1]}, {self.obs_dim})")
+            if f['actions'].shape[-1] != self.action_dim:
+                raise RuntimeError(f"Loaded data has different action_dim from new buffer ({f['actions'].shape[-1]}, {self.action_dim})")
 
-    def obs(self):
-        return self._samples[:,:self._observation_dim]
+            stored = f['obs'].shape[0]
+            if stored != self._size:
+                if not silent:
+                    n_seed = min(stored, self._size)
+                    print(f"Attempted to load {stored} offline trajectories into buffer of size {self._size}." \
+                          f"Loading only {n_seed} trajectories from offline buffer")
 
-    def act(self):
-        return self._samples[:,self._observation_dim:self._observation_dim + self._action_dim]
+            self._stored_steps = stored
+            self._discount_factor = f['discount_factor'][()]
 
-    def next_obs(self):
-        return self._samples[:,self._observation_dim + self._action_dim:self._observation_dim * 2 + self._action_dim]
+            self._obs[:stored] = f['obs']
+            self._actions[:stored] = f['actions']
+            self._rewards[:stored] = f['rewards']
+            self._mc_rewards[:stored] = f['mc_rewards']
+            self._terminals[:stored] = f['terminals']
+            self._terminal_obs[:stored] = f['terminal_obs']
+            self._terminal_discounts[:stored] = f['terminal_discounts']
+            self._next_obs[:stored] = f['next_obs']
 
-    def terminal_obs(self):
-        return self._samples[:,self._observation_dim * 2 + self._action_dim:self._observation_dim * 3 + self._action_dim]
+            f.close()
 
-    def log_prob(self):
-        return self._samples[:,-5]
+        self._write_location = self._stored_steps % self._size
 
-    def terminal_factor(self):
-        return self._samples[:,-4]
+    @property
+    def obs_dim(self):
+        return self._obs.shape[-1]
 
-    def done(self):
-        return self._samples[:,-3]
+    @property
+    def action_dim(self):
+        return self._actions.shape[-1]
 
-    def reward(self):
-        return self._samples[:,-2]
+    def __len__(self):
+        return self._stored_steps
 
-    def reward(self):
-        return self._samples[:,-1]
+    def save(self, location: str):
+        f = h5py.File(location, 'w')
+        f.create_dataset('obs', data=self._obs[:self._stored_steps])
+        f.create_dataset('actions', data=self._actions[:self._stored_steps])
+        f.create_dataset('rewards', data=self._rewards[:self._stored_steps])
+        f.create_dataset('mc_rewards', data=self._mc_rewards[:self._stored_steps])
+        f.create_dataset('terminals', data=self._terminals[:self._stored_steps])
+        f.create_dataset('terminal_obs', data=self._terminal_obs[:self._stored_steps])
+        f.create_dataset('terminal_discounts', data=self._terminal_discounts[:self._stored_steps])
+        f.create_dataset('next_obs', data=self._next_obs[:self._stored_steps])
+        f.create_dataset('discount_factor', data=self._discount_factor)
+        f.close()
+    
+    def add_trajectory(self, trajectory: List[Experience], force: bool = False):
+        if self._immutable and not force:
+            raise ValueError('Cannot add trajectory to immutable replay buffer')
+
+        mc_reward = 0
+        terminal_obs = None
+        terminal_factor = 1
+        for idx, experience in enumerate(trajectory[::-1]):
+            if terminal_obs is None:
+                terminal_obs = experience.next_state
+
+            self._obs[self._write_location] = experience.state
+            self._next_obs[self._write_location] = experience.next_state
+            self._actions[self._write_location] = experience.action
+            self._rewards[self._write_location] = experience.reward
+            self._terminals[self._write_location] = experience.done
+            self._terminal_obs[self._write_location] = terminal_obs
+
+            terminal_factor *= self._discount_factor
+            self._terminal_discounts[self._write_location] = terminal_factor
+
+            mc_reward = experience.reward + self._discount_factor * mc_reward
+            self._mc_rewards[self._write_location] = mc_reward
+
+            self._write_location += 1
+            self._write_location = self._write_location % self._size
+            
+            if self._stored_steps < self._size:
+                self._stored_steps += 1
+
+    def add_trajectories(self, trajectories: List[List[Experience]], force: bool = False):
+        for trajectory in trajectories:
+            self.add_trajectory(trajectory, force)
+
+    def sample(self, batch_size, return_dict: bool = False):
+        idxs = np.random.choice(self._stored_steps, batch_size)
+
+        obs = self._obs[idxs]
+        actions = self._actions[idxs]
+        next_obs = self._next_obs[idxs]
+        terminal_obs = self._terminal_obs[idxs]
+        terminal_discounts = self._terminal_discounts[idxs]
+        dones = self._terminals[idxs]
+        rewards = self._rewards[idxs]
+        mc_rewards = self._mc_rewards[idxs]
+        
+        if not return_dict:
+            return np.concatenate((obs, actions, next_obs, terminal_obs, terminal_discounts, dones, rewards, mc_rewards), 1)
+        else:
+            return {
+                'obs': obs,
+                'actions': actions,
+                'next_obs': next_obs,
+                'terminal_obs': terminal_obs,
+                'terminal_discounts': terminal_discounts,
+                'dones': dones,
+                'rewards': rewards,
+                'mc_rewards': mc_rewards
+            }
 
 
 class ReplayBuffer(object):
     @staticmethod
-    #def join(buffers: List[ReplayBuffer]) -> ReplayBuffer:
-    def join(buffers):
+    def join(buffers: List['ReplayBuffer']) -> 'ReplayBuffer':
         b0 = buffers[0]
         trajectories = np.concatenate([b._trajectories for b in buffers])
         new_buffer = ReplayBuffer(trajectories.shape[0], b0._state_dim, b0._action_dim, b0._info_dim, b0._max_trajectories,
@@ -285,28 +378,53 @@ class ReplayBuffer(object):
             return batch, trajectories
 
 
-def generate_test_trajectory(state_dim: int, action_dim: int, trajectory_length: int):
+def generate_test_trajectory(length: int, state_dim: int, action_dim: int):
     trajectory = []
     next_state = np.random.uniform(0,1,(state_dim,))
-    for idx in range(trajectory_length):
+    for idx in range(length):
         state = next_state
         action = np.random.uniform(-1,0,(action_dim,))
         next_state = np.random.uniform(0,1,(state_dim,))
         reward = np.random.uniform()
-        trajectory.append(Experience(state, action, next_state, reward, idx == trajectory_length - 1))
-        
+        trajectory.append(Experience(state, action, next_state, reward, idx == length - 1))
+
     return trajectory
 
-if __name__ == '__main__':    
-    trajectory_length = 20
+
+def test_old_buffer():
+    trajectory_length = 100
     state, action = 6, 4
     buf = ReplayBuffer(trajectory_length, state, action, max_trajectories=5)
 
     for idx in range(2):
-        buf.add_trajectory(generate_test_trajectory(state, action, 20))
+        buf.add_trajectory(generate_test_trajectory(20, state, action))
 
-    buf.add_trajectories([generate_test_trajectory(state, action, 10) for _ in range(2)])
+    buf.add_trajectories([generate_test_trajectory(10, state, action) for _ in range(2)])
 
     print(len(buf))
     print(buf.sample(2))
     import pdb; pdb.set_trace()
+
+
+def test_new_buffer():
+    np.random.seed(0)
+    size = 10
+    state, action = 2, 3
+    buf = NewReplayBuffer(size, state, action)
+
+    t1 = generate_test_trajectory(3, state, action)
+    buf.add_trajectory(t1)
+
+    t2 = [generate_test_trajectory(3, state, action) for _ in range(4)]
+    buf.add_trajectories(t2)
+
+    print(len(buf))
+    print(buf.sample(2))
+
+    buf2 = NewReplayBuffer(size, state, action, load_from='test_buf.h5')
+    import pdb; pdb.set_trace()
+    buf.save('test_buf.h5')
+    
+
+if __name__ == '__main__':
+    test_new_buffer()
