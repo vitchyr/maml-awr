@@ -1,0 +1,8 @@
+{
+    "env": "cheetah_dir",
+    "total_tasks": 2,
+    "train_tasks": [1],
+    "test_tasks": [1],
+    "train_buffers": [],
+    "test_buffers": []
+}

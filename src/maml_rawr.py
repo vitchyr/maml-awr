@@ -22,7 +22,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from src.envs import Env
 from src.nn import MLP, CVAE
-from src.utils import ReplayBuffer, Experience, argmax, kld, RunningEstimator
+from src.utils import NewReplayBuffer, Experience, argmax, kld, RunningEstimator
 
 
 def copy_model_with_grads(from_model: nn.Module, to_model: nn.Module = None) -> nn.Module:
@@ -51,13 +51,15 @@ def print_(s: str, c: bool, end=None):
 
 
 def check_config(config):
-    assert len(config.train_tasks) == len(config.train_buffers), f'{len(config.train_tasks)}, {len(config.train_buffers)}'
-    assert len(config.test_tasks) == len(config.test_buffers), f'{len(config.test_tasks)}, {len(config.test_buffers)}'
+    if len(config.train_buffers):
+        assert len(config.train_tasks) == len(config.train_buffers), f'{len(config.train_tasks)}, {len(config.train_buffers)}'
+        assert len(config.test_tasks) == len(config.test_buffers), f'{len(config.test_tasks)}, {len(config.test_buffers)}'
+        if len(set(config.train_buffers).intersection(set(config.test_buffers))) > 0:
+            print('WARNING: TEST AND TRAIN BUFFERS NOT DISJOINT')
+
     if len(set(config.train_tasks).intersection(set(config.test_tasks))) > 0:
         print('WARNING: TEST AND TRAIN TASKS NOT DISJOINT')
-    if len(set(config.train_buffers).intersection(set(config.test_buffers))) > 0:
-        print('WARNING: TEST AND TRAIN BUFFERS NOT DISJOINT')
-
+    
 
 class MAMLRAWR(object):
     def __init__(self, args: argparse.Namespace, task_config: dict, env: Env, log_dir: str, 
@@ -128,51 +130,31 @@ class MAMLRAWR(object):
         if args.ep_archive is not None:
             print_(f'Loading exploration policy archive from: {args.ep_archive}', silent)
             self._exploration_policy.load_state_dict(torch.load(args.ep_archive, map_location=args.device))
-            
-        #inner_buffer = args.buffer_paths if args.load_inner_buffer else [None for _ in self._env.tasks]
-        #outer_buffer = args.buffer_paths if args.load_outer_buffer else [None for _ in self._env.tasks]
-
-        #outer_buffer = args.buffer_paths if args.load_outer_buffer else [None for _ in self._env.tasks]
-
-        #self._inner_buffers = [ReplayBuffer(self._env._max_episode_steps, self._env.observation_space.shape[0], env_action_dim(self._env),
-        #                                    self._env.info_dim, max_trajectories=replay_buffer_length, discount_factor=discount_factor,
-        #                                    immutable=args.offline or args.offline_inner, load_from=inner_buffer[i], silent=silent,
-        #                                    trim_suffix=args.trim_episodes)
-        #                       for i, task in enumerate(self._env.tasks)]
-        #self._outer_buffers = [ReplayBuffer(self._env._max_episode_steps, self._env.observation_space.shape[0], env_action_dim(self._env),
-        #                                    self._env.info_dim, max_trajectories=replay_buffer_length, discount_factor=discount_factor,
-        #                                    immutable=args.offline or args.offline_outer, load_from=outer_buffer[i], silent=silent,
-        #                                    trim_suffix=args.trim_episodes)
-        #                       for i, task in enumerate(self._env.tasks)]
 
         inner_buffers = task_config.train_buffers if args.load_inner_buffer and not (args.render or args.eval) else [None for _ in self._env.tasks]
         outer_buffers = task_config.train_buffers if args.load_outer_buffer and not (args.render or args.eval) else [None for _ in self._env.tasks]
-        test_buffers = task_config.test_buffers
-        self._test_buffers = [ReplayBuffer(self._env._max_episode_steps, self._observation_dim, env_action_dim(self._env),
-                                           args.info_dim, max_trajectories=replay_buffer_length, discount_factor=discount_factor,
-                                           immutable=True, load_from=test_buffers[i], silent=silent,
-                                           trim_suffix=args.trim_episodes, trim_obs=args.trim_obs, pad=args.pad_buffers)
-                               for i, task in enumerate(self.task_config.test_tasks)]
-        self._inner_buffers = [ReplayBuffer(self._env._max_episode_steps, self._observation_dim, env_action_dim(self._env),
-                                            args.info_dim, max_trajectories=replay_buffer_length, discount_factor=discount_factor,
-                                            immutable=args.offline or args.offline_inner, load_from=inner_buffers[i], silent=silent,
-                                            trim_suffix=args.trim_episodes, trim_obs=args.trim_obs, pad=args.pad_buffers)
-                               for i, task in enumerate(self.task_config.train_tasks)]
+        test_buffers = task_config.test_buffers if len(task_config.test_buffers) else [None for _ in self._env.tasks]
+        
+        self._test_buffers = [NewReplayBuffer(args.replay_buffer_size, self._observation_dim, env_action_dim(self._env),
+                                              discount_factor=discount_factor,
+                                              immutable=test_buffers[i] is not None, load_from=test_buffers[i], silent=silent)
+                               for i, task in enumerate(task_config.test_tasks)]
+        self._inner_buffers = [NewReplayBuffer(args.replay_buffer_size, self._observation_dim, env_action_dim(self._env),
+                                               discount_factor=discount_factor,
+                                               immutable=args.offline or args.offline_inner, load_from=inner_buffers[i], silent=silent)
+                               for i, task in enumerate(task_config.train_tasks)]
         if args.offline and args.load_inner_buffer and args.load_outer_buffer:
             self._outer_buffers = self._inner_buffers
         else:
-            self._outer_buffers = [ReplayBuffer(self._env._max_episode_steps, self._observation_dim, env_action_dim(self._env),
-                                                args.info_dim, max_trajectories=replay_buffer_length, discount_factor=discount_factor,
-                                                immutable=args.offline or args.offline_outer, load_from=outer_buffers[i], silent=silent,
-                                                trim_suffix=args.trim_episodes, trim_obs=args.trim_obs, pad=args.pad_buffers)
-                                   for i, task in enumerate(self.task_config.train_tasks)]
+            self._outer_buffers = [NewReplayBuffer(args.replay_buffer_size, self._observation_dim, env_action_dim(self._env),
+                                                   discount_factor=discount_factor, immutable=args.offline or args.offline_outer,
+                                                   load_from=outer_buffers[i], silent=silent)
+                                   for i, task in enumerate(task_config.train_tasks)]
 
-        self._full_buffers = [ReplayBuffer(self._env._max_episode_steps, self._observation_dim, env_action_dim(self._env),
-                                           args.info_dim, max_trajectories=args.full_buffer_size, discount_factor=discount_factor,
-                                           immutable=args.offline or args.offline_outer, silent=silent,
-                                           trim_suffix=args.trim_episodes, trim_obs=args.trim_obs, pad=args.pad_buffers)
-                              for i, task in enumerate(self.task_config.train_tasks)]
-        
+        self._full_buffers = [NewReplayBuffer(args.replay_buffer_size, self._observation_dim, env_action_dim(self._env),
+                                           discount_factor=discount_factor, immutable=args.offline or args.offline_outer, silent=silent)
+                              for i, task in enumerate(task_config.train_tasks)]
+
         self._training_iterations = training_iterations
         if not self._args.multitask:
             self._inner_policy_lr, self._inner_value_lr = args.inner_policy_lr, args.inner_value_lr
@@ -199,12 +181,7 @@ class MAMLRAWR(object):
     def _rollout_policy(self, policy: MLP, env: Env, test: bool = False, random: bool = False, render: bool = False) -> List[Experience]:
         env.seed(self._env_seeds[self._rollout_counter].item())
         self._rollout_counter += 1
-        #device = self._cpu
-        device = self._args.device
         trajectory = []
-        old_device = list(policy.parameters())[0].device
-        #if device is not self._device:
-        #    policy.to(self._cpu)
         state = env.reset()
         if self._args.trim_obs is not None:
             state = np.concatenate((state, np.zeros((self._args.trim_obs,))))
@@ -215,7 +192,7 @@ class MAMLRAWR(object):
         episode_t = 0
 
         if isinstance(policy, CVAE):
-            policy.fix(torch.tensor(state, device=device).unsqueeze(0).float())
+            policy.fix(torch.tensor(state, device=self._args.device).unsqueeze(0).float())
 
         success = False
         while not done:
@@ -225,11 +202,11 @@ class MAMLRAWR(object):
                 with torch.no_grad():
                     action_sigma = self._action_sigma
                     if isinstance(policy, CVAE):
-                        mu, action_sigma = policy(torch.tensor(state, device=device).unsqueeze(0).float())
+                        mu, action_sigma = policy(torch.tensor(state, device=self._args.device).unsqueeze(0).float())
                         mu = mu.squeeze()
                         action_sigma = action_sigma.squeeze().clamp(max=0.5)
                     else:
-                        mu = policy(torch.tensor(state, device=device).unsqueeze(0).float()).squeeze()
+                        mu = policy(torch.tensor(state, device=self._args.device).unsqueeze(0).float()).squeeze()
 
                     if test:
                         action = mu
@@ -251,11 +228,7 @@ class MAMLRAWR(object):
             reward += self._args.reward_offset
             if render:
                 env.render()
-            if 'info' in info_dict:
-                trajectory.append(Experience(state, action, next_state, reward, done, log_prob,
-                                             info_dict['info'], info_dict['next_info']))
-            else:
-                trajectory.append(Experience(state, action, next_state, reward, done, log_prob))
+            trajectory.append(Experience(state, action, next_state, reward, done))
             state = next_state
             total_reward += reward
             episode_t += 1
@@ -264,7 +237,6 @@ class MAMLRAWR(object):
 
         if isinstance(policy, CVAE):
             policy.unfix()
-        #policy.to(old_device)
         return trajectory, total_reward, success
 
     def add_task_description(self, obs, task_idx: int):
@@ -307,36 +279,6 @@ class MAMLRAWR(object):
             factor = 1
 
         return (q_estimates - targets).div(factor).pow(2).mean()
-
-    def exploration_weights(self, batch: List[torch.tensor], clamp: bool = True):
-        lens = [traj.shape[0] for traj in batch]
-        cumlens = [0] + np.cumsum(lens)[:-1].tolist()
-        raveled_batch = torch.cat(batch)
-
-        original_log_probs = raveled_batch[:,-5]
-        
-        exploration_mu = self._exploration_policy(raveled_batch[:,:self._observation_dim])
-        exploration_sigma = torch.empty_like(exploration_mu).fill_(self._action_sigma)
-        exploration_distribution = D.Normal(exploration_mu, exploration_sigma)
-        exploration_log_probs = exploration_distribution.log_prob(raveled_batch[:,self._observation_dim:self._observation_dim + self._action_dim]).sum(-1)
-
-        original_trajectory_log_probs = torch.cat([original_log_probs[start:start+len_-1].sum().unsqueeze(0) for start, len_ in zip(cumlens, lens)])
-        exploration_trajectory_log_probs = torch.cat([exploration_log_probs[start:start+len_-1].sum().unsqueeze(0) for start, len_ in zip(cumlens, lens)])
-        original_trajectory_action_log_probs = torch.cat([original_log_probs[start+len_-1].unsqueeze(0) for start, len_ in zip(cumlens, lens)])
-        exploration_trajectory_action_log_probs = torch.cat([exploration_log_probs[start+len_-1].unsqueeze(0) for start, len_ in zip(cumlens, lens)])
-        exploration_weights_no_action_logits_ = exploration_trajectory_log_probs - original_trajectory_log_probs
-        exploration_weights_logits_ = exploration_weights_no_action_logits_ + exploration_trajectory_action_log_probs - original_trajectory_action_log_probs
-
-        if clamp:
-            exploration_weights_logits = exploration_weights_logits_.clamp(min=-1,max=1)
-            exploration_weights_no_action_logits = exploration_weights_no_action_logits_.clamp(min=-1,max=1)
-        else:
-            exploration_weights_logits = exploration_weights_logits_
-            exploration_weights_no_action_logits = exploration_weights_no_action_logits_
-        exploration_weights = exploration_weights_logits.exp()
-        exploration_weights_no_action = exploration_weights_no_action_logits.exp()
-
-        return exploration_weights, exploration_weights_no_action, exploration_weights_logits_
 
     #@profile
     def value_function_loss_on_batch(self, value_function, batch, inner: bool = False, task_idx: int = None, iweights: torch.tensor = None):
@@ -408,8 +350,10 @@ class MAMLRAWR(object):
         for idx, parameter in enumerate(model.parameters()):
             grads_ = []
             for i in range(len(grads)):
-                grads_.append(grads[i][idx])
-            parameter.grad = sum(grads_) / len(grads_)
+                if grads[i][idx] is not None:
+                    grads_.append(grads[i][idx])
+            if len(grads_):
+                parameter.grad = sum(grads_) / len(grads_)
             if extra_grad is not None:
                 parameter.grad += extra_grad[idx]
 
@@ -487,23 +431,24 @@ class MAMLRAWR(object):
                 policy = deepcopy(self._adaptation_policy)
                 for eval_step in range(self._args.eval_maml_steps):
                     opt = O.SGD(value_function.parameters(), lr=value_step_sizes[eval_step])
-                    with higher.innerloop_ctx(value_function, opt) as (f_value_function, diff_value_opt):
-                        loss, _, _, _ = self.value_function_loss_on_batch(f_value_function, batch, task_idx=test_task_idx, inner=True)
-                        print('stepping value on:', value_step_sizes[eval_step], i, eval_step, loss.item())
-                        diff_value_opt.step(loss / (1 if eval_step==0 else loss.detach()))
-                        copy_model_with_grads(f_value_function, value_function)
+                    if len(self.task_config.test_tasks) > 1:
+                        with higher.innerloop_ctx(value_function, opt) as (f_value_function, diff_value_opt):
+                            loss, _, _, _ = self.value_function_loss_on_batch(f_value_function, batch, task_idx=test_task_idx, inner=True)
+                            #print('stepping value on:', value_step_sizes[eval_step], i, eval_step, loss.item())
+                            diff_value_opt.step(loss / (1 if eval_step==0 else loss.detach()))
+                            copy_model_with_grads(f_value_function, value_function)
 
-                    opt = O.SGD(policy.parameters(), lr=policy_step_sizes[eval_step])
-                    with higher.innerloop_ctx(policy, opt) as (f_adaptation_policy, diff_policy_opt):
-                        loss, _, _, _ = self.adaptation_policy_loss_on_batch(f_adaptation_policy, None, f_value_function, batch, test_task_idx, inner=eval_step==0)
-                        print('stepping policy on:', policy_step_sizes[eval_step], i, eval_step, loss.item())
-                        diff_policy_opt.step(loss)
-                        copy_model_with_grads(f_adaptation_policy, policy)
+                        opt = O.SGD(policy.parameters(), lr=policy_step_sizes[eval_step])
+                        with higher.innerloop_ctx(policy, opt) as (f_adaptation_policy, diff_policy_opt):
+                            loss, _, _, _ = self.adaptation_policy_loss_on_batch(f_adaptation_policy, None, f_value_function, batch, test_task_idx, inner=eval_step==0)
+                            #print('stepping policy on:', policy_step_sizes[eval_step], i, eval_step, loss.item())
+                            diff_policy_opt.step(loss)
+                            copy_model_with_grads(f_adaptation_policy, policy)
 
                     adapted_trajectory, adapted_reward, success = self._rollout_policy(policy, self._env, test=True, render=self._args.render)
                     trajectories.append(adapted_trajectory)
                     rewards[i,eval_step+1] = adapted_reward
-                    print('r', adapted_reward)
+                    #print('r', adapted_reward)
                     successes.append(success)
                     writer.add_scalar(f'Eval_Reward/Task_{test_task_idx}', adapted_reward, (eval_step + 1) if self._args.eval else train_step_idx)
 
@@ -529,7 +474,6 @@ class MAMLRAWR(object):
             successes = []
             
         if self._args.eval:
-            import pdb; pdb.set_trace()
             return test_rollouts, test_rewards, test_rewards, [0], [0], self._value_function, successes
 
         batches = []
@@ -546,18 +490,14 @@ class MAMLRAWR(object):
         successes = []
         if self._args.task_batch_size is not None:
             nth = len(self._inner_buffers) // self._args.task_batch_size
-        for i, (train_task_idx, inner_buffer, outer_buffer, full_buffer) in enumerate(zip(self.task_config.train_tasks, self._inner_buffers, self._outer_buffers, self._full_buffers)):
+        for i, (train_task_idx, inner_buffer, outer_buffer, test_buffer, full_buffer) in enumerate(zip(self.task_config.train_tasks, self._inner_buffers, self._outer_buffers, self._test_buffers, self._full_buffers)):
             if self._args.task_batch_size is not None:
                 if (train_step_idx + i) % nth != 0 and (train_step_idx % self._visualization_interval != 0):
                     continue
             self._env.set_task_idx(train_task_idx)
 
             # Sample J training batches for independent adaptations [L7]
-            if self._args.iw_exploration:
-                np_batch, np_trajectories = inner_buffer.sample(self._args.inner_batch_size, trajectory=True)
-                pyt_trajectories = [torch.tensor(np_traj, requires_grad=False).to(self._device) for np_traj in np_trajectories]
-            else:
-                np_batch = inner_buffer.sample(self._args.inner_batch_size, trajectory=False)
+            np_batch = inner_buffer.sample(self._args.inner_batch_size)
             pyt_batch = torch.tensor(np_batch, requires_grad=False).to(self._device)
             batches.append(pyt_batch)
 
@@ -665,7 +605,9 @@ class MAMLRAWR(object):
 
                 meta_policy_loss, outer_adv, outer_weight, _ = self.adaptation_policy_loss_on_batch(f_adaptation_policy, adapted_q_function,
                                                                                                  adapted_value_function, meta_batch, train_task_idx)
-                meta_policy_grad = A.grad(meta_policy_loss, f_adaptation_policy.parameters(time=0), retain_graph=self._args.iw_exploration)
+                meta_policy_grad = A.grad(meta_policy_loss, f_adaptation_policy.parameters(time=0),
+                                          retain_graph=self._args.iw_exploration,
+                                          allow_unused=self._args.task_idx is not None)
                 if self._args.iw_exploration:
                     policy_exploration_grad = A.grad(meta_policy_loss, self._exploration_policy.parameters(), retain_graph=self._args.exploration_reg is not None)
 
@@ -699,6 +641,8 @@ class MAMLRAWR(object):
                 if not (self._args.offline or self._args.offline_outer):
                     outer_buffer.add_trajectory(adapted_trajectory)
                     full_buffer.add_trajectory(adapted_trajectory)
+                if not test_buffer.immutable:
+                    test_buffer.add_trajectory(adapted_trajectory)
             else:
                 success = False
 
@@ -746,27 +690,6 @@ class MAMLRAWR(object):
         if grad is not None:
             writer.add_scalar(f'Policy_Outer_Grad', grad, train_step_idx)
 
-        ############################################################################3
-        # Update exploration policy [WIP] [L16]
-        ############################################################################3
-#        if self._args.train_exploration:
-#            if self._args.cvae:
-#                if train_step_idx % self._args.gradient_steps_per_iteration == 0:
-#                    self.train_vae_exploration(train_step_idx, writer)
-#            elif self._args.iw_exploration:
-#                if self._args.exploration_reg is not None:
-#                    exploration_reg_loss = self._args.exploration_reg * iweight_logits.pow(2).mean()
-#                    extra_grad = A.grad(exploration_reg_loss, self._exploration_policy.parameters())
-#                    writer.add_scalar(f'Exploration_Reg_Loss', exploration_reg_loss.detach().item(), train_step_idx)
-#                    writer.add_scalar(f'Exploration_Reg_Grad', torch.cat([g.view(-1) for g in extra_grad]).norm(2), train_step_idx)
-#                else:
-#                    extra_grad = None
-#                grad = self.update_model_with_grads(self._exploration_policy, exploration_grads, self._exploration_policy_optimizer, self._grad_clip, extra_grad=extra_grad)
-#                if grad is not None:
-#                    writer.add_scalar(f'Exploration_Grad', grad, train_step_idx)
-#            else:
-#                self.train_awr_exploration(train_step_idx, batches, meta_batches, adaptation_policies, value_functions, writer)
-        ############################################################################3
         return rollouts, test_rewards, train_rewards, meta_value_losses, meta_policy_losses, value_functions, successes
 
     #@profile
@@ -790,7 +713,8 @@ class MAMLRAWR(object):
             behavior_policy = self._exploration_policy if self._args.sample_exploration_inner else self._adaptation_policy
             exploration_rewards = np.zeros((self._args.initial_rollouts, len(self._env.tasks)))
             for j in range(self._args.initial_rollouts):
-                for i, (inner_buffer, outer_buffer, full_buffer) in enumerate(zip(self._inner_buffers, self._outer_buffers, self._full_buffers)):
+                for i, (inner_buffer, outer_buffer, test_buffer, full_buffer) in enumerate(zip(self._inner_buffers, self._outer_buffers,
+                                                                                               self._test_buffers, self._full_buffers)):
                     print_(f'{j+1,i+1}/{self._args.initial_rollouts,len(self._inner_buffers)}\r', self._silent, end='')
                     self._env.set_task_idx(i)
                     if self._args.render_exploration:
@@ -803,6 +727,8 @@ class MAMLRAWR(object):
                     if not self._args.load_outer_buffer:
                         outer_buffer.add_trajectory(trajectory, force=True)
                         full_buffer.add_trajectory(trajectory, force=True)
+                    random_trajectory, _, _ = self._rollout_policy(behavior_policy, self._env, random=True)
+                    test_buffer.add_trajectory(random_trajectory)
 
             if self._args.debug:
                 print_(f'Mean exploration rewards: {exploration_rewards.mean(0)}', self._silent)

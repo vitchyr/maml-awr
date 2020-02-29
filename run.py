@@ -102,24 +102,24 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
     torch.cuda.manual_seed(seed)
     
     if args.task_idx is None:        
-        if args.env == 'ant_dir':
+        if task_config.env == 'ant_dir':
             tasks = []
             for idx in range(task_config.total_tasks):
                 with open(task_config.task_path_prefix + f'{idx}.pkl', 'rb') as f:
                     tasks.append(pickle.load(f)[0])
             env = AntDirEnv(tasks=tasks, include_goal = args.include_goal or args.multitask, n_tasks=task_config.total_tasks)
-        elif args.env == 'ant_goal':
+        elif task_config.env == 'ant_goal':
             env = AntGoalEnv(include_goal = args.include_goal)
-        elif args.env == 'happy_ant_goal':
+        elif task_config.env == 'happy_ant_goal':
             env = AntGoalEnv(include_goal = args.include_goal, reward_offset = 4.0, can_die = True)
-        elif args.env == 'cheetah_dir':
+        elif task_config.env == 'cheetah_dir':
             env = HalfCheetahDirEnv(include_goal = args.include_goal or args.multitask, n_tasks=task_config.total_tasks)
-        elif args.env == 'cheetah_vel':
+        elif task_config.env == 'cheetah_vel':
             env = HalfCheetahVelEnv(include_goal = args.include_goal or args.multitask, train=not args.multitask_eval, one_hot_goal=args.one_hot_goal or args.multitask,
                                     n_tasks=task_config.total_tasks)
-        elif args.env == 'humanoid_dir':
+        elif task_config.env == 'humanoid_dir':
             env = HumanoidDirEnv(include_goal = args.include_goal)
-        elif args.env == 'walker_param':
+        elif task_config.env == 'walker_param':
             tasks = []
             for idx in range(task_config.total_tasks):
                 try:
@@ -128,37 +128,37 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
                 except Exception as e:
                     tasks.append(None)
             env = WalkerRandParamsWrappedEnv(tasks=tasks, include_goal = args.include_goal or args.multitask)
-        elif args.env == 'ml10':
-            env = get_metaworld_tasks(args.env)
-        elif args.env == 'point_mass':                
+        elif task_config.env == 'ml10':
+            env = get_metaworld_tasks(task_config.env)
+        elif task_config.env == 'point_mass':                
             raise NotImplementedError('TODO: eric-mitchell (point_mass)')
             #envs = [PointMass1DEnv(0), PointMass1DEnv(-1)]
         else:
-            env = get_gym_env(args.env)
+            env = get_gym_env(task_config.env)
 
-        with open(args.env + '_tasks', 'wb') as tasks_list:
+        with open(task_config.env + '_tasks', 'wb') as tasks_list:
             pickle.dump(env.tasks, tasks_list)
     else:        
-        if args.env == 'ant_dir':
+        if task_config.env == 'ant_dir':
             env = AntDirEnv(task_idx=args.task_idx, single_task=True, include_goal = args.include_goal)
-        elif args.env == 'ant_goal':
+        elif task_config.env == 'ant_goal':
             env = AntGoalEnv(task_idx=args.task_idx, single_task=True, include_goal = args.include_goal)
-        elif args.env == 'happy_ant_goal':
+        elif task_config.env == 'happy_ant_goal':
             env = AntGoalEnv(task_idx=args.task_idx, single_task=True, include_goal = args.include_goal, reward_offset = 4.0, can_die = True)
-        elif args.env == 'cheetah_dir':
-            env = HalfCheetahDirEnv(task_idx=args.task_idx, single_task=True, include_goal = args.include_goal)
-        elif args.env == 'cheetah_vel':
-            env = HalfCheetahVelEnv(n_tasks=args.n_tasks, task_idx=args.task_idx, single_task=True, include_goal = args.include_goal, one_hot_goal=args.one_hot_goal, train=not args.multitask_eval)
-        elif args.env == 'humanoid_dir':
+        elif task_config.env == 'cheetah_dir':
+            env = HalfCheetahDirEnv(task_config.total_tasks, task_idx=args.task_idx, single_task=True, include_goal = args.include_goal)
+        elif task_config.env == 'cheetah_vel':
+            env = HalfCheetahVelEnv(task_config.total_tasks, task_idx=args.task_idx, single_task=True, include_goal = args.include_goal, one_hot_goal=args.one_hot_goal, train=not args.multitask_eval)
+        elif task_config.env == 'humanoid_dir':
             env = HumanoidDirEnv(task_idx=args.task_idx, single_task=True, include_goal = args.include_goal)
-        elif args.env == 'walker_param':
+        elif task_config.env == 'walker_param':
             env = WalkerRandParamsWrappedEnv(task_idx=args.task_idx, single_task=True, include_goal = args.include_goal)
-        elif args.env == 'point_mass':
+        elif task_config.env == 'point_mass':
             raise NotImplementedError('TODO: eric-mitchell')
             #env = PointMass1DEnv(args.task_idx)
         else:
             raise NotImplementedError('TODO: eric-mitchell')
-            #env = gym.make(args.env)
+            #env = gym.make(task_config.env)
 
 
     print(env.tasks)
@@ -172,7 +172,7 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
     else:
         name = f'{args.name}_{instance_idx}'
 
-    if args.env == 'point_mass':
+    if task_config.env == 'point_mass':
         network_shape = [32, 32]
     else:
         network_shape = [256, 128, 64, 32]

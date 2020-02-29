@@ -76,8 +76,8 @@ class Experience(NamedTuple):
 
 class NewReplayBuffer(object):
     def __init__(self, size: int, obs_dim: int, action_dim: int, discount_factor: float = 0.99,
-                 immutable: bool = False, load_from: str = None, silent: bool = False, trim_suffix: int = 0):
-        self._immutable = immutable
+                 immutable: bool = False, load_from: str = None, silent: bool = False):
+        self.immutable = immutable
         
         self._obs = np.full((size, obs_dim), float('nan'), dtype=np.float32)
         self._actions = np.full((size, action_dim), float('nan'), dtype=np.float32)
@@ -149,7 +149,7 @@ class NewReplayBuffer(object):
         f.close()
     
     def add_trajectory(self, trajectory: List[Experience], force: bool = False):
-        if self._immutable and not force:
+        if self.immutable and not force:
             raise ValueError('Cannot add trajectory to immutable replay buffer')
 
         mc_reward = 0
