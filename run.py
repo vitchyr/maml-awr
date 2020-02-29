@@ -1,14 +1,15 @@
 from typing import Optional, List
 import argparse
 import gym
+import pickle
 import numpy as np
 from multiprocessing import Process
 import random
 import torch
 import metaworld
 
-from src.tp_envs.ant_goal import AntGoalEnv
-from src.envs import PointMass1DEnv, HalfCheetahDirEnv, HalfCheetahVelEnv
+#from src.tp_envs.ant_goal import AntGoalEnv
+from src.envs import HalfCheetahDirEnv, HalfCheetahVelEnv, AntDirEnv, AntGoalEnv, HumanoidDirEnv, WalkerRandParamsWrappedEnv
 from src.maml_rawr import MAMLRAWR
 from src.args import get_args
 
@@ -94,14 +95,21 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
-        
+    
+
     if args.task_idx is None:
-        if args.env == 'ant_goal':
-            env = AntGoalEnv()
+        if args.env == 'ant_dir':
+            env = AntDirEnv(include_goal = args.include_goal)
+        elif args.env == 'ant_goal':
+            env = AntGoalEnv(include_goal = args.include_goal)
         elif args.env == 'cheetah_dir':
-            env = HalfCheetahDirEnv()
+            env = HalfCheetahDirEnv(include_goal = args.include_goal)
         elif args.env == 'cheetah_vel':
-            env = HalfCheetahVelEnv()
+            env = HalfCheetahVelEnv(include_goal = args.include_goal)
+        elif args.env == 'humanoid_dir':
+            env = HumanoidDirEnv(include_goal = args.include_goal)
+        elif args.env == 'walker_param':
+            env = WalkerRandParamsWrappedEnv(include_goal = args.include_goal)
         elif args.env == 'ml10':
             env = get_metaworld_tasks(args.env)
         elif args.env == 'point_mass':                
@@ -109,13 +117,23 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
             #envs = [PointMass1DEnv(0), PointMass1DEnv(-1)]
         else:
             env = get_gym_env(args.env)
+            
+        with open(args.env + '_tasks', 'wb') as tasks_list:
+            pickle.dump(env.tasks, tasks_list)
     else:
-        if args.env == 'ant_goal':
-            env = AntGoalEnv(task_idx=args.task_idx)
+        
+        if args.env == 'ant_dir':
+            env = AntDirEnv(task_idx=args.task_idx, single_task=True, include_goal = args.include_goal)
+        elif args.env == 'ant_goal':
+            env = AntGoalEnv(task_idx=args.task_idx, single_task=True, include_goal = args.include_goal)
         elif args.env == 'cheetah_dir':
-            env = HalfCheetahDirEnv(task_idx=args.task_idx, single_task=True)
+            env = HalfCheetahDirEnv(task_idx=args.task_idx, single_task=True, include_goal = args.include_goal)
         elif args.env == 'cheetah_vel':
-            env = HalfCheetahVelEnv(task_idx=args.task_idx, single_task=True)
+            env = HalfCheetahVelEnv(task_idx=args.task_idx, single_task=True, include_goal = args.include_goal)
+        elif args.env == 'humanoid_dir':
+            env = HumanoidDirEnv(task_idx=args.task_idx, single_task=True, include_goal = args.include_goal)
+        elif args.env == 'walker_param':
+            env = WalkerRandParamsWrappedEnv(task_idx=args.task_idx, single_task=True, include_goal = args.include_goal)
         elif args.env == 'ml10':
             env = get_metaworld_tasks(args.env)
         elif args.env == 'point_mass':
@@ -124,7 +142,7 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
         else:
             raise NotImplementedError('TODO: eric-mitchell')
             #env = gym.make(args.env)
-
+            
     if args.episode_length is not None:
         env._max_episode_steps = args.episode_length
         
@@ -138,7 +156,7 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
     if args.env == 'point_mass':
         network_shape = [32, 32]
     else:
-        network_shape = [64, 64, 32, 32]
+        network_shape = [256, 128, 64, 32]
         
     seed = args.seed if args.seed is not None else instance_idx
     random.seed(seed)
@@ -160,6 +178,7 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
 
 if __name__ == '__main__':
     args = get_args()
+    
     if args.instances == 1:
         if args.profile:
             import cProfile
