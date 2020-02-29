@@ -49,7 +49,7 @@ def argmax(module: nn.Module, arg: torch.tensor):
         if d < 1e-4:
             print('breaking')
             break
-    print(f'Final d: {d}')
+    #print(f'Final d: {d}')
     return arg, out
 
 
@@ -71,7 +71,7 @@ class Experience(NamedTuple):
     next_state: np.ndarray
     reward: float
     done: bool
-    log_prob: float
+    #log_prob: float
     info: np.ndarray = None
     next_info: np.ndarray = None
     
@@ -130,7 +130,8 @@ class ReplayBuffer(object):
 
     def __init__(self, trajectory_length: int, state_dim: int, action_dim: int, info_dim: int = 0, max_trajectories: int = 10000,
                  discount_factor: float = 0.99, immutable: bool = False, load_from: str = None, silent: bool = False, trim_suffix: int = 0):
-        self._trajectories = np.empty((max_trajectories, trajectory_length, state_dim + action_dim + state_dim + state_dim + info_dim * 2 + 1 + 1 + 1 + 1 + 1), dtype=np.float32)
+        self._trajectories = np.empty((max_trajectories, trajectory_length, state_dim + action_dim + state_dim + state_dim + info_dim * 2 + 1 + 1 + 1 + 1), dtype=np.float32)
+        self._trajectories.fill(np.float('nan'))
         self._stored_trajectories = 0
         self._new_trajectory_idx = 0
         self._max_trajectories = max_trajectories
@@ -166,16 +167,18 @@ class ReplayBuffer(object):
         if self._immutable and not force:
             raise ValueError('Cannot add trajectory to immutable replay buffer')
 
-        if len(trajectory) != self._trajectory_length:
-            raise ValueError(f'Invalid trajectory length: {len(trajectory)}')
+        #if len(trajectory) != self._trajectory_length:
+        #    raise ValueError(f'Invalid trajectory length: {len(trajectory)}')
 
         mc_reward = 0
         terminal_state = None
-        terminal_factor = 1
+        missing_elements = self._trajectory_length - len(trajectory)
+        terminal_factor = 1 if missing_elements == 0 else 0 # For incomplete trajectories, we don't want any bootstrap value estimation
         for idx, experience in enumerate(trajectory[::-1]):
             if terminal_state is None:
                 terminal_state = experience.next_state
 
+            idx = idx + missing_elements
             slice_idx = 0
             self._trajectories[self._new_trajectory_idx, -(idx + 1), slice_idx:slice_idx + self._state_dim] = experience.state
             slice_idx += self._state_dim
@@ -196,8 +199,8 @@ class ReplayBuffer(object):
                 self._trajectories[self._new_trajectory_idx, -(idx + 1), slice_idx:slice_idx + self._info_dim] = experience.next_info
                 slice_idx += self._info_dim
 
-            self._trajectories[self._new_trajectory_idx, -(idx + 1), slice_idx:slice_idx + 1] = experience.log_prob
-            slice_idx += 1
+            #self._trajectories[self._new_trajectory_idx, -(idx + 1), slice_idx:slice_idx + 1] = experience.log_prob
+            #slice_idx += 1
             
             terminal_factor *= self._discount_factor
             self._trajectories[self._new_trajectory_idx, -(idx + 1), slice_idx:slice_idx + 1] = terminal_factor
@@ -224,9 +227,14 @@ class ReplayBuffer(object):
             self.add_trajectory(trajectory, force)
 
     def sample(self, batch_size, trajectory: bool = False, complete: bool = False):
-        idxs = np.random.choice(np.arange(self._stored_trajectories * (self._trajectory_length - self._trim_suffix)), batch_size)
-        trajectory_idxs = idxs // (self._trajectory_length - self._trim_suffix)
-        time_steps = idxs % (self._trajectory_length - self._trim_suffix)
+        valid = (~np.isnan(self._trajectories)).all(-1)
+        all_trajectory_idxs, all_time_steps = np.where(valid)
+        idxs = np.random.choice(all_trajectory_idxs.shape[0], batch_size)
+        trajectory_idxs = all_trajectory_idxs[idxs]
+        time_steps = all_time_steps[idxs]
+        #idxs = np.random.choice(np.arange(self._stored_trajectories * (self._trajectory_length - self._trim_suffix)), batch_size)
+        #trajectory_idxs = idxs // (self._trajectory_length - self._trim_suffix)
+        #time_steps = idxs % (self._trajectory_length - self._trim_suffix)
 
         batch = self._trajectories[trajectory_idxs, time_steps]
         if not trajectory:
@@ -242,7 +250,7 @@ class ReplayBuffer(object):
             return batch, trajectories
 
 
-def generate_test_trajectory(state_dim: int, action_dim: int):
+def generate_test_trajectory(state_dim: int, action_dim: int, trajectory_length: int):
     trajectory = []
     next_state = np.random.uniform(0,1,(state_dim,))
     for idx in range(trajectory_length):
@@ -250,20 +258,20 @@ def generate_test_trajectory(state_dim: int, action_dim: int):
         action = np.random.uniform(-1,0,(action_dim,))
         next_state = np.random.uniform(0,1,(state_dim,))
         reward = np.random.uniform()
-        trajectory.append(Experience(state, action, next_state, reward))
+        trajectory.append(Experience(state, action, next_state, reward, idx == trajectory_length - 1))
 
     return trajectory
 
-if __name__ == '__main__':
-    trajectory_length = 100
+if __name__ == '__main__':    
+    trajectory_length = 20
     state, action = 6, 4
-    buf = ReplayBuffer(trajectory_length, state, action)
+    buf = ReplayBuffer(trajectory_length, state, action, max_trajectories=5)
 
-    for idx in range(100):
-        buf.add_trajectory(generate_test_trajectory(state, action))
+    for idx in range(2):
+        buf.add_trajectory(generate_test_trajectory(state, action, 20))
 
-    buf.add_trajectories([generate_test_trajectory(state, action) for _ in range(100)])
+    buf.add_trajectories([generate_test_trajectory(state, action, 10) for _ in range(2)])
 
     print(len(buf))
     print(buf.sample(2))
-
+    import pdb; pdb.set_trace()

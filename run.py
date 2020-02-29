@@ -1,6 +1,7 @@
 from typing import Optional, List
 import argparse
 import gym
+import pickle
 import numpy as np
 from multiprocessing import Process
 import random
@@ -94,16 +95,17 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
-        
+    
+
     if args.task_idx is None:
         if args.env == 'ant_dir':
             env = AntDirEnv(include_goal = args.include_goal)
-        if args.env == 'ant_goal':
+        elif args.env == 'ant_goal':
             env = AntGoalEnv(include_goal = args.include_goal)
         elif args.env == 'cheetah_dir':
             env = HalfCheetahDirEnv(include_goal = args.include_goal)
-        elif args.env == 'cheetah_dir':
-            env = HalfCheetahDirEnv(include_goal = args.include_goal)
+        elif args.env == 'cheetah_vel':
+            env = HalfCheetahVelEnv(include_goal = args.include_goal)
         elif args.env == 'humanoid_dir':
             env = HumanoidDirEnv(include_goal = args.include_goal)
         elif args.env == 'walker_param':
@@ -115,20 +117,25 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
             #envs = [PointMass1DEnv(0), PointMass1DEnv(-1)]
         else:
             env = get_gym_env(args.env)
+            
+        with open(args.env + '_tasks.pkl', 'wb') as tasks_list:
+            pickle.dump(env.tasks, tasks_list)
     else:
         
         if args.env == 'ant_dir':
             env = AntDirEnv(task_idx=args.task_idx, single_task=True, include_goal = args.include_goal)
-        if args.env == 'ant_goal':
+        elif args.env == 'ant_goal':
             env = AntGoalEnv(task_idx=args.task_idx, single_task=True, include_goal = args.include_goal)
         elif args.env == 'cheetah_dir':
             env = HalfCheetahDirEnv(task_idx=args.task_idx, single_task=True, include_goal = args.include_goal)
-        elif args.env == 'cheetah_dir':
-            env = HalfCheetahDirEnv(task_idx=args.task_idx, single_task=True, include_goal = args.include_goal)
+        elif args.env == 'cheetah_vel':
+            env = HalfCheetahVelEnv(task_idx=args.task_idx, single_task=True, include_goal = args.include_goal)
         elif args.env == 'humanoid_dir':
             env = HumanoidDirEnv(task_idx=args.task_idx, single_task=True, include_goal = args.include_goal)
         elif args.env == 'walker_param':
             env = WalkerRandParamsWrappedEnv(task_idx=args.task_idx, single_task=True, include_goal = args.include_goal)
+        elif args.env == 'ml10':
+            env = get_metaworld_tasks(args.env)
         elif args.env == 'point_mass':
             raise NotImplementedError('TODO: eric-mitchell')
             #env = PointMass1DEnv(args.task_idx)

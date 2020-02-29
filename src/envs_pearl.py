@@ -1,10 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Created on Fri Jan 24 14:41:17 2020
-
-@author: rafael
-"""
 import numpy as np
 from typing import Optional, Tuple, List
 from oyster.rlkit.envs.half_cheetah_vel import HalfCheetahVelEnv as HalfCheetahVelEnv_

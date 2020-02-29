@@ -1,6 +1,6 @@
 import numpy as np
 
-from rlkit.envs.ant_multitask_base import MultitaskAntEnv
+from src.tp_envs.ant_multitask_base import MultitaskAntEnv
 from . import register_env
 
 

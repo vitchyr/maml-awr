@@ -1,10 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Created on Fri Jan 24 14:41:17 2020
-
-@author: rafael
-"""
 import numpy as np
 from typing import Optional, Tuple, List
 from src.tp_envs.half_cheetah_vel import HalfCheetahVelEnv as HalfCheetahVelEnv_
@@ -48,7 +41,7 @@ class HalfCheetahDirEnv(HalfCheetahDirEnv_):
             except:
                 pass
             one_hot = np.zeros(len(self.tasks), dtype=np.float32)
-            one_hot[idx] = 1
+            one_hot[idx] = 1.0
             obs = super()._get_obs()
             obs = np.concatenate([obs, one_hot])
         else:
@@ -116,9 +109,9 @@ class HalfCheetahVelEnv(HalfCheetahVelEnv_):
 class AntDirEnv(AntDirEnv_):
     def __init__(self, tasks: List[dict] = None, task_idx: int = 0, single_task: bool = False, include_goal: bool = False):
         self.include_goal = include_goal
-        super(AntDirEnv, self).__init__(forward_backward=True)
+        super(AntDirEnv, self).__init__(forward_backward=False)
         if tasks is None:
-            tasks = self.sample_tasks(2) #Only backward-forward tasks
+            tasks = self.sample_tasks(50) #Only backward-forward tasks
         self.tasks = tasks
         self._task = tasks[task_idx]
         if single_task:
@@ -126,19 +119,28 @@ class AntDirEnv(AntDirEnv_):
         self._goal = self._task['goal']
         self._max_episode_steps = 200
         self.info_dim = 1
-        
+    
+#    def step(self, action):
+#        obs, rew, done, info = super().step(action)
+#        if done == True:
+#            rew = rew - 1.0
+#            done = False
+#        return (obs, rew, done, info)
+    
     def _get_obs(self):
         if self.include_goal:
+            idx = 0
+            try:
+                idx = self.tasks.index(self._task)
+            except:
+                pass
+            one_hot = np.zeros(len(self.tasks), dtype=np.float32)
+            one_hot[idx] = 1.0
             obs = super()._get_obs()
-            obs = np.concatenate([obs, np.array([np.cos(self._goal), np.sin(self._goal)])])
+            obs = np.concatenate([obs, one_hot])
         else:
             obs = super()._get_obs()
         return obs
-        
-#    def step(self, action):
-#        obs, rew, done, info = super().step(action)
-#        info['info'] = self._goal
-#        return (obs, rew, done, info)
     
     def set_task(self, task):
         self._task = task
@@ -158,6 +160,7 @@ class AntGoalEnv(AntGoalEnv_):
             tasks = self.sample_tasks(130) #Only backward-forward tasks
         self.tasks = tasks
         self._task = tasks[task_idx]
+        self.task = tasks[task_idx]
         if single_task:
             self.tasks = self.tasks[task_idx:task_idx+1]
         self._goal = self._task['goal']
@@ -209,10 +212,12 @@ class HumanoidDirEnv(HumanoidDirEnv_):
             obs = super()._get_obs()
         return obs
     
-#    def step(self, action):
-#        obs, rew, done, info = super().step(action)
-#        info['info'] = self._goal
-#        return (obs, rew, done, info)
+    def step(self, action):
+        obs, rew, done, info = super().step(action)
+        if done == True:
+            rew = rew - 5.0
+            done = False
+        return (obs, rew, done, info)
     
     def set_task(self, task):
         self._task = task
@@ -227,20 +232,38 @@ class HumanoidDirEnv(HumanoidDirEnv_):
 class WalkerRandParamsWrappedEnv(WalkerRandParamsWrappedEnv_):
     def __init__(self, tasks: List[dict] = None, task_idx: int = 0, single_task: bool = False, include_goal: bool = False):
         self.include_goal = include_goal
-        super(WalkerRandParamsWrappedEnv, self).__init__()
+        super(WalkerRandParamsWrappedEnv, self).__init__(n_tasks=50)
         if tasks is None:
-            tasks = self.sample_tasks(50) #Only backward-forward tasks
+            tasks = self.sample_tasks(50) 
         self.tasks = tasks
-        self._task = tasks[task_idx]
+        self._task = self.tasks[task_idx]
         if single_task:
             self.tasks = self.tasks[task_idx:task_idx+1]
         self._max_episode_steps = 200
         
+    def _get_obs(self):
+        if self.include_goal:
+            idx = 0
+            try:
+                idx = self._goal
+            except:
+                pass
+#            one_hot = np.zeros(len(self.tasks), dtype=np.float32)
+            one_hot = np.zeros(50, dtype=np.float32)
+            one_hot[idx] = 1.0
+            obs = super()._get_obs()
+            obs = np.concatenate([obs, one_hot])
+        else:
+            obs = super()._get_obs()
+        return obs
+        
 #    def step(self, action):
 #        obs, rew, done, info = super().step(action)
-#        info['info'] = self._goal
+#        if done == True:
+#            rew = rew - 1.0
+#            done = False
 #        return (obs, rew, done, info)
-    
+        
     def set_task_idx(self, idx):
         self._task = self.tasks[idx]
         self._goal = idx

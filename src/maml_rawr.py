@@ -210,10 +210,10 @@ class MAMLRAWR(object):
             if render:
                 env.render()
             if 'info' in info_dict:
-                trajectory.append(Experience(state, action, next_state, reward, done, log_prob,
+                trajectory.append(Experience(state, action, next_state, reward, done,# log_prob,
                                              info_dict['info'], info_dict['next_info']))
             else:
-                trajectory.append(Experience(state, action, next_state, reward, done, log_prob))
+                trajectory.append(Experience(state, action, next_state, reward, done))#, log_prob))
             state = next_state
             total_reward += reward
             episode_t += 1

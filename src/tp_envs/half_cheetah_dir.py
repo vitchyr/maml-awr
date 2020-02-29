@@ -1,6 +1,6 @@
 import numpy as np
 
-from .half_cheetah import HalfCheetahEnv
+from src.tp_envs.half_cheetah import HalfCheetahEnv
 from . import register_env
 
 
