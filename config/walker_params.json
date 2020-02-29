@@ -1,0 +1,29 @@
+{
+    "total_tasks": 50,
+    "train_tasks": [38,0,19,14,7,42,46,10,17,4,36,41,6,34,43],
+    "test_tasks": [15,12,39,2],
+    "task_path_prefix": "offline_data/walker_params/task_0{:02}/env_walker_param_train_task{}.pkl",
+    "train_buffers": [
+	"offline_data/walker_params/task_038/buffers_walker_param_train_task_0.npy",
+	"offline_data/walker_params/task_000/buffers_walker_param_train_task_0.npy",
+	"offline_data/walker_params/task_019/buffers_walker_param_train_task_0.npy",
+	"offline_data/walker_params/task_014/buffers_walker_param_train_task_0.npy",
+	"offline_data/walker_params/task_007/buffers_walker_param_train_task_0.npy",
+	"offline_data/walker_params/task_042/buffers_walker_param_train_task_0.npy",
+	"offline_data/walker_params/task_046/buffers_walker_param_train_task_0.npy",
+	"offline_data/walker_params/task_010/buffers_walker_param_train_task_0.npy",
+	"offline_data/walker_params/task_017/buffers_walker_param_train_task_0.npy",
+	"offline_data/walker_params/task_004/buffers_walker_param_train_task_0.npy",
+	"offline_data/walker_params/task_036/buffers_walker_param_train_task_0.npy",
+	"offline_data/walker_params/task_041/buffers_walker_param_train_task_0.npy",
+	"offline_data/walker_params/task_006/buffers_walker_param_train_task_0.npy",
+	"offline_data/walker_params/task_034/buffers_walker_param_train_task_0.npy",
+	"offline_data/walker_params/task_043/buffers_walker_param_train_task_0.npy"
+    ],
+    "test_buffers": [
+	"offline_data/walker_params/task_015/buffers_walker_param_train_task_0.npy",
+	"offline_data/walker_params/task_012/buffers_walker_param_train_task_0.npy",
+	"offline_data/walker_params/task_039/buffers_walker_param_train_task_0.npy",
+	"offline_data/walker_params/task_002/buffers_walker_param_train_task_0.npy"
+    ]
+}

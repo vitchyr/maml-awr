@@ -8,7 +8,7 @@ class MultitaskAntEnv(AntEnv):
         self._task = task
         self.tasks = self.sample_tasks(n_tasks)
         self._goal = self.tasks[0]['goal']
-        super(MultitaskAntEnv, self).__init__(**kwargs)
+        super().__init__(**kwargs)
 
     """
     def step(self, action):
