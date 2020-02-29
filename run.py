@@ -118,7 +118,7 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
         else:
             env = get_gym_env(args.env)
             
-        with open(args.env + '_tasks.pkl', 'wb') as tasks_list:
+        with open(args.env + '_tasks', 'wb') as tasks_list:
             pickle.dump(env.tasks, tasks_list)
     else:
         
