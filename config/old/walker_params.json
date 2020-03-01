@@ -1,4 +1,5 @@
 {
+    "env": "walker_param",
     "total_tasks": 50,
     "train_tasks": [38,0,19,14,7,42,46,10,17,4,36,41,6,34,43],
     "test_tasks": [15,12,39,2],

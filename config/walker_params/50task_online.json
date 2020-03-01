@@ -1,0 +1,12 @@
+{
+    "env": "walker_params",
+    "tasks": "/iris/u/em7/code/maml-rawr/tasks/walker_params_tasks",
+    "total_tasks": 50,
+    "train_tasks": [18,1,33,37,40,44,49,5,
+		    38,0,19,14,7,42,46,10,
+		    31,32,35,3,45,48,9,
+		    17,4,36,41,6,34],
+    "test_tasks": [43,15,12,39,2],
+    "train_buffers": [],
+    "test_buffers": []
+}

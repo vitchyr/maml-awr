@@ -20,7 +20,6 @@ import torch.optim as O
 import torch.distributions as D
 from torch.utils.tensorboard import SummaryWriter
 
-from src.envs import Env
 from src.nn import MLP, CVAE
 from src.utils import NewReplayBuffer, Experience, argmax, kld, RunningEstimator
 
@@ -62,7 +61,7 @@ def check_config(config):
     
 
 class MAMLRAWR(object):
-    def __init__(self, args: argparse.Namespace, task_config: dict, env: Env, log_dir: str, 
+    def __init__(self, args: argparse.Namespace, task_config: dict, env, log_dir: str, 
                  name: str = None,
                  policy_hidden_layers: List[int] = [32, 32], 
                  value_function_hidden_layers: List[int] = [32, 32],
@@ -178,7 +177,7 @@ class MAMLRAWR(object):
     ################# SUBROUTINES FOR TRAINING ######################
     #################################################################
     #@profile
-    def _rollout_policy(self, policy: MLP, env: Env, test: bool = False, random: bool = False, render: bool = False) -> List[Experience]:
+    def _rollout_policy(self, policy: MLP, env, test: bool = False, random: bool = False, render: bool = False) -> List[Experience]:
         env.seed(self._env_seeds[self._rollout_counter].item())
         self._rollout_counter += 1
         trajectory = []

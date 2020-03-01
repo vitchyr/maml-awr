@@ -1,0 +1,14 @@
+{
+    "env": "ant_dir",
+    "tasks": "/iris/u/em7/code/maml-rawr/tasks/ant_dir_tasks",
+    "total_tasks": 50,
+    "train_tasks": [1,2,3,4,5,6,7,8,9,
+		    11,12,13,14,15,16,17,19,
+		    22,23,24,25,26,27,29,
+		    32,33,34,35,36,37,39,
+		    40,41,43,44,45,46,47,48,49],
+    "test_tasks": [0,10,18,20,21,28,30,31,38,42],
+    "task_path_prefix": "offline_data/ant_dir/tasks/env_ant_dir_train_task",
+    "train_buffers": [],
+    "test_buffers": []
+}
