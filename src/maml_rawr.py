@@ -799,8 +799,8 @@ class MAMLRAWR(object):
                         torch.save(self._exploration_policy.state_dict(), f'{log_path}/ep_{t}.pt')
                 if self._args.save_buffers:
                     for i, (inner_buffer, outer_buffer, full_buffer) in enumerate(zip(self._inner_buffers, self._outer_buffers, self._full_buffers)):
-                        print(f'{log_path}/outer_buffer_{i}')
-                        inner_buffer.save(f'{log_path}/inner_buffer_{i}')
-                        outer_buffer.save(f'{log_path}/outer_buffer_{i}')
-                        full_buffer.save(f'{log_path}/full_buffer_{i}')
+                        print(f'{log_path}/outer_buffer_{i}.h5')
+                        inner_buffer.save(f'{log_path}/inner_buffer_{i}.h5')
+                        outer_buffer.save(f'{log_path}/outer_buffer_{i}.h5')
+                        full_buffer.save(f'{log_path}/full_buffer_{i}.h5')
                     

@@ -137,14 +137,14 @@ class NewReplayBuffer(object):
 
     def save(self, location: str):
         f = h5py.File(location, 'w')
-        f.create_dataset('obs', data=self._obs[:self._stored_steps])
-        f.create_dataset('actions', data=self._actions[:self._stored_steps])
-        f.create_dataset('rewards', data=self._rewards[:self._stored_steps])
-        f.create_dataset('mc_rewards', data=self._mc_rewards[:self._stored_steps])
-        f.create_dataset('terminals', data=self._terminals[:self._stored_steps])
-        f.create_dataset('terminal_obs', data=self._terminal_obs[:self._stored_steps])
-        f.create_dataset('terminal_discounts', data=self._terminal_discounts[:self._stored_steps])
-        f.create_dataset('next_obs', data=self._next_obs[:self._stored_steps])
+        f.create_dataset('obs', data=self._obs[:self._stored_steps], compression='lzf')
+        f.create_dataset('actions', data=self._actions[:self._stored_steps], compression='lzf')
+        f.create_dataset('rewards', data=self._rewards[:self._stored_steps], compression='lzf')
+        f.create_dataset('mc_rewards', data=self._mc_rewards[:self._stored_steps], compression='lzf')
+        f.create_dataset('terminals', data=self._terminals[:self._stored_steps], compression='lzf')
+        f.create_dataset('terminal_obs', data=self._terminal_obs[:self._stored_steps], compression='lzf')
+        f.create_dataset('terminal_discounts', data=self._terminal_discounts[:self._stored_steps], compression='lzf')
+        f.create_dataset('next_obs', data=self._next_obs[:self._stored_steps], compression='lzf')
         f.create_dataset('discount_factor', data=self._discount_factor)
         f.close()
     
