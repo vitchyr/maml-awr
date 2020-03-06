@@ -16,7 +16,7 @@ from stable_baselines.sac.policies import SACPolicy
 from stable_baselines import logger
 
 from src.utils import Experience, argmax, kld, RunningEstimator
-from src.utils import ReplayBuffer as TrajBuffer
+from src.utils import NewReplayBuffer as FullBuffer
 
 def get_vars(scope):
     """
@@ -156,8 +156,8 @@ class SAC(OffPolicyRLModel):
                 self.sess = tf_util.make_session(num_cpu=self.n_cpu_tf_sess, graph=self.graph)
 
                 self.replay_buffer = ReplayBuffer(self.buffer_size)
-                self.traj_buffers = [TrajBuffer(self.env._max_episode_steps, self.env.observation_space.shape[0], self.env.action_space.shape[0],
-                                            0, max_trajectories=self.full_size, discount_factor=self.gamma) for _ in range(len(self.env.unwrapped.tasks))]
+                self.full_buffers = [FullBuffer(self.full_size, self.env.observation_space.shape[0], self.env.action_space.shape[0])
+                                            for _ in range(len(self.env.unwrapped.tasks))]
                 self.env.task_idx = 0
                 with tf.variable_scope("input", reuse=False):
                     # Create policy and target TF objects
@@ -480,7 +480,7 @@ class SAC(OffPolicyRLModel):
                     if self.action_noise is not None:
                         self.action_noise.reset()
                     if not isinstance(self.env, VecEnv):
-                        self.traj_buffers[self.env.task_idx].add_trajectory(trajectory)
+                        self.full_buffers[self.env.task_idx].add_trajectory(trajectory)
                         self.env.task_idx = (self.env.task_idx + 1) % len(self.env.unwrapped.tasks)
                         self.env.unwrapped.set_task_idx(self.env.task_idx)
                         trajectory= []
@@ -520,11 +520,11 @@ class SAC(OffPolicyRLModel):
                     # Reset infos:
                     infos_values = []
                 
-                if step % 1000==0:
-                    for i, buffer in enumerate(self.traj_buffers):
-                        buffer.save(self.buffer_log + 'sub_task_{}'.format(i))
-            for i, buffer in enumerate(self.traj_buffers):
-                buffer.save(self.buffer_log + 'sub_task_{}'.format(i))
+                if step % 100000==0:
+                    for i, buffer in enumerate(self.full_buffers):
+                        buffer.save(self.buffer_log + 'sub_task_{}.hdf5'.format(i))
+            for i, buffer in enumerate(self.full_buffers):
+                buffer.save(self.buffer_log + 'sub_task_{}.hdf5'.format(i))
             return self
 
     def action_probability(self, observation, state=None, mask=None, actions=None, logp=False):

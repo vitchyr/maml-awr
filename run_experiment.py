@@ -9,7 +9,7 @@ import tensorflow as tf
 from stable_baselines.sac.policies import MlpPolicy
 from stable_baselines.sac.policies import FeedForwardPolicy
 from src.sac import SAC
-from src.args import get_args
+from src.data_args import get_args
 from src.envs import HalfCheetahDirEnv, HalfCheetahVelEnv, AntDirEnv, AntGoalEnv, HumanoidDirEnv, WalkerRandParamsWrappedEnv
 
 def get_metaworld_tasks(env_id: str = 'ml10'):
@@ -59,39 +59,42 @@ def get_metaworld_tasks(env_id: str = 'ml10'):
 def main(args):
     ml = 'train'
     if args.env == 'ant_dir':
-        env = AntDirEnv(task_idx=args.task_idx, single_task=args.single_task, include_goal = args.include_goal)
+        env = AntDirEnv(include_goal = args.include_goal)
     elif args.env == 'ant_goal':
-        env = AntGoalEnv(task_idx=args.task_idx, single_task=args.single_task, include_goal = args.include_goal)
+        env = AntGoalEnv(include_goal = args.include_goal)
     elif args.env == 'cheetah_dir':
-        env = HalfCheetahDirEnv(task_idx=args.task_idx, single_task=args.single_task, include_goal = args.include_goal)
+        env = HalfCheetahDirEnv(include_goal = args.include_goal)
     elif args.env == 'cheetah_vel':
-        env = HalfCheetahVelEnv(task_idx=args.task_idx, single_task=args.single_task, include_goal = args.include_goal)
+        env = HalfCheetahVelEnv(include_goal = args.include_goal)
     elif args.env == 'humanoid_dir':
-        env = HumanoidDirEnv(task_idx=args.task_idx, single_task=args.single_task, include_goal = args.include_goal)
+        env = HumanoidDirEnv(include_goal = args.include_goal)
     elif args.env == 'walker_param':
-        env = WalkerRandParamsWrappedEnv(task_idx=args.task_idx, single_task=True, include_goal = args.include_goal)
+        env = WalkerRandParamsWrappedEnv(include_goal = args.include_goal)
     elif args.env == 'ml10':
         env = get_metaworld_tasks(args.env)
         env.set_task_idx(0)
         if args.mltest:
             ml = 'mltest'
+            
+    env.set_task_idx(args.task_idx)
+    env.tasks = [env.tasks[args.task_idx]]
 
     if args.env == 'ml10':
         env = TimeLimit(env, max_episode_steps = 150)
-        pickle.dump(env.unwrapped.tasks, open(args.save_dir + '/env_{}_{}_task{}.pkl'.format(args.env, ml, args.task_idx), "wb" ))    
+        pickle.dump(env.unwrapped.tasks, open(args.log_dir + '/env_{}_{}_task{}.pkl'.format(args.env, ml, args.task_idx), "wb" ))    
     else:
         env.observation_space = gym.spaces.box.Box(env.observation_space.low, env.observation_space.high)
         env.action_space = gym.spaces.box.Box(env.action_space.low, env.action_space.high)
         env = TimeLimit(env, max_episode_steps = 200)
-        pickle.dump(env.unwrapped.tasks, open(args.save_dir + '/env_{}_{}_task{}.pkl'.format(args.env, ml, args.task_idx), "wb" ))
+        pickle.dump(env.unwrapped.tasks, open(args.log_dir + '/env_{}_{}_task{}.pkl'.format(args.env, ml, args.task_idx), "wb" ))
 
     model = SAC(MlpPolicy, #CustomSACPolicy, 
                 env, 
                 verbose=1, 
-                tensorboard_log = args.save_dir + '/tensorboard/log_{}_{}_task_{}'.format(args.env, ml, args.task_idx),
-                buffer_log = args.save_dir + '/buffers_{}_{}_{}_'.format(args.env, ml, args.task_idx),
+                tensorboard_log = args.log_dir + '/tensorboard/log_{}_{}_task_{}'.format(args.env, ml, args.task_idx),
+                buffer_log = args.log_dir + '/buffers_{}_{}_{}_'.format(args.env, ml, args.task_idx),
                 task = args.task_idx,
-                buffer_size = env._max_episode_steps * args.replay_buffer_size, 
+                buffer_size = args.replay_buffer_size, 
                 full_size = args.full_buffer_size,
                 batch_size = args.batch_size, 
                 policy_kwargs={'layers': [256, 256]},
