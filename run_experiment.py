@@ -97,7 +97,7 @@ def main(args):
                 buffer_size = args.replay_buffer_size, 
                 full_size = args.full_buffer_size,
                 batch_size = args.batch_size, 
-                policy_kwargs={'layers': [256, 256]},
+                policy_kwargs={'layers': [256, 256, 256]},
                 learning_rate = 3e-4,
                 gamma = 0.99)
     
