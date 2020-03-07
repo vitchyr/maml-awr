@@ -38,8 +38,7 @@ def get_metaworld_tasks(env_id: str = 'ml10'):
 
         env.tasks = tasks
         print(tasks)
-from src.envs import HalfCheetahDirEnv, HalfCheetahVelEnv, AntDirEnv, AntGoalEnv, HumanoidDirEnv, WalkerRandParamsWrappedEnv
-
+        
         def set_task_idx(idx):
             env.set_task(tasks[idx])
         def task_description(batch: None, one_hot: bool = True):
