@@ -107,7 +107,8 @@ from src.envs import HalfCheetahDirEnv, HalfCheetahVelEnv, AntDirEnv, AntGoalEnv
                 learning_rate = 3e-4,
                 gamma = 0.99)
     
-    model.learn(total_timesteps = env._max_episode_steps * args.full_buffer_size * len(env.unwrapped.tasks), log_interval = 10)
+    model.learn(total_timesteps = args.full_buffer_size * len(env.unwrapped.tasks), log_interval = 10)
+    model.save(args.log_dir + '/model_{}_{}_{}'.format(args.env, ml, args.task_idx))
 
 if __name__ == '__main__':
     random.seed(17)
