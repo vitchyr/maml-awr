@@ -82,7 +82,6 @@ def main(args):
             
     env.set_task_idx(args.task_idx)
     env.tasks = [env.tasks[args.task_idx]]
-from src.envs import HalfCheetahDirEnv, HalfCheetahVelEnv, AntDirEnv, AntGoalEnv, HumanoidDirEnv, WalkerRandParamsWrappedEnv
 
     if args.env == 'ml10':
         env = TimeLimit(env, max_episode_steps = 150)
