@@ -38,6 +38,7 @@ def get_metaworld_tasks(env_id: str = 'ml10'):
 
         env.tasks = tasks
         print(tasks)
+from src.envs import HalfCheetahDirEnv, HalfCheetahVelEnv, AntDirEnv, AntGoalEnv, HumanoidDirEnv, WalkerRandParamsWrappedEnv
 
         def set_task_idx(idx):
             env.set_task(tasks[idx])
@@ -59,17 +60,21 @@ def get_metaworld_tasks(env_id: str = 'ml10'):
 def main(args):
     ml = 'train'
     if args.env == 'ant_dir':
-        env = AntDirEnv(include_goal = args.include_goal)
+        ant_dir_tasks = pickle.load(open("./tasks/ant_dir_tasks", "rb"))
+        env = AntDirEnv(tasks = ant_dir_tasks, include_goal = args.include_goal)
     elif args.env == 'ant_goal':
         env = AntGoalEnv(include_goal = args.include_goal)
     elif args.env == 'cheetah_dir':
-        env = HalfCheetahDirEnv(include_goal = args.include_goal)
+        cheetah_dir_tasks = pickle.load(open("./tasks/cheetah_dir_tasks", "rb"))
+        env = HalfCheetahDirEnv(tasks = cheetah_dir_tasks, include_goal = args.include_goal)
     elif args.env == 'cheetah_vel':
-        env = HalfCheetahVelEnv(include_goal = args.include_goal)
+        cheetah_vel_tasks = pickle.load(open("./tasks/cheetah_vel_tasks", "rb"))
+        env = HalfCheetahVelEnv(tasks = cheetah_vel_tasks, include_goal = args.include_goal)
     elif args.env == 'humanoid_dir':
         env = HumanoidDirEnv(include_goal = args.include_goal)
     elif args.env == 'walker_param':
-        env = WalkerRandParamsWrappedEnv(include_goal = args.include_goal)
+        walker_tasks = pickle.load(open("./tasks/walker_params_tasks", "rb"))
+        env = WalkerRandParamsWrappedEnv(tasks = walker_tasks, include_goal = args.include_goal)
     elif args.env == 'ml10':
         env = get_metaworld_tasks(args.env)
         env.set_task_idx(0)
@@ -78,6 +83,7 @@ def main(args):
             
     env.set_task_idx(args.task_idx)
     env.tasks = [env.tasks[args.task_idx]]
+from src.envs import HalfCheetahDirEnv, HalfCheetahVelEnv, AntDirEnv, AntGoalEnv, HumanoidDirEnv, WalkerRandParamsWrappedEnv
 
     if args.env == 'ml10':
         env = TimeLimit(env, max_episode_steps = 150)
