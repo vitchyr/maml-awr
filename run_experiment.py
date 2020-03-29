@@ -2,6 +2,7 @@ import gym
 from gym.wrappers import TimeLimit
 
 import numpy as np
+import os
 import pickle
 import random
 import tensorflow as tf
@@ -57,6 +58,9 @@ def get_metaworld_tasks(env_id: str = 'ml10'):
         raise NotImplementedError()
     
 def main(args):
+    if not os.path.exists(args.log_dir):
+        os.makedirs(args.log_dir)
+
     ml = 'train'
     if args.env == 'ant_dir':
         ant_dir_tasks = pickle.load(open("./tasks/ant_dir_tasks", "rb"))
@@ -101,7 +105,7 @@ def main(args):
                 buffer_size = args.replay_buffer_size, 
                 full_size = args.full_buffer_size,
                 batch_size = args.batch_size, 
-                policy_kwargs={'layers': [256, 256, 256]},
+                policy_kwargs={'layers': [300,300,300]},
                 learning_rate = 3e-4,
                 gamma = 0.99)
     
