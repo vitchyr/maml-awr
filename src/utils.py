@@ -102,23 +102,23 @@ class NewReplayBuffer(object):
                 raise RuntimeError(f"Loaded data has different action_dim from new buffer ({f['actions'].shape[-1]}, {self.action_dim})")
 
             stored = f['obs'].shape[0]
+            n_seed = min(stored, self._size)
             if stored != self._size:
                 if not silent:
-                    n_seed = min(stored, self._size)
-                    print(f"Attempted to load {stored} offline trajectories into buffer of size {self._size}." \
-                          f"Loading only {n_seed} trajectories from offline buffer")
+                    print(f"Attempted to load {stored} offline steps into buffer of size {self._size}.")
+                    print(f"Loading only {n_seed} steps from offline buffer")
 
-            self._stored_steps = stored
+            self._stored_steps = n_seed
             self._discount_factor = f['discount_factor'][()]
 
-            self._obs[:stored] = f['obs']
-            self._actions[:stored] = f['actions']
-            self._rewards[:stored] = f['rewards']
-            self._mc_rewards[:stored] = f['mc_rewards']
-            self._terminals[:stored] = f['terminals']
-            self._terminal_obs[:stored] = f['terminal_obs']
-            self._terminal_discounts[:stored] = f['terminal_discounts']
-            self._next_obs[:stored] = f['next_obs']
+            self._obs[:n_seed] = f['obs'][:n_seed]
+            self._actions[:n_seed] = f['actions'][:n_seed]
+            self._rewards[:n_seed] = f['rewards'][:n_seed]
+            self._mc_rewards[:n_seed] = f['mc_rewards'][:n_seed]
+            self._terminals[:n_seed] = f['terminals'][:n_seed]
+            self._terminal_obs[:n_seed] = f['terminal_obs'][:n_seed]
+            self._terminal_discounts[:n_seed] = f['terminal_discounts'][:n_seed]
+            self._next_obs[:n_seed] = f['next_obs'][:n_seed]
 
             f.close()
 

@@ -90,11 +90,16 @@ def get_gym_env(env: str):
 def run(args: argparse.Namespace, instance_idx: int = 0):
     with open(args.task_config, 'r') as f:
         task_config = json.load(f, object_hook=lambda d: namedtuple('X', d.keys())(*d.values()))
-    with open(task_config.tasks, 'rb') as f:
-        tasks = pickle.load(f)
 
-    if args.task_idx is not None:
-        tasks = [tasks[args.task_idx]]
+    tasks = []
+    for task_idx in (range(task_config.total_tasks if args.task_idx is None else [args.task_idx])):
+        with open(task_config.task_paths.format(task_idx), 'rb') as f:
+            task_info = pickle.load(f)
+            assert len(task_info) == 1
+            tasks.append(task_info[0])
+
+    #if args.task_idx is not None:
+    #    tasks = [tasks[args.task_idx]]
 
     seed = args.seed if args.seed is not None else instance_idx
     random.seed(seed)

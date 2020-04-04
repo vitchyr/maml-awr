@@ -9,6 +9,7 @@ import time
 import json
 import pickle
 from collections import defaultdict
+import warnings
 
 import higher
 import numpy as np
@@ -18,6 +19,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as O
 import torch.distributions as D
+
+warnings.filterwarnings('ignore',category=FutureWarning)
 from torch.utils.tensorboard import SummaryWriter
 
 from src.nn import MLP, CVAE
@@ -50,12 +53,13 @@ def print_(s: str, c: bool, end=None):
 
 
 def check_config(config):
-    if len(config.train_buffers):
-        assert len(config.train_tasks) == len(config.train_buffers), f'{len(config.train_tasks)}, {len(config.train_buffers)}'
-        assert len(config.test_tasks) == len(config.test_buffers), f'{len(config.test_tasks)}, {len(config.test_buffers)}'
-        if len(set(config.train_buffers).intersection(set(config.test_buffers))) > 0:
+    '''
+    if len(config.train_buffer_paths):
+        assert len(config.train_tasks) == len(config.train_buffer_paths), f'{len(config.train_tasks)}, {len(config.train_buffer_paths)}'
+        assert len(config.test_tasks) == len(config.test_buffer_paths), f'{len(config.test_tasks)}, {len(config.test_buffers)}'
+        if len(set(config.train_buffer_paths).intersection(set(config.test_buffer_paths))) > 0:
             print('WARNING: TEST AND TRAIN BUFFERS NOT DISJOINT')
-
+    '''
     if len(set(config.train_tasks).intersection(set(config.test_tasks))) > 0:
         print('WARNING: TEST AND TRAIN TASKS NOT DISJOINT')
     
@@ -130,18 +134,22 @@ class MAMLRAWR(object):
             print_(f'Loading exploration policy archive from: {args.ep_archive}', silent)
             self._exploration_policy.load_state_dict(torch.load(args.ep_archive, map_location=args.device))
 
-        inner_buffers = task_config.train_buffers if args.load_inner_buffer and not (args.render or args.eval) else [None for _ in self._env.tasks]
-        outer_buffers = task_config.train_buffers if args.load_outer_buffer and not (args.render or args.eval) else [None for _ in self._env.tasks]
-        test_buffers = task_config.test_buffers if len(task_config.test_buffers) else [None for _ in self._env.tasks]
-        
+        load_train_buffers = hasattr(task_config, 'train_buffer_paths')#args.load_inner_buffer and not (args.render or args.eval)
+        load_test_buffers = hasattr(task_config, 'test_buffer_paths')
+        inner_buffers = [task_config.train_buffer_paths.format(idx) if load_train_buffers else None for idx in task_config.train_tasks]
+        outer_buffers = [task_config.train_buffer_paths.format(idx) if load_train_buffers else None for idx in task_config.train_tasks]
+        test_buffers = [task_config.test_buffer_paths.format(idx) if load_test_buffers else None for idx in task_config.test_tasks]
+
         self._test_buffers = [NewReplayBuffer(args.replay_buffer_size, self._observation_dim, env_action_dim(self._env),
                                               discount_factor=discount_factor,
                                               immutable=test_buffers[i] is not None, load_from=test_buffers[i], silent=silent)
                                for i, task in enumerate(task_config.test_tasks)]
+
         self._inner_buffers = [NewReplayBuffer(args.replay_buffer_size, self._observation_dim, env_action_dim(self._env),
                                                discount_factor=discount_factor,
                                                immutable=args.offline or args.offline_inner, load_from=inner_buffers[i], silent=silent)
                                for i, task in enumerate(task_config.train_tasks)]
+
         if args.offline and args.load_inner_buffer and args.load_outer_buffer:
             self._outer_buffers = self._inner_buffers
         else:
