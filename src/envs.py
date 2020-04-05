@@ -81,6 +81,7 @@ class HalfCheetahVelEnv(HalfCheetahVelEnv_):
         self.reset()
 
     def set_task_idx(self, idx):
+        self.task_idx = idx
         self.set_task(self.tasks[idx])
 
 class AntDirEnv(AntDirEnv_):

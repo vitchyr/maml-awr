@@ -13,6 +13,9 @@ from stable_baselines.common.schedules import get_schedule_fn
 from stable_baselines.common.buffers import ReplayBuffer
 from stable_baselines.td3.policies import TD3Policy
 
+from src.utils import Experience
+from src.utils import NewReplayBuffer as FullBuffer
+
 
 class TD3(OffPolicyRLModel):
     """
@@ -56,11 +59,11 @@ class TD3(OffPolicyRLModel):
     :param n_cpu_tf_sess: (int) The number of threads for TensorFlow operations
         If None, the number of cpu of the current machine will be used.
     """
-    def __init__(self, policy, env, gamma=0.99, learning_rate=3e-4, buffer_size=50000,
+    def __init__(self, policy, env, gamma=0.99, learning_rate=3e-4, buffer_size=50000, full_size=None,
                  learning_starts=100, train_freq=100, gradient_steps=100, batch_size=128,
                  tau=0.005, policy_delay=2, action_noise=None,
                  target_policy_noise=0.2, target_noise_clip=0.5,
-                 random_exploration=0.0, verbose=0, tensorboard_log=None,
+                 random_exploration=0.0, verbose=0, tensorboard_log=None, buffer_log = None, task = 0,
                  _init_setup_model=True, policy_kwargs=None,
                  full_tensorboard_log=False, seed=None, n_cpu_tf_sess=None):
 
@@ -69,6 +72,7 @@ class TD3(OffPolicyRLModel):
                                   seed=seed, n_cpu_tf_sess=n_cpu_tf_sess)
 
         self.buffer_size = buffer_size
+        self.full_size = full_size
         self.learning_rate = learning_rate
         self.learning_starts = learning_starts
         self.train_freq = train_freq
@@ -84,8 +88,11 @@ class TD3(OffPolicyRLModel):
 
         self.graph = None
         self.replay_buffer = None
+        self.full_buffers = [FullBuffer(self.full_size, self.env.observation_space.shape[0], self.env.action_space.shape[0])
+                             for _ in range(len(self.env.unwrapped.tasks))]
         self.sess = None
         self.tensorboard_log = tensorboard_log
+        self.buffer_log = buffer_log
         self.verbose = verbose
         self.params = None
         self.summary = None
@@ -293,6 +300,7 @@ class TD3(OffPolicyRLModel):
             current_lr = self.learning_rate(1)
 
             start_time = time.time()
+            trajectory = []
             episode_rewards = [0.0]
             episode_successes = []
             if self.action_noise is not None:
@@ -347,6 +355,7 @@ class TD3(OffPolicyRLModel):
 
                 # Store transition in the replay buffer.
                 self.replay_buffer.add(obs_, action, reward_, new_obs_, float(done))
+                trajectory.append(Experience(obs, action, new_obs, reward, float(done)))
                 obs = new_obs
                 # Save the unnormalized observation
                 if self._vec_normalize_env is not None:
@@ -397,6 +406,8 @@ class TD3(OffPolicyRLModel):
                     if self.action_noise is not None:
                         self.action_noise.reset()
                     if not isinstance(self.env, VecEnv):
+                        self.full_buffers[0].add_trajectory(trajectory)
+                        trajectory= []
                         obs = self.env.reset()
                     episode_rewards.append(0.0)
 
@@ -432,6 +443,11 @@ class TD3(OffPolicyRLModel):
                     # Reset infos:
                     infos_values = []
 
+                if step % 10000 == 0:
+                    for i, buffer in enumerate(self.full_buffers):
+                        buffer.save(self.buffer_log + 'sub_task_{}.hdf5'.format(i))
+            for i, buffer in enumerate(self.full_buffers):
+                buffer.save(self.buffer_log + 'sub_task_{}.hdf5'.format(i))
             callback.on_training_end()
             return self
 

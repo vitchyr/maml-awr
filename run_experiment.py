@@ -7,9 +7,6 @@ import pickle
 import random
 import tensorflow as tf
 
-from stable_baselines.sac.policies import MlpPolicy
-from stable_baselines.sac.policies import FeedForwardPolicy
-from src.sac import SAC
 from src.data_args import get_args
 from src.envs import HalfCheetahDirEnv, HalfCheetahVelEnv, AntDirEnv, AntGoalEnv, HumanoidDirEnv, WalkerRandParamsWrappedEnv
 
@@ -63,20 +60,20 @@ def main(args):
 
     ml = 'train'
     if args.env == 'ant_dir':
-        ant_dir_tasks = pickle.load(open("./tasks/ant_dir_tasks", "rb"))
+        ant_dir_tasks = pickle.load(open(f"{args.task_path}/ant_dir_tasks", "rb"))
         env = AntDirEnv(tasks = ant_dir_tasks, include_goal = args.include_goal)
     elif args.env == 'ant_goal':
         env = AntGoalEnv(include_goal = args.include_goal)
     elif args.env == 'cheetah_dir':
-        cheetah_dir_tasks = pickle.load(open("./tasks/cheetah_dir_tasks", "rb"))
+        cheetah_dir_tasks = pickle.load(open(f"{args.task_path}/cheetah_dir_tasks", "rb"))
         env = HalfCheetahDirEnv(tasks = cheetah_dir_tasks, include_goal = args.include_goal)
     elif args.env == 'cheetah_vel':
-        cheetah_vel_tasks = pickle.load(open("./tasks/cheetah_vel_tasks", "rb"))
+        cheetah_vel_tasks = pickle.load(open(f"{args.task_path}/cheetah_vel_tasks", "rb"))
         env = HalfCheetahVelEnv(tasks = cheetah_vel_tasks, include_goal = args.include_goal)
     elif args.env == 'humanoid_dir':
         env = HumanoidDirEnv(include_goal = args.include_goal)
     elif args.env == 'walker_param':
-        walker_tasks = pickle.load(open("./tasks/walker_params_tasks", "rb"))
+        walker_tasks = pickle.load(open(f"{args.task_path}/walker_params_tasks", "rb"))
         env = WalkerRandParamsWrappedEnv(tasks = walker_tasks, include_goal = args.include_goal)
     elif args.env == 'ml10':
         env = get_metaworld_tasks(args.env)
@@ -96,20 +93,54 @@ def main(args):
         env = TimeLimit(env, max_episode_steps = 200)
         pickle.dump(env.unwrapped.tasks, open(args.log_dir + '/env_{}_{}_task{}.pkl'.format(args.env, ml, args.task_idx), "wb" ))
 
-    model = SAC(MlpPolicy, #CustomSACPolicy, 
-                env, 
-                verbose=1, 
-                tensorboard_log = args.log_dir + '/tensorboard/log_{}_{}_task_{}'.format(args.env, ml, args.task_idx),
-                buffer_log = args.log_dir + '/buffers_{}_{}_{}_'.format(args.env, ml, args.task_idx),
-                task = args.task_idx,
-                buffer_size = args.replay_buffer_size, 
-                full_size = args.full_buffer_size,
-                batch_size = args.batch_size, 
-                policy_kwargs={'layers': [300,300,300]},
-                learning_rate = 3e-4,
-                gamma = 0.99)
-    
-    model.learn(total_timesteps = args.full_buffer_size * len(env.unwrapped.tasks), log_interval = 10)
+    if args.alg == 'td3':
+        from stable_baselines.td3.policies import MlpPolicy
+        from stable_baselines.ddpg.noise import NormalActionNoise
+        from src.td3 import TD3
+        
+        n_actions = env.action_space.shape[-1]
+        action_noise = NormalActionNoise(mean=np.zeros(n_actions), sigma=0.1 * np.ones(n_actions))
+
+        model = TD3(MlpPolicy, env, action_noise=action_noise, verbose=1,
+                    tensorboard_log = args.log_dir + '/tensorboard/log_{}_{}_task_{}'.format(args.env, ml, args.task_idx),
+                    buffer_log = args.log_dir + '/buffers_{}_{}_{}_'.format(args.env, ml, args.task_idx),
+                    full_size = args.full_buffer_size,
+                    task = args.task_idx,
+                    buffer_size = args.replay_buffer_size, 
+                    batch_size = args.batch_size, 
+                    policy_kwargs={'layers': [400, 300]},
+                    learning_rate=args.outer_policy_lr
+        )
+        print('###################################')
+        print('###################################')
+        print('## Running *TD3* data collection ##')
+        print('###################################')
+        print('###################################')
+        model.learn(total_timesteps=args.full_buffer_size, log_interval=10)
+    else:
+        from stable_baselines.sac.policies import MlpPolicy
+        from stable_baselines.sac.policies import FeedForwardPolicy
+        from src.sac import SAC
+        
+        model = SAC(MlpPolicy,
+                    env, 
+                    verbose=1, 
+                    tensorboard_log = args.log_dir + '/tensorboard/log_{}_{}_task_{}'.format(args.env, ml, args.task_idx),
+                    buffer_log = args.log_dir + '/buffers_{}_{}_{}_'.format(args.env, ml, args.task_idx),
+                    task = args.task_idx,
+                    buffer_size = args.replay_buffer_size, 
+                    full_size = args.full_buffer_size,
+                    batch_size = args.batch_size, 
+                    policy_kwargs={'layers': [300,300,300]},
+                    learning_rate = 3e-4,
+                    gamma = 0.99)
+        print('###################################')
+        print('###################################')
+        print('## Running *SAC* data collection ##')
+        print('###################################')
+        print('###################################')
+        model.learn(total_timesteps = args.full_buffer_size * len(env.unwrapped.tasks), log_interval = 10)
+
     model.save(args.log_dir + '/model_{}_{}_{}'.format(args.env, ml, args.task_idx))
 
 if __name__ == '__main__':

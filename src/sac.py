@@ -480,9 +480,7 @@ class SAC(OffPolicyRLModel):
                     if self.action_noise is not None:
                         self.action_noise.reset()
                     if not isinstance(self.env, VecEnv):
-                        self.full_buffers[self.env.task_idx].add_trajectory(trajectory)
-                        self.env.task_idx = (self.env.task_idx + 1) % len(self.env.unwrapped.tasks)
-                        self.env.unwrapped.set_task_idx(self.env.task_idx)
+                        self.full_buffers[0].add_trajectory(trajectory)
                         trajectory= []
                         obs = self.env.reset()
                     episode_rewards.append(0.0)
