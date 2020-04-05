@@ -10,7 +10,7 @@ Required Python packages can be installed with `pip install -r requirements.txt`
 
 Data Collection supports both SAC and TD3. As an example, given a pickle archive of task descriptions in `TASK_PATH/<env_name>_tasks` [for example, tasks/cheetah_vel_tasks for cheetah_vel, if the task_path is task], the following would run data collection using TD3 on the task for 2 million steps:
 
-`python -m run_experiment --env cheetah_vel --task_idx 29 --full_buffer_size 2000000 --log_dir log/null --replay_buffer_size 50000 --outer_policy_lr 1e-4 --task_path TASK_PATH --alg td3`
+`python -m collect_buffers --env cheetah_vel --task_idx 29 --full_buffer_size 2000000 --log_dir log/null --replay_buffer_size 50000 --outer_policy_lr 1e-4 --task_path TASK_PATH --alg td3`
 
 ## Running training
 
