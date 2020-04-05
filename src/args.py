@@ -22,6 +22,8 @@ def get_args() -> argparse.Namespace:
     parser.add_argument('--noclamp', action='store_true')
     parser.add_argument('--lrlr', type=float, default=1e-4)
     parser.add_argument('--huber', action='store_true')
+    parser.add_argument('--net_width', type=int, default=256)
+    parser.add_argument('--net_depth', type=int, default=2)
     parser.add_argument('--kld_coef', type=float, default=1.0)
     parser.add_argument('--cvae_skip', type=int, default=10)
     parser.add_argument('--cvae_prior_conditional', action='store_true')

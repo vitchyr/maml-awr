@@ -65,10 +65,11 @@ def check_config(config):
     
 
 class MAMLRAWR(object):
-    def __init__(self, args: argparse.Namespace, task_config: dict, env, log_dir: str, 
+    def __init__(self, args: argparse.Namespace,
+                 task_config: dict,
+                 env,
+                 log_dir: str, 
                  name: str = None,
-                 policy_hidden_layers: List[int] = [32, 32], 
-                 value_function_hidden_layers: List[int] = [32, 32],
                  training_iterations: int = 20000, 
                  visualization_interval: int = 100, 
                  silent: bool = False, 
@@ -91,7 +92,7 @@ class MAMLRAWR(object):
         policy_head = [32, 1] if args.advantage_head_coef is not None else None
         
         self._adaptation_policy = MLP([self._observation_dim + goal_dim] +
-                                      policy_hidden_layers +
+                                      [args.net_width] * args.net_depth +
                                       [self._action_dim],
                                       final_activation=torch.tanh,
                                       bias_linear=not args.no_bias_linear,
@@ -101,13 +102,13 @@ class MAMLRAWR(object):
                                             condition_prior=args.cvae_prior_conditional, preprocess=args.cvae_preprocess).to(args.device)
         else:
             self._exploration_policy = MLP([self._observation_dim] +
-                                           policy_hidden_layers +
+                                           [args.net_width] * args.net_depth +
                                            [self._action_dim],
                                            final_activation=torch.tanh).to(args.device)
 
-        self._q_function = MLP([self._observation_dim + goal_dim + self._action_dim] + value_function_hidden_layers + [1],
+        self._q_function = MLP([self._observation_dim + goal_dim + self._action_dim] + [args.net_width] * args.net_depth + [1],
                                    bias_linear=not args.no_bias_linear).to(args.device)
-        self._value_function = MLP([self._observation_dim + goal_dim] + value_function_hidden_layers + [1],
+        self._value_function = MLP([self._observation_dim + goal_dim] + [args.net_width] * args.net_depth + [1],
                                    bias_linear=not args.no_bias_linear).to(args.device)
 
         print(self._adaptation_policy.seq[0]._linear.weight.mean())
@@ -497,7 +498,7 @@ class MAMLRAWR(object):
         successes = []
         if self._args.task_batch_size is not None:
             nth = len(self._inner_buffers) // self._args.task_batch_size
-        for i, (train_task_idx, inner_buffer, outer_buffer, test_buffer, full_buffer) in enumerate(zip(self.task_config.train_tasks, self._inner_buffers, self._outer_buffers, self._test_buffers, self._full_buffers)):
+        for i, (train_task_idx, inner_buffer, outer_buffer, full_buffer) in enumerate(zip(self.task_config.train_tasks, self._inner_buffers, self._outer_buffers, self._full_buffers)):
             if self._args.task_batch_size is not None:
                 if (train_step_idx + i) % nth != 0 and (train_step_idx % self._visualization_interval != 0):
                     continue
@@ -648,8 +649,6 @@ class MAMLRAWR(object):
                 if not (self._args.offline or self._args.offline_outer):
                     outer_buffer.add_trajectory(adapted_trajectory)
                     full_buffer.add_trajectory(adapted_trajectory)
-                if not test_buffer.immutable:
-                    test_buffer.add_trajectory(adapted_trajectory)
             else:
                 success = False
 
@@ -753,7 +752,7 @@ class MAMLRAWR(object):
                     print_('', self._silent)
                     print_(f'Step {t} Rewards:', self._silent)
                     for idx, r in enumerate(test_rewards):
-                        print_(f'Task {idx}: {r}', self._silent)
+                        print_(f'Task {self.task_config.test_tasks[idx]}: {r}', self._silent)
                     print_(f'Mean Value Function Outer Loss: {np.mean(value)}', self._silent)
                     print_(f'Mean Policy Outer Loss: {np.mean(policy)}', self._silent)
                     print_(f'Elapsed time (secs): {time.time() - self._start_time}', self._silent)

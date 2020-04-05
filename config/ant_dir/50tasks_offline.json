@@ -7,7 +7,7 @@
 		    32,33,34,35,36,37,39,
 		    40,41,43,44,45,46,47,48,49],
     "test_tasks": [0,10,18,20,21,28,30,31,38,42],
-    "task_paths": "/iris/u/rafailov/NIPS2020_data/NIPS2020_data/ant_dir2/env_ant_dir_train_task{}.pkl",
-    "train_buffer_paths": "/iris/u/rafailov/NIPS2020_data/NIPS2020_data/ant_dir2/buffers_ant_dir_train_{}_sub_task_0.hdf5",
-    "test_buffer_paths": "/iris/u/rafailov/NIPS2020_data/NIPS2020_data/ant_dir2/buffers_ant_dir_train_{}_sub_task_0.hdf5"
+    "task_paths": "/scr/em7/NIPS2020_data/ant_dir2/env_ant_dir_train_task{}.pkl",
+    "train_buffer_paths": "/scr/em7/NIPS2020_data/ant_dir2/buffers_ant_dir_train_{}_sub_task_0.hdf5",
+    "test_buffer_paths": "/scr/em7/NIPS2020_data/ant_dir2/buffers_ant_dir_train_{}_sub_task_0.hdf5"
 }
