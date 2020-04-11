@@ -1,0 +1,9 @@
+{
+    "env": "cheetah_vel",
+    "task_paths": "/iris/u/em7/code/NIPS2020_data/env_cheetah_vel_train_task{}.pkl",
+    "total_tasks": 24,
+    "train_tasks": [1,3,5,7,9,11,13,15,17,19,21,23],
+    "test_tasks": [0,2,4,6,8,10,12,14,16,18,20,22],
+    "train_buffer_paths": "/iris/u/em7/code/NIPS2020_data/buffers_cheetah_vel_train_{}_sub_task_0.hdf5",
+    "test_buffer_paths": "/iris/u/em7/code/NIPS2020_data/buffers_cheetah_vel_train_{}_sub_task_0.hdf5"
+}
