@@ -111,7 +111,10 @@ class MAMLRAWR(object):
         self._value_function = MLP([self._observation_dim + goal_dim] + [args.net_width] * args.net_depth + [1],
                                    bias_linear=not args.no_bias_linear).to(args.device)
 
-        print(self._adaptation_policy.seq[0]._linear.weight.mean())
+        try:
+            print(self._adaptation_policy.seq[0]._linear.weight.mean())
+        except Exception as e:
+            print(self._adaptation_policy.seq[0].weight.mean())
 
         self._adaptation_policy_optimizer = O.Adam(
             (self._adaptation_policy.parameters()
@@ -135,20 +138,25 @@ class MAMLRAWR(object):
             print_(f'Loading exploration policy archive from: {args.ep_archive}', silent)
             self._exploration_policy.load_state_dict(torch.load(args.ep_archive, map_location=args.device))
 
-        load_train_buffers = hasattr(task_config, 'train_buffer_paths')#args.load_inner_buffer and not (args.render or args.eval)
-        load_test_buffers = hasattr(task_config, 'test_buffer_paths')
-        inner_buffers = [task_config.train_buffer_paths.format(idx) if load_train_buffers else None for idx in task_config.train_tasks]
-        outer_buffers = [task_config.train_buffer_paths.format(idx) if load_train_buffers else None for idx in task_config.train_tasks]
+        has_train_buffers = hasattr(task_config, 'train_buffer_paths') # and not (args.render or args.eval)
+        has_test_buffers = hasattr(task_config, 'test_buffer_paths')
+
+        load_inner_buffers = has_train_buffers and args.load_inner_buffer
+        load_outer_buffers = has_train_buffers and args.load_outer_buffer
+        load_test_buffers = has_test_buffers and args.load_inner_buffer # we want the test adaptation data the same as train
+
+        inner_buffers = [task_config.train_buffer_paths.format(idx) if load_inner_buffers else None for idx in task_config.train_tasks]
+        outer_buffers = [task_config.train_buffer_paths.format(idx) if load_outer_buffers else None for idx in task_config.train_tasks]
         test_buffers = [task_config.test_buffer_paths.format(idx) if load_test_buffers else None for idx in task_config.test_tasks]
 
         self._test_buffers = [NewReplayBuffer(args.replay_buffer_size, self._observation_dim, env_action_dim(self._env),
                                               discount_factor=discount_factor,
-                                              immutable=test_buffers[i] is not None, load_from=test_buffers[i], silent=silent)
+                                              immutable=test_buffers[i] is not None, load_from=test_buffers[i], silent=silent, skip=args.buffer_skip)
                                for i, task in enumerate(task_config.test_tasks)]
 
         self._inner_buffers = [NewReplayBuffer(args.replay_buffer_size, self._observation_dim, env_action_dim(self._env),
                                                discount_factor=discount_factor,
-                                               immutable=args.offline or args.offline_inner, load_from=inner_buffers[i], silent=silent)
+                                               immutable=args.offline or args.offline_inner, load_from=inner_buffers[i], silent=silent, skip=args.buffer_skip)
                                for i, task in enumerate(task_config.train_tasks)]
 
         if args.offline and args.load_inner_buffer and args.load_outer_buffer:
@@ -156,7 +164,7 @@ class MAMLRAWR(object):
         else:
             self._outer_buffers = [NewReplayBuffer(args.replay_buffer_size, self._observation_dim, env_action_dim(self._env),
                                                    discount_factor=discount_factor, immutable=args.offline or args.offline_outer,
-                                                   load_from=outer_buffers[i], silent=silent)
+                                                   load_from=outer_buffers[i], silent=silent, skip=args.buffer_skip)
                                    for i, task in enumerate(task_config.train_tasks)]
 
         self._full_buffers = [NewReplayBuffer(args.replay_buffer_size, self._observation_dim, env_action_dim(self._env),
@@ -165,7 +173,7 @@ class MAMLRAWR(object):
 
         self._training_iterations = training_iterations
         if not self._args.multitask:
-            self._inner_policy_lr, self._inner_value_lr = args.inner_policy_lr, args.inner_value_lr
+            self._inner_policy_lr, self._inner_value_lr = args.inner_policy_lr / args.maml_steps, args.inner_value_lr / args.maml_steps
         else:
             self._inner_policy_lr, self._inner_value_lr = 0, 0
         self._adaptation_temperature, self._exploration_temperature = args.adaptation_temp, args.exploration_temp
@@ -309,9 +317,9 @@ class MAMLRAWR(object):
         else:
             losses = (value_estimates - targets).div(factor).pow(2)
 
-        if iweights is not None:
-            losses = losses * iweights
-
+        #if (value_estimates - targets).abs().mean() > 1000000:
+        #    import pdb; pdb.set_trace()
+        #print((value_estimates - targets).abs().mean(), (value_estimates - targets).abs().min())
         return losses.mean(), value_estimates.mean(), mc_value_estimates.mean(), mc_value_estimates.std()
 
     #@profile
@@ -442,21 +450,18 @@ class MAMLRAWR(object):
                     if len(self.task_config.test_tasks) > 1:
                         with higher.innerloop_ctx(value_function, opt) as (f_value_function, diff_value_opt):
                             loss, _, _, _ = self.value_function_loss_on_batch(f_value_function, batch, task_idx=test_task_idx, inner=True)
-                            #print('stepping value on:', value_step_sizes[eval_step], i, eval_step, loss.item())
                             diff_value_opt.step(loss / (1 if eval_step==0 else loss.detach()))
                             copy_model_with_grads(f_value_function, value_function)
 
                         opt = O.SGD(policy.parameters(), lr=policy_step_sizes[eval_step])
                         with higher.innerloop_ctx(policy, opt) as (f_adaptation_policy, diff_policy_opt):
                             loss, _, _, _ = self.adaptation_policy_loss_on_batch(f_adaptation_policy, None, f_value_function, batch, test_task_idx, inner=eval_step==0)
-                            #print('stepping policy on:', policy_step_sizes[eval_step], i, eval_step, loss.item())
                             diff_policy_opt.step(loss)
                             copy_model_with_grads(f_adaptation_policy, policy)
 
                     adapted_trajectory, adapted_reward, success = self._rollout_policy(policy, self._env, test=True, render=self._args.render)
                     trajectories.append(adapted_trajectory)
                     rewards[i,eval_step+1] = adapted_reward
-                    #print('r', adapted_reward)
                     successes.append(success)
                     writer.add_scalar(f'Eval_Reward/Task_{test_task_idx}', adapted_reward, (eval_step + 1) if self._args.eval else train_step_idx)
 
@@ -542,12 +547,16 @@ class MAMLRAWR(object):
             ##################################################################################################
             # Adapt value function and collect meta-gradients
             ##################################################################################################
-            opt = O.SGD(self._value_function.parameters(), lr=self._inner_value_lr)
-            with higher.innerloop_ctx(self._value_function, opt) as (f_value_function, diff_value_opt):
+            vf = deepcopy(self._value_function)
+            opt = O.SGD(vf.parameters(), lr=self._inner_value_lr)
+            with higher.innerloop_ctx(vf, opt) as (f_value_function, diff_value_opt):
                 if self._inner_value_lr > 0 and len(self._env.tasks) > 1:
-                    for _ in range(random.randint(1,self._args.maml_steps)):
+                    #for _ in range(random.randint(1,self._args.maml_steps)):
+                    for _ in range(self._args.maml_steps):
+                    #for _ in range(1):
                         # Compute loss and adapt value function [L9]
                         loss, value_inner, mc_inner, mc_std_inner = self.value_function_loss_on_batch(f_value_function, pyt_batch, inner=True, task_idx=train_task_idx)#, iweights=iweights_no_action_)
+                        #print('vfloss', loss.item())
                         inner_values.append(value_inner.item())
                         inner_mc_means.append(mc_inner.item())
                         inner_mc_stds.append(mc_std_inner.item())
@@ -601,13 +610,16 @@ class MAMLRAWR(object):
             opt = O.SGD(self._adaptation_policy.parameters(), lr=self._inner_policy_lr)
             with higher.innerloop_ctx(self._adaptation_policy, opt) as (f_adaptation_policy, diff_policy_opt):
                 if self._inner_policy_lr > 0 and len(self._env.tasks) > 1:
-                    for _ in range(random.randint(1,self._args.maml_steps)):
+                    #for _ in range(random.randint(1,self._args.maml_steps)):
+                    for _ in range(self._args.maml_steps):
                         # Compute loss and adapt policy [L10]
                         loss, adv, weight, adv_loss = self.adaptation_policy_loss_on_batch(f_adaptation_policy, adapted_q_function,
                                                                                            adapted_value_function, pyt_batch, train_task_idx, inner=True, iweights=iweights_)
+                        #print('ploss', loss.item(), adv_loss.item())
                         diff_policy_opt.step(loss)
                         inner_policy_losses.append(loss.item())
-                        adv_policy_losses.append(adv_loss.item())
+                        if adv_loss is not None:
+                            adv_policy_losses.append(adv_loss.item())
                         inner_advantages.append(adv.item())
                         inner_weights.append(weight.item())
 
@@ -658,7 +670,8 @@ class MAMLRAWR(object):
                         writer.add_scalar(f'Loss_Q_Inner/Task_{i}', np.mean(inner_q_losses), train_step_idx)
                     writer.add_scalar(f'Loss_Value_Inner/Task_{i}', np.mean(inner_value_losses), train_step_idx)
                     writer.add_scalar(f'Loss_Policy_Inner/Task_{i}', np.mean(inner_policy_losses), train_step_idx)
-                    writer.add_scalar(f'Loss_Policy_Adv_Inner/Task_{i}', np.mean(adv_policy_losses), train_step_idx)
+                    if len(adv_policy_losses):
+                        writer.add_scalar(f'Loss_Policy_Adv_Inner/Task_{i}', np.mean(adv_policy_losses), train_step_idx)
                     writer.add_scalar(f'Value_Mean_Inner/Task_{i}', np.mean(inner_values), train_step_idx)
                     writer.add_scalar(f'Advantage_Mean_Inner/Task_{i}', np.mean(inner_advantages), train_step_idx)
                     writer.add_scalar(f'Weight_Mean_Inner/Task_{i}', np.mean(inner_weights), train_step_idx)
@@ -715,12 +728,12 @@ class MAMLRAWR(object):
 
         # Gather initial trajectory rollouts
         if not self._args.load_inner_buffer or not self._args.load_outer_buffer:
-            print_('Gathering initial trajectories...', self._silent)
+            print('Gathering initial trajectories...', self._silent)
             behavior_policy = self._exploration_policy if self._args.sample_exploration_inner else self._adaptation_policy
             exploration_rewards = np.zeros((self._args.initial_rollouts, len(self._env.tasks)))
             for j in range(self._args.initial_rollouts):
-                for i, (inner_buffer, outer_buffer, test_buffer, full_buffer) in enumerate(zip(self._inner_buffers, self._outer_buffers,
-                                                                                               self._test_buffers, self._full_buffers)):
+                for i, (inner_buffer, outer_buffer, full_buffer) in enumerate(zip(self._inner_buffers, self._outer_buffers,
+                                                                                               self._full_buffers)):
                     print_(f'{j+1,i+1}/{self._args.initial_rollouts,len(self._inner_buffers)}\r', self._silent, end='')
                     self._env.set_task_idx(i)
                     if self._args.render_exploration:
@@ -729,12 +742,16 @@ class MAMLRAWR(object):
                     exploration_rewards[j,i] = reward
                     if self._args.render_exploration:
                         print_(f'Reward: {reward} {success}', self._silent)
-                    inner_buffer.add_trajectory(trajectory, force=True)
+                    if not self._args.load_inner_buffer:
+                        inner_buffer.add_trajectory(trajectory, force=True)
                     if not self._args.load_outer_buffer:
                         outer_buffer.add_trajectory(trajectory, force=True)
                         full_buffer.add_trajectory(trajectory, force=True)
-                    random_trajectory, _, _ = self._rollout_policy(behavior_policy, self._env, random=True)
-                    test_buffer.add_trajectory(random_trajectory)
+
+                if not self._args.load_inner_buffer:
+                    for i, test_buffer in enumerate(self._test_buffers):
+                        random_trajectory, _, _ = self._rollout_policy(behavior_policy, self._env, random=self._args.random)
+                        test_buffer.add_trajectory(random_trajectory, force=True)
 
             if self._args.debug:
                 print_(f'Mean exploration rewards: {exploration_rewards.mean(0)}', self._silent)
@@ -743,6 +760,13 @@ class MAMLRAWR(object):
         rewards = []
         successes = []
         reward_count = 0
+        for inner in self._inner_buffers:
+            print('inner:', len(inner))
+        for outer in self._outer_buffers:
+            print('outer:', len(outer))
+        for test in self._test_buffers:
+            print('test:', len(test))
+
         for t in range(self._training_iterations):
             rollouts, test_rewards, train_rewards, value, policy, vfs, success = self.train_step(t, summary_writer)
 

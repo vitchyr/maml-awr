@@ -73,7 +73,7 @@ def get_args() -> argparse.Namespace:
     parser.add_argument('--name', type=str, default=None)
     parser.add_argument('--render', action='store_true')
     parser.add_argument('--gradient_steps_per_iteration', type=int, default=50)
-    parser.add_argument('--replay_buffer_size', type=int, default=20000)
+    parser.add_argument('--replay_buffer_size', type=int, default=50000)
     parser.add_argument('--full_buffer_size', type=int, default=20000)
     parser.add_argument('--discount_factor', type=float, default=0.99)
     parser.add_argument('--profile', action='store_true')

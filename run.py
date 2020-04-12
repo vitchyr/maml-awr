@@ -112,7 +112,7 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
     elif task_config.env == 'cheetah_dir':
         env = HalfCheetahDirEnv(tasks, include_goal = args.include_goal or args.multitask)
     elif task_config.env == 'cheetah_vel':
-        env = HalfCheetahVelEnv(tasks, args.n_tasks, include_goal = args.include_goal or args.multitask, one_hot_goal=args.one_hot_goal or args.multitask)
+        env = HalfCheetahVelEnv(tasks, include_goal = args.include_goal or args.multitask, one_hot_goal=args.one_hot_goal or args.multitask)
     elif task_config.env == 'humanoid_dir':
         env = HumanoidDirEnv(tasks, args.n_tasks, include_goal = args.include_goal)
     elif task_config.env == 'walker_params':

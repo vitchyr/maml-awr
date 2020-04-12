@@ -76,9 +76,10 @@ class Experience(NamedTuple):
 
 class NewReplayBuffer(object):
     def __init__(self, size: int, obs_dim: int, action_dim: int, discount_factor: float = 0.99,
-                 immutable: bool = False, load_from: str = None, silent: bool = False):
+                 immutable: bool = False, load_from: str = None, silent: bool = False, skip: int = 1):
         self.immutable = immutable
-        
+
+        size //= skip
         self._obs = np.full((size, obs_dim), float('nan'), dtype=np.float32)
         self._actions = np.full((size, action_dim), float('nan'), dtype=np.float32)
         self._rewards = np.full((size, 1), float('nan'), dtype=np.float32)
@@ -102,23 +103,22 @@ class NewReplayBuffer(object):
                 raise RuntimeError(f"Loaded data has different action_dim from new buffer ({f['actions'].shape[-1]}, {self.action_dim})")
 
             stored = f['obs'].shape[0]
-            n_seed = min(stored, self._size)
+            n_seed = min(stored, self._size * skip)
             if stored > self._size:
                 if not silent:
                     print(f"Attempted to load {stored} offline steps into buffer of size {self._size}.")
-                    print(f"Loading only the last {n_seed} steps from offline buffer")
+                    print(f"Loading only the last {n_seed//skip} steps from offline buffer")
 
-            self._stored_steps = n_seed
+            self._stored_steps = n_seed // skip
             self._discount_factor = f['discount_factor'][()]
-
-            self._obs[:n_seed] = f['obs'][-n_seed:]
-            self._actions[:n_seed] = f['actions'][-n_seed:]
-            self._rewards[:n_seed] = f['rewards'][-n_seed:]
-            self._mc_rewards[:n_seed] = f['mc_rewards'][-n_seed:]
-            self._terminals[:n_seed] = f['terminals'][-n_seed:]
-            self._terminal_obs[:n_seed] = f['terminal_obs'][-n_seed:]
-            self._terminal_discounts[:n_seed] = f['terminal_discounts'][-n_seed:]
-            self._next_obs[:n_seed] = f['next_obs'][-n_seed:]
+            self._obs[:self._stored_steps] = f['obs'][-n_seed + int(skip > 1):][::skip]
+            self._actions[:self._stored_steps] = f['actions'][-n_seed + int(skip > 1):][::skip]
+            self._rewards[:self._stored_steps] = f['rewards'][-n_seed + int(skip > 1):][::skip]
+            self._mc_rewards[:self._stored_steps] = f['mc_rewards'][-n_seed + int(skip > 1):][::skip]
+            self._terminals[:self._stored_steps] = f['terminals'][-n_seed + int(skip > 1):][::skip]
+            self._terminal_obs[:self._stored_steps] = f['terminal_obs'][-n_seed + int(skip > 1):][::skip]
+            self._terminal_discounts[:self._stored_steps] = f['terminal_discounts'][-n_seed + int(skip > 1):][::skip]
+            self._next_obs[:self._stored_steps] = f['next_obs'][-n_seed + int(skip > 1):][::skip]
 
             f.close()
 
