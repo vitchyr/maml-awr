@@ -266,7 +266,7 @@ class MAMLRAWR(object):
 
     #@profile
     def mc_value_estimates_on_batch(self, value_function, batch, task_idx):
-        with torch.no_grad():
+        with torch.set_grad_enabled(self._args.bootstrap_grad):
             if self._args.no_bootstrap:
                 mc_value_estimates = batch[:,-1:]
             else:
@@ -299,8 +299,8 @@ class MAMLRAWR(object):
     #@profile
     def value_function_loss_on_batch(self, value_function, batch, inner: bool = False, task_idx: int = None, iweights: torch.tensor = None):
         value_estimates = value_function(self.add_task_description(batch[:,:self._observation_dim], task_idx))
-        with torch.no_grad():
-            mc_value_estimates = self.mc_value_estimates_on_batch(value_function, batch, task_idx)
+        #with torch.no_grad():
+        mc_value_estimates = self.mc_value_estimates_on_batch(value_function, batch, task_idx)
 
         targets = mc_value_estimates
         if self._args.normalize_values or (self._args.normalize_values_outer and not inner):
