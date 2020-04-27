@@ -135,8 +135,6 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
     else:
         name = f'{args.name}_{instance_idx}'
 
-    network_shape = [256, 256]
-
     seed = args.seed if args.seed is not None else instance_idx
     random.seed(seed)
     np.random.seed(seed)
@@ -146,8 +144,7 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
     maml_rawr = MAMLRAWR(args, task_config, env, args.log_dir, name, training_iterations=args.train_steps,
                          visualization_interval=args.vis_interval, silent=instance_idx > 0,
                          gradient_steps_per_iteration=args.gradient_steps_per_iteration,
-                         replay_buffer_length=args.replay_buffer_size, discount_factor=args.discount_factor,
-                         grad_clip=args.grad_clip)
+                         replay_buffer_length=args.replay_buffer_size, discount_factor=args.discount_factor)
 
     maml_rawr.train()
 

@@ -141,9 +141,8 @@ class MLP(nn.Module):
             extra_head_layers = [layer_widths[-2] + layer_widths[-1]] + extra_head_layers
 
             for idx, (infc, outfc) in enumerate(zip(extra_head_layers[:-1], extra_head_layers[1:])):
+                self.head_seq.add_module(f'relu_{idx}', nn.ReLU())
                 self.head_seq.add_module(f'fc_{idx}', linear(extra_head_layers[idx], extra_head_layers[idx + 1]))
-                if idx < len(extra_head_layers) - 2:
-                    self.seq.add_module(f'relu_{idx}', nn.ReLU())
 
     def bias_parameters(self):
         return [self.seq[0]._linear.bias] if self.bias_linear else [self.seq[0].bias]

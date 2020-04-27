@@ -3,6 +3,7 @@ import argparse
 
 def get_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
+    parser.add_argument('--target_vf_alpha', type=float, default=0.9)
     parser.add_argument('--bootstrap_grad', action='store_true')
     parser.add_argument('--buffer_skip', type=int, default=1)
     parser.add_argument('--goal_dim', type=int, default=0)
@@ -22,9 +23,9 @@ def get_args() -> argparse.Namespace:
     parser.add_argument('--mltest', action='store_true')
     parser.add_argument('--vae_steps', type=int, default=None)
     parser.add_argument('--noclamp', action='store_true')
-    parser.add_argument('--lrlr', type=float, default=1e-4)
+    parser.add_argument('--lrlr', type=float, default=1e-3)
     parser.add_argument('--huber', action='store_true')
-    parser.add_argument('--net_width', type=int, default=96)
+    parser.add_argument('--net_width', type=int, default=128)
     parser.add_argument('--net_depth', type=int, default=4)
     parser.add_argument('--kld_coef', type=float, default=1.0)
     parser.add_argument('--cvae_skip', type=int, default=10)
