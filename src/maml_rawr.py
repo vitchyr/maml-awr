@@ -93,7 +93,7 @@ class MAMLRAWR(object):
         self._observation_dim = env.observation_space.shape[0] + (args.trim_obs if args.trim_obs else 0) - goal_dim
         self._action_dim = env_action_dim(env)
 
-        policy_head = [1] if args.advantage_head_coef is not None else None
+        policy_head = [32, 1] if args.advantage_head_coef is not None else None
         
         self._adaptation_policy = MLP([self._observation_dim + goal_dim] +
                                       [args.net_width] * args.net_depth +
@@ -184,8 +184,8 @@ class MAMLRAWR(object):
 
         self._policy_lrs = [torch.nn.Parameter(torch.tensor(float(self._inner_policy_lr)).to(args.device)) for p in self._adaptation_policy.parameters()]
         self._value_lrs = [torch.nn.Parameter(torch.tensor(float(self._inner_value_lr)).to(args.device)) for p in self._value_function.parameters()]
-        self._policy_lr_optimizer = O.Adam(self._policy_lrs, lr=self._args.lrlr)
-        self._value_lr_optimizer = O.Adam(self._value_lrs, lr=self._args.lrlr)
+        self._policy_lr_optimizer = O.Adam(self._policy_lrs, lr=self._args.lrlr, weight_decay=1e-3)
+        self._value_lr_optimizer = O.Adam(self._value_lrs, lr=self._args.lrlr, weight_decay=1e-3)
 
         self._adaptation_temperature, self._exploration_temperature = args.adaptation_temp, args.exploration_temp
         self._device = torch.device(args.device)
@@ -379,7 +379,7 @@ class MAMLRAWR(object):
         adv_prediction_loss = None
         if inner:
             if self._args.advantage_head_coef is not None:
-                adv_prediction_loss = self._args.advantage_head_coef *  (advantage_prediction.squeeze() - advantages.clamp(min=-self._advantage_clamp, max=self._advantage_clamp)) ** 2
+                adv_prediction_loss = self._args.advantage_head_coef *  (advantage_prediction.squeeze() - advantages) ** 2
                 losses = losses + adv_prediction_loss
                 adv_prediction_loss = adv_prediction_loss.mean()
 
@@ -621,7 +621,6 @@ class MAMLRAWR(object):
                         sub_batch = pyt_batch.view(self._args.maml_steps, pyt_batch.shape[0] // self._args.maml_steps, *pyt_batch.shape[1:])[step]
                         loss, value_inner, mc_inner, mc_std_inner = self.value_function_loss_on_batch(f_value_function, sub_batch, inner=True, task_idx=train_task_idx, target=vf_target)#, iweights=iweights_no_action_)
 
-                        #print('vfloss', loss.item())
                         inner_values.append(value_inner.item())
                         inner_mc_means.append(mc_inner.item())
                         inner_mc_stds.append(mc_std_inner.item())
@@ -637,8 +636,6 @@ class MAMLRAWR(object):
                 #  which is not actually performed here
                 meta_value_function_loss, value, mc, mc_std = self.value_function_loss_on_batch(f_value_function, meta_batch, task_idx=train_task_idx, target=vf_target)
                 value_lr_grad = A.grad(meta_value_function_loss, self._value_lrs, retain_graph=True)
-                if train_step_idx % 10 == 0:
-                    print(torch.stack(self._value_lrs))
                 meta_value_grad = A.grad(meta_value_function_loss, f_value_function.parameters(time=0), retain_graph=self._args.iw_exploration)
                 if self._args.iw_exploration:
                     value_exploration_grad = A.grad(meta_value_function_loss, self._exploration_policy.parameters(), retain_graph=True)
@@ -796,8 +793,19 @@ class MAMLRAWR(object):
     #@profile
     def train(self):
         log_path = f'{self._log_dir}/{self._name}'
-        if not os.path.exists(log_path):
-            os.makedirs(log_path)
+        if os.path.exists(log_path):
+            sep = '.'
+            existing = os.listdir(f'{self._log_dir}')
+            idx = 0
+            for directory in existing:
+                if directory.startswith(self._name):
+                    idx += 1
+            print(f'Experiment output {log_path} already exists.')
+            log_path = f'{self._log_dir}/{self._name}{sep}{idx}'
+            self._name = f'{self._name}{sep}{idx}'
+
+        print(f'Saving outputs to {log_path}')
+        os.makedirs(log_path)
 
         with open(f'{log_path}/args.txt', 'w') as args_file:
             json.dump(self._args.__dict__, args_file)
