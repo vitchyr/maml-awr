@@ -94,9 +94,10 @@ class MAMLRAWR(object):
         self._action_dim = env_action_dim(env)
 
         policy_head = [32, 1] if args.advantage_head_coef is not None else None
-        
+        net_shape = [64,64,32,32]#,32,32,32,32]
         self._adaptation_policy = MLP([self._observation_dim + goal_dim] +
-                                      [args.net_width] * args.net_depth +
+                                      #[args.net_width] * args.net_depth +
+                                      net_shape + 
                                       [self._action_dim],
                                       final_activation=torch.tanh,
                                       bias_linear=not args.no_bias_linear,
@@ -112,7 +113,10 @@ class MAMLRAWR(object):
 
         self._q_function = MLP([self._observation_dim + goal_dim + self._action_dim] + [args.net_width] * args.net_depth + [1],
                                    bias_linear=not args.no_bias_linear).to(args.device)
-        self._value_function = MLP([self._observation_dim + goal_dim] + [args.net_width] * args.net_depth + [1],
+        self._value_function = MLP([self._observation_dim + goal_dim] +
+                                   #[args.net_width] * args.net_depth +
+                                   net_shape + 
+                                   [1],
                                    bias_linear=not args.no_bias_linear).to(args.device)
         
         try:
@@ -635,7 +639,8 @@ class MAMLRAWR(object):
                 # Collect grads for the value function update in the outer loop [L14],
                 #  which is not actually performed here
                 meta_value_function_loss, value, mc, mc_std = self.value_function_loss_on_batch(f_value_function, meta_batch, task_idx=train_task_idx, target=vf_target)
-                value_lr_grad = A.grad(meta_value_function_loss, self._value_lrs, retain_graph=True)
+                if self._args.lrlr > 0:
+                    value_lr_grad = A.grad(meta_value_function_loss, self._value_lrs, retain_graph=True)
                 meta_value_grad = A.grad(meta_value_function_loss, f_value_function.parameters(time=0), retain_graph=self._args.iw_exploration)
                 if self._args.iw_exploration:
                     value_exploration_grad = A.grad(meta_value_function_loss, self._exploration_policy.parameters(), retain_graph=True)
@@ -648,7 +653,8 @@ class MAMLRAWR(object):
                 if self._args.iw_exploration:
                     value_exploration_grads.append(value_exploration_grad)
                 value_functions.append(f_value_function)
-                value_lr_grads.append(value_lr_grad)
+                if self._args.lrlr > 0:
+                    value_lr_grads.append(value_lr_grad)
             ##################################################################################################
 
             ##################################################################################################
@@ -697,7 +703,8 @@ class MAMLRAWR(object):
 
                 meta_policy_loss, outer_adv, outer_weight, _ = self.adaptation_policy_loss_on_batch(f_adaptation_policy, adapted_q_function,
                                                                                                  adapted_value_function, meta_batch, train_task_idx)
-                policy_lr_grad = A.grad(meta_policy_loss, self._policy_lrs, retain_graph=True, allow_unused=True)
+                if self._args.lrlr > 0:
+                    policy_lr_grad = A.grad(meta_policy_loss, self._policy_lrs, retain_graph=True, allow_unused=True)
                 meta_policy_grad = A.grad(meta_policy_loss, f_adaptation_policy.parameters(time=0),
                                           retain_graph=self._args.iw_exploration,
                                           allow_unused=self._args.task_idx is not None)
@@ -713,7 +720,8 @@ class MAMLRAWR(object):
                 if self._args.iw_exploration:
                     policy_exploration_grads.append(policy_exploration_grad)
                 adaptation_policies.append(f_adaptation_policy)
-                policy_lr_grads.append(policy_lr_grad)
+                if self._args.lrlr > 0:
+                    policy_lr_grads.append(policy_lr_grad)
             ##################################################################################################
             
             if self._args.iw_exploration:
@@ -785,14 +793,17 @@ class MAMLRAWR(object):
         if grad is not None:
             writer.add_scalar(f'Policy_Outer_Grad', grad, train_step_idx)
 
-        self.update_params_with_grads(self._value_lrs, value_lr_grads, self._value_lr_optimizer)
-        self.update_params_with_grads(self._policy_lrs, policy_lr_grads, self._policy_lr_optimizer)
+        if self._args.lrlr > 0:
+            self.update_params_with_grads(self._value_lrs, value_lr_grads, self._value_lr_optimizer)
+            self.update_params_with_grads(self._policy_lrs, policy_lr_grads, self._policy_lr_optimizer)
             
         return rollouts, test_rewards, train_rewards, meta_value_losses, meta_policy_losses, value_functions, successes
 
     #@profile
     def train(self):
         log_path = f'{self._log_dir}/{self._name}'
+        print('*******************************************************')
+        print('*******************************************************')
         if os.path.exists(log_path):
             sep = '.'
             existing = os.listdir(f'{self._log_dir}')
@@ -805,6 +816,8 @@ class MAMLRAWR(object):
             self._name = f'{self._name}{sep}{idx}'
 
         print(f'Saving outputs to {log_path}')
+        print('*******************************************************')
+        print('*******************************************************')
         os.makedirs(log_path)
 
         with open(f'{log_path}/args.txt', 'w') as args_file:
