@@ -1,8 +1,10 @@
 import argparse
+import json
 
 
 def get_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
+    parser.add_argument('--macaw_params', type=str, default=None)
     parser.add_argument('--target_vf_alpha', type=float, default=0.9)
     parser.add_argument('--bootstrap_grad', action='store_true')
     parser.add_argument('--buffer_skip', type=int, default=1)
@@ -103,4 +105,13 @@ def get_args() -> argparse.Namespace:
     parser.add_argument('--test_buffer_paths', type=str, nargs='+', default=None)
     parser.add_argument('--load_inner_buffer', action='store_true')
     parser.add_argument('--load_outer_buffer', action='store_true')
-    return parser.parse_args()
+    args = parser.parse_args()
+
+    if args.macaw_params is not None:
+        with open(args.macaw_params, 'r') as f:
+            params = json.load(f)
+
+        for k, v in params.items():
+            setattr(args, k, v)
+
+    return args
