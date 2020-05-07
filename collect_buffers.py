@@ -58,7 +58,6 @@ def main(args):
     if not os.path.exists(args.log_dir):
         os.makedirs(args.log_dir)
 
-    ml = 'train'
     if args.env == 'ant_dir':
         ant_dir_tasks = pickle.load(open(f"{args.task_path}/ant_dir_tasks", "rb"))
         env = AntDirEnv(tasks = ant_dir_tasks, include_goal = args.include_goal)
@@ -75,23 +74,27 @@ def main(args):
     elif args.env == 'walker_param':
         walker_tasks = pickle.load(open(f"{args.task_path}/walker_params_tasks", "rb"))
         env = WalkerRandParamsWrappedEnv(tasks = walker_tasks, include_goal = args.include_goal)
-    elif args.env == 'ml10':
-        env = get_metaworld_tasks(args.env)
-        env.set_task_idx(0)
-        if args.mltest:
-            ml = 'mltest'
-            
-    env.set_task_idx(args.task_idx)
-    env.tasks = [env.tasks[args.task_idx]]
+    elif args.env == 'ml45':
+        from metaworld.benchmarks.base import Benchmark
+        from metaworld.envs.mujoco.multitask_env import MultiClassMultiTaskEnv
+        from metaworld.envs.mujoco.env_dict import HARD_MODE_ARGS_KWARGS, HARD_MODE_CLS_DICT
 
-    if args.env == 'ml10':
+        args.type = 'train'
+        if args.task is None:
+            args.task = list(HARD_MODE_ARGS_KWARGS[args.type].keys())[args.task_idx]       
+        args_kwargs =  HARD_MODE_ARGS_KWARGS[args.type][args.task]
+        args_kwargs['kwargs']['obs_type'] = 'with_goal'
+        args_kwargs['task'] = args.task
+        env = HARD_MODE_CLS_DICT[args.type][args.task](*args_kwargs['args'], **args_kwargs['kwargs'])
+        
+    if args.env == 'ml45':
         env = TimeLimit(env, max_episode_steps = 150)
-        pickle.dump(env.unwrapped.tasks, open(args.log_dir + '/env_{}_{}_task{}.pkl'.format(args.env, ml, args.task_idx), "wb" ))    
+        pickle.dump(args_kwargs, open(args.log_dir + '/env_{}_{}_task{}.pkl'.format(args.env, args.type, args.task_idx), "wb" ))   
     else:
         env.observation_space = gym.spaces.box.Box(env.observation_space.low, env.observation_space.high)
         env.action_space = gym.spaces.box.Box(env.action_space.low, env.action_space.high)
         env = TimeLimit(env, max_episode_steps = 200)
-        pickle.dump(env.unwrapped.tasks, open(args.log_dir + '/env_{}_{}_task{}.pkl'.format(args.env, ml, args.task_idx), "wb" ))
+        pickle.dump(env.unwrapped.tasks, open(args.log_dir + '/env_{}_task{}.pkl'.format(args.env, args.task_idx), "wb" ))
 
     if args.alg == 'td3':
         from stable_baselines.td3.policies import MlpPolicy
@@ -102,10 +105,9 @@ def main(args):
         action_noise = NormalActionNoise(mean=np.zeros(n_actions), sigma=0.1 * np.ones(n_actions))
 
         model = TD3(MlpPolicy, env, action_noise=action_noise, verbose=1,
-                    tensorboard_log = args.log_dir + '/tensorboard/log_{}_{}_task_{}'.format(args.env, ml, args.task_idx),
-                    buffer_log = args.log_dir + '/buffers_{}_{}_{}_'.format(args.env, ml, args.task_idx),
+                    tensorboard_log = args.log_dir + '/tensorboard/log_{}_task_{}'.format(args.env, args.task_idx),
+                    buffer_log = args.log_dir + '/buffers_{}_{}_'.format(args.env, args.task_idx),
                     full_size = args.full_buffer_size,
-                    task = args.task_idx,
                     buffer_size = args.replay_buffer_size, 
                     batch_size = args.batch_size, 
                     policy_kwargs={'layers': [400, 300]},
@@ -120,14 +122,13 @@ def main(args):
     else:
         from stable_baselines.sac.policies import MlpPolicy
         from stable_baselines.sac.policies import FeedForwardPolicy
-        from src.sac import SAC
+        from src.sac2 import SAC
         
         model = SAC(MlpPolicy,
                     env, 
                     verbose=1, 
-                    tensorboard_log = args.log_dir + '/tensorboard/log_{}_{}_task_{}'.format(args.env, ml, args.task_idx),
-                    buffer_log = args.log_dir + '/buffers_{}_{}_{}_'.format(args.env, ml, args.task_idx),
-                    task = args.task_idx,
+                    tensorboard_log = args.log_dir + '/tensorboard/log_{}_task_{}'.format(args.env, args.task_idx),
+                    buffer_log = args.log_dir + '/buffers_{}_{}_'.format(args.env, args.task_idx),
                     buffer_size = args.replay_buffer_size, 
                     full_size = args.full_buffer_size,
                     batch_size = args.batch_size, 
@@ -139,9 +140,9 @@ def main(args):
         print('## Running *SAC* data collection ##')
         print('###################################')
         print('###################################')
-        model.learn(total_timesteps = args.full_buffer_size * len(env.unwrapped.tasks), log_interval = 10)
+        model.learn(total_timesteps = args.full_buffer_size, log_interval = 10)
 
-    model.save(args.log_dir + '/model_{}_{}_{}'.format(args.env, ml, args.task_idx))
+    model.save(args.log_dir + '/model_{}_{}'.format(args.env, args.task_idx))
 
 if __name__ == '__main__':
     random.seed(17)
