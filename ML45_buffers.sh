@@ -1,0 +1,16 @@
+python -m collect_buffers --env ml45 --task_idx 0 --alg sac --replay_buffer_size 1000000 --full_buffer_size 5000000 --task_path /home/ubuntu/maml-awr/tasks --log_dir /home/ubuntu/NIPS2020_data/ML45 &
+python -m collect_buffers --env ml45 --task_idx 1 --alg sac --replay_buffer_size 1000000 --full_buffer_size 5000000 --task_path /home/ubuntu/maml-awr/tasks --log_dir /home/ubuntu/NIPS2020_data/ML45 &
+python -m collect_buffers --env ml45 --task_idx 2 --alg sac --replay_buffer_size 1000000 --full_buffer_size 5000000 --task_path /home/ubuntu/maml-awr/tasks --log_dir /home/ubuntu/NIPS2020_data/ML45 &
+python -m collect_buffers --env ml45 --task_idx 3 --alg sac --replay_buffer_size 1000000 --full_buffer_size 5000000 --task_path /home/ubuntu/maml-awr/tasks --log_dir /home/ubuntu/NIPS2020_data/ML45 &
+python -m collect_buffers --env ml45 --task_idx 4 --alg sac --replay_buffer_size 1000000 --full_buffer_size 5000000 --task_path /home/ubuntu/maml-awr/tasks --log_dir /home/ubuntu/NIPS2020_data/ML45 &
+python -m collect_buffers --env ml45 --task_idx 5 --alg sac --replay_buffer_size 1000000 --full_buffer_size 5000000 --task_path /home/ubuntu/maml-awr/tasks --log_dir /home/ubuntu/NIPS2020_data/ML45 &
+python -m collect_buffers --env ml45 --task_idx 6 --alg sac --replay_buffer_size 1000000 --full_buffer_size 5000000 --task_path /home/ubuntu/maml-awr/tasks --log_dir /home/ubuntu/NIPS2020_data/ML45 &
+python -m collect_buffers --env ml45 --task_idx 7 --alg sac --replay_buffer_size 1000000 --full_buffer_size 5000000 --task_path /home/ubuntu/maml-awr/tasks --log_dir /home/ubuntu/NIPS2020_data/ML45 &
+python -m collect_buffers --env ml45 --task_idx 8 --alg sac --replay_buffer_size 1000000 --full_buffer_size 5000000 --task_path /home/ubuntu/maml-awr/tasks --log_dir /home/ubuntu/NIPS2020_data/ML45 &
+python -m collect_buffers --env ml45 --task_idx 9 --alg sac --replay_buffer_size 1000000 --full_buffer_size 5000000 --task_path /home/ubuntu/maml-awr/tasks --log_dir /home/ubuntu/NIPS2020_data/ML45 &
+python -m collect_buffers --env ml45 --task_idx 10 --alg sac --replay_buffer_size 1000000 --full_buffer_size 5000000 --task_path /home/ubuntu/maml-awr/tasks --log_dir /home/ubuntu/NIPS2020_data/ML45 &
+python -m collect_buffers --env ml45 --task_idx 11 --alg sac --replay_buffer_size 1000000 --full_buffer_size 5000000 --task_path /home/ubuntu/maml-awr/tasks --log_dir /home/ubuntu/NIPS2020_data/ML45 &
+python -m collect_buffers --env ml45 --task_idx 12 --alg sac --replay_buffer_size 1000000 --full_buffer_size 5000000 --task_path /home/ubuntu/maml-awr/tasks --log_dir /home/ubuntu/NIPS2020_data/ML45 &
+python -m collect_buffers --env ml45 --task_idx 13 --alg sac --replay_buffer_size 1000000 --full_buffer_size 5000000 --task_path /home/ubuntu/maml-awr/tasks --log_dir /home/ubuntu/NIPS2020_data/ML45 &
+python -m collect_buffers --env ml45 --task_idx 14 --alg sac --replay_buffer_size 1000000 --full_buffer_size 5000000 --task_path /home/ubuntu/maml-awr/tasks --log_dir /home/ubuntu/NIPS2020_data/ML45 &
+python -m collect_buffers --env ml45 --task_idx 15 --alg sac --replay_buffer_size 1000000 --full_buffer_size 5000000 --task_path /home/ubuntu/maml-awr/tasks --log_dir /home/ubuntu/NIPS2020_data/ML45 &
