@@ -140,7 +140,7 @@ def main(args):
         print('## Running *SAC* data collection ##')
         print('###################################')
         print('###################################')
-        model.learn(total_timesteps = args.full_buffer_size, log_interval = 10)
+        model.learn(total_timesteps = args.full_buffer_size, log_interval = 1)
 
     model.save(args.log_dir + '/model_{}_{}'.format(args.env, args.task_idx))
 
@@ -151,5 +151,6 @@ if __name__ == '__main__':
     
     args = get_args()
     args.task_idx = int(args.task_idx)
+    args.task = None
     
     main(args)
