@@ -2,6 +2,7 @@ from typing import NamedTuple, List
 
 import h5py
 import numpy as np
+import tempfile
 import torch
 import torch.nn as nn
 
@@ -76,18 +77,39 @@ class Experience(NamedTuple):
 
 class NewReplayBuffer(object):
     def __init__(self, size: int, obs_dim: int, action_dim: int, discount_factor: float = 0.99,
-                 immutable: bool = False, load_from: str = None, silent: bool = False, skip: int = 1):
+                 immutable: bool = False, load_from: str = None, silent: bool = False, skip: int = 1,
+                 stream_to_disk: bool = False):
         self.immutable = immutable
 
         size //= skip
-        self._obs = np.full((size, obs_dim), float('nan'), dtype=np.float32)
-        self._actions = np.full((size, action_dim), float('nan'), dtype=np.float32)
-        self._rewards = np.full((size, 1), float('nan'), dtype=np.float32)
-        self._mc_rewards = np.full((size, 1), float('nan'), dtype=np.float32)
-        self._terminals = np.full((size, 1), False, dtype=np.bool)
-        self._terminal_obs = np.full((size, obs_dim), float('nan'), dtype=np.float32)
-        self._terminal_discounts = np.full((size, 1), float('nan'), dtype=np.float32)
-        self._next_obs = np.full((size, obs_dim), float('nan'), dtype=np.float32)
+        if stream_to_disk:
+            f = tempfile.mkdtemp()
+            print(f'Streaming buffer data to disk at {f}/*.array')
+            self._obs = np.memmap(f'{f}/obs.array', mode='w+', shape=(size, obs_dim), dtype=np.float32)
+            self._actions = np.memmap(f'{f}/actions.array', mode='w+', shape=(size, action_dim), dtype=np.float32)
+            self._rewards = np.memmap(f'{f}/rewards.array', mode='w+', shape=(size, 1), dtype=np.float32)
+            self._mc_rewards = np.memmap(f'{f}/mc_rewards.array', mode='w+', shape=(size, 1), dtype=np.float32)
+            self._terminals = np.memmap(f'{f}/termianls.array', mode='w+', shape=(size, 1), dtype=np.bool)
+            self._terminal_obs = np.memmap(f'{f}/terminal_obs.array', mode='w+', shape=(size, obs_dim), dtype=np.float32)
+            self._terminal_discounts = np.memmap(f'{f}/terminal_discounts.array', mode='w+', shape=(size, 1), dtype=np.float32)
+            self._next_obs = np.memmap(f'{f}/next_obs.array', mode='w+', shape=(size, obs_dim), dtype=np.float32)
+            self._obs.fill(float('nan'))
+            self._actions.fill(float('nan'))
+            self._rewards.fill(float('nan'))
+            self._mc_rewards.fill(float('nan'))
+            self._terminals.fill(float('nan'))
+            self._terminal_obs.fill(float('nan'))
+            self._terminal_discounts.fill(float('nan'))
+            self._next_obs.fill(float('nan'))
+        else:
+            self._obs = np.full((size, obs_dim), float('nan'), dtype=np.float32)
+            self._actions = np.full((size, action_dim), float('nan'), dtype=np.float32)
+            self._rewards = np.full((size, 1), float('nan'), dtype=np.float32)
+            self._mc_rewards = np.full((size, 1), float('nan'), dtype=np.float32)
+            self._terminals = np.full((size, 1), False, dtype=np.bool)
+            self._terminal_obs = np.full((size, obs_dim), float('nan'), dtype=np.float32)
+            self._terminal_discounts = np.full((size, 1), float('nan'), dtype=np.float32)
+            self._next_obs = np.full((size, obs_dim), float('nan'), dtype=np.float32)
 
         self._size = size
         if load_from is None:
@@ -408,9 +430,9 @@ def test_old_buffer():
 
 def test_new_buffer():
     np.random.seed(0)
-    size = 10
-    state, action = 2, 3
-    buf = NewReplayBuffer(size, state, action)
+    size = 100000000
+    state, action = 20, 6
+    buf = NewReplayBuffer(size, state, action, stream_to_disk=True)
 
     t1 = generate_test_trajectory(3, state, action)
     buf.add_trajectory(t1)
@@ -419,11 +441,11 @@ def test_new_buffer():
     buf.add_trajectories(t2)
 
     print(len(buf))
-    print(buf.sample(2))
+    print('sample', buf.sample(20000).shape)
 
-    buf2 = NewReplayBuffer(size, state, action, load_from='test_buf.h5')
-    import pdb; pdb.set_trace()
     buf.save('test_buf.h5')
+    #buf2 = NewReplayBuffer(size, state, action, load_from='test_buf.h5')
+    import pdb; pdb.set_trace()
     
 
 if __name__ == '__main__':

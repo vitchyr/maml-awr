@@ -831,14 +831,16 @@ class MAMLRAWR(object):
 
         # Gather initial trajectory rollouts
         if not self._args.load_inner_buffer or not self._args.load_outer_buffer:
-            print('Gathering initial trajectories...', self._silent)
             behavior_policy = self._exploration_policy if self._args.sample_exploration_inner else self._adaptation_policy
             exploration_rewards = np.zeros((self._args.initial_rollouts, len(self._env.tasks)))
+            print('Gathering training task trajectories...')
             for j in range(self._args.initial_rollouts):
                 for i, (inner_buffer, outer_buffer, full_buffer) in enumerate(zip(self._inner_buffers, self._outer_buffers,
                                                                                                self._full_buffers)):
-                    print_(f'{j+1,i+1}/{self._args.initial_rollouts,len(self._inner_buffers)}\r', self._silent, end='')
-                    self._env.set_task_idx(i)
+                    #print_(f'{j+1,i+1}/{self._args.initial_rollouts,len(self._inner_buffers)}\r', self._silent, end='')
+                    task_idx = self.task_config.train_tasks[i]
+                    print_(f'Task {task_idx} ({i+1}/{len(self._inner_buffers)}): {j+1}/{self._args.initial_rollouts} rollouts\r', self._silent, end='')
+                    self._env.set_task_idx(self.task_config.train_tasks[i])
                     if self._args.render_exploration:
                         print_(f'Task {i}, trajectory {j}', self._silent)
                     trajectory, reward, success = self._rollout_policy(behavior_policy, self._env, random=self._args.random, render=self._args.render_exploration, test=self._args.render_exploration)
@@ -851,8 +853,13 @@ class MAMLRAWR(object):
                         outer_buffer.add_trajectory(trajectory, force=True)
                         full_buffer.add_trajectory(trajectory, force=True)
 
+            print('\nGathering test task trajectories...')
+            for j in range(self._args.initial_rollouts):
                 if not self._args.load_inner_buffer:
                     for i, test_buffer in enumerate(self._test_buffers):
+                        task_idx = self.task_config.test_tasks[i]
+                        self._env.set_task_idx(task_idx)
+                        print_(f'Task {task_idx} ({i+1}/{len(self._inner_buffers)}): {j+1}/{self._args.initial_rollouts} rollouts\r', self._silent, end='')
                         random_trajectory, _, _ = self._rollout_policy(behavior_policy, self._env, random=self._args.random)
                         test_buffer.add_trajectory(random_trajectory, force=True)
 
@@ -862,14 +869,6 @@ class MAMLRAWR(object):
         rewards = []
         successes = []
         reward_count = 0
-        '''
-        for inner in self._inner_buffers:
-            print('inner:', len(inner))
-        for outer in self._outer_buffers:
-            print('outer:', len(outer))
-        for test in self._test_buffers:
-            print('test:', len(test))
-        '''
         for t in range(self._training_iterations):
             rollouts, test_rewards, train_rewards, value, policy, vfs, success = self.train_step(t, summary_writer)
 
