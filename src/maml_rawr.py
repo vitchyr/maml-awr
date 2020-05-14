@@ -211,7 +211,7 @@ class MAMLRAWR(object):
     ################# SUBROUTINES FOR TRAINING ######################
     #################################################################
     #@profile
-    def _rollout_policy(self, policy: MLP, env, test: bool = False, random: bool = False, render: bool = False) -> List[Experience]:
+    def _rollout_policy(self, policy: MLP, env, sample_mode: bool = False, random: bool = False, render: bool = False) -> List[Experience]:
         env.seed(self._env_seeds[self._rollout_counter].item())
         self._rollout_counter += 1
         trajectory = []
@@ -229,7 +229,7 @@ class MAMLRAWR(object):
 
         success = False
         while not done:
-            if self._args.multitask and test:
+            if self._args.multitask and sample_mode:
                 state[-self.task_config.total_tasks:] = 0
             if not random:
                 with torch.no_grad():
@@ -241,7 +241,7 @@ class MAMLRAWR(object):
                     else:
                         mu = policy(torch.tensor(state, device=self._args.device).unsqueeze(0).float()).squeeze()
 
-                    if test:
+                    if sample_mode:
                         action = mu
                     else:
                         action = mu + torch.empty_like(mu).normal_() * action_sigma
@@ -295,10 +295,11 @@ class MAMLRAWR(object):
     def q_function_loss_on_batch(self, q_function, value_function, batch, inner: bool = False, task_idx: int = None):
         q_estimates = q_function(torch.cat((batch[:,:self._observation_dim], batch[:,self._observation_dim:self._observation_dim+self._action_dim]), -1))
         with torch.no_grad():
-            value_estimates = value_function(batch[:,self._observation_dim + self._action_dim:self._observation_dim * 2 + self._action_dim])
-            #mc_value_estimates = self.mc_value_estimates_on_batch(value_function, batch)
+            #value_estimates = value_function(batch[:,self._observation_dim + self._action_dim:self._observation_dim * 2 + self._action_dim])
+            mc_value_estimates = self.mc_value_estimates_on_batch(value_function, batch, task_idx, self._args.no_bootstrap if inner else False)
 
-        targets = batch[:,-2] + value_estimates
+        #targets = batch[:,-2] + mc_value_estimates
+        targets = mc_value_estimates
 
         if self._args.normalize_values or (self._args.normalize_values_outer and not inner):
             if task_idx is not None:
@@ -436,7 +437,7 @@ class MAMLRAWR(object):
                 self._env.set_task_idx(test_task_idx)
 
                 if self._args.eval:
-                    adapted_trajectory, adapted_reward, success = self._rollout_policy(self._adaptation_policy, self._env, test=True, render=self._args.render)
+                    adapted_trajectory, adapted_reward, success = self._rollout_policy(self._adaptation_policy, self._env, sample_mode=True, render=self._args.render)
                     trajectories.append(adapted_trajectory)
                     rewards[i,0] = adapted_reward
                     successes.append(success)
@@ -456,7 +457,7 @@ class MAMLRAWR(object):
                     ap_loss.backward()
                     ap_opt.step()
                     ap_opt.zero_grad()
-                    adapted_trajectory, adapted_reward, success = self._rollout_policy(ap, self._env, test=True)
+                    adapted_trajectory, adapted_reward, success = self._rollout_policy(ap, self._env, sample_mode=True)
                     print(i, step, adapted_reward)
                     if (step + 1) in log_steps:
                         reward_dict[step+1].append(adapted_reward)
@@ -476,7 +477,7 @@ class MAMLRAWR(object):
                 self._env.set_task_idx(test_task_idx)
 
                 if self._args.eval:
-                    adapted_trajectory, adapted_reward, success = self._rollout_policy(self._adaptation_policy, self._env, test=True, render=self._args.render)
+                    adapted_trajectory, adapted_reward, success = self._rollout_policy(self._adaptation_policy, self._env, sample_mode=True, render=self._args.render)
                     trajectories.append(adapted_trajectory)
                     rewards[i,0] = adapted_reward
                     successes.append(success)
@@ -507,7 +508,7 @@ class MAMLRAWR(object):
                                 loss, _, _, _ = self.adaptation_policy_loss_on_batch(f_policy, None, f_value_function, policy_sub_batch, test_task_idx, inner=True)
                                 diff_policy_opt.step(loss)
 
-                            adapted_trajectory, adapted_reward, success = self._rollout_policy(f_policy, self._env, test=True, render=self._args.render)
+                            adapted_trajectory, adapted_reward, success = self._rollout_policy(f_policy, self._env, sample_mode=True, render=self._args.render)
                             trajectories.append(adapted_trajectory)
                             rewards[i,eval_step+1] = adapted_reward
                             successes.append(success)
@@ -664,10 +665,11 @@ class MAMLRAWR(object):
                 q_opt = O.SGD(self._q_function.parameters(), lr=self._inner_value_lr)
                 with higher.innerloop_ctx(self._q_function, q_opt) as (f_q_function, diff_q_opt):
                     if self._inner_value_lr > 0 and len(self._env.tasks) > 1:
-                        for inner_batch in pyt_batch:
+                        for step in range(self._maml_steps):
+                            sub_batch = pyt_batch.view(self._args.maml_steps, pyt_batch.shape[0] // self._args.maml_steps, *pyt_batch.shape[1:])[step]
                             # Compute loss and adapt value function [L9]
-                            loss = self.q_function_loss_on_batch(f_q_function, value_functions[-1], inner_batch, inner=True, task_idx=train_task_idx)
-                            diff_value_opt.step(loss)
+                            loss = self.q_function_loss_on_batch(f_q_function, value_functions[-1], sub_batch, inner=True, task_idx=train_task_idx)
+                            diff_q_opt.step(loss)
                             inner_q_losses.append(loss.item())
 
                     # Collect grads for the value function update in the outer loop [L14],
@@ -687,7 +689,6 @@ class MAMLRAWR(object):
             opt = O.SGD([{'params': p, 'lr': None} for p in self._adaptation_policy.parameters()])
             with higher.innerloop_ctx(self._adaptation_policy, opt, override={'lr': self._policy_lrs}) as (f_adaptation_policy, diff_policy_opt):
                 if self._inner_policy_lr > 0 and len(self._env.tasks) > 1:
-                    #for _ in range(random.randint(1,self._args.maml_steps)):
                     for step in range(self._maml_steps):
                         DEBUG(f'################# POLICY STEP {step} ###################', self._args.debug)
                         sub_batch = pyt_batch.view(self._args.maml_steps, pyt_batch.shape[0] // self._args.maml_steps, *pyt_batch.shape[1:])[step]
@@ -730,13 +731,13 @@ class MAMLRAWR(object):
 
             # Sample adapted policy trajectory, add to replay buffer i [L12]
             if train_step_idx % self._gradient_steps_per_iteration == 0:
-                adapted_trajectory, adapted_reward, success = self._rollout_policy(adaptation_policies[-1], self._env, test=False)
+                adapted_trajectory, adapted_reward, success = self._rollout_policy(adaptation_policies[-1], self._env, sample_mode=False)
                 train_rewards.append(adapted_reward)
                 successes.append(success)
 
                 if not (self._args.offline or self._args.offline_inner):
                     if self._args.sample_exploration_inner:
-                        exploration_trajectory, _, _ = self._rollout_policy(self._exploration_policy, self._env, test=False)
+                        exploration_trajectory, _, _ = self._rollout_policy(self._exploration_policy, self._env, sample_mode=False)
                         inner_buffer.add_trajectory(exploration_trajectory)
                     else:
                         inner_buffer.add_trajectory(adapted_trajectory)
@@ -843,7 +844,7 @@ class MAMLRAWR(object):
                     self._env.set_task_idx(self.task_config.train_tasks[i])
                     if self._args.render_exploration:
                         print_(f'Task {i}, trajectory {j}', self._silent)
-                    trajectory, reward, success = self._rollout_policy(behavior_policy, self._env, random=self._args.random, render=self._args.render_exploration, test=self._args.render_exploration)
+                    trajectory, reward, success = self._rollout_policy(behavior_policy, self._env, random=self._args.random, render=self._args.render_exploration, sample_mode=self._args.render_exploration)
                     exploration_rewards[j,i] = reward
                     if self._args.render_exploration:
                         print_(f'Reward: {reward} {success}', self._silent)

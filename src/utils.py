@@ -145,6 +145,7 @@ class NewReplayBuffer(object):
             f.close()
 
         self._write_location = self._stored_steps % self._size
+        self._valid = np.where(np.logical_and(~np.isnan(self._terminal_discounts[:,0]), self._terminal_discounts[:,0] < 0.35))[0]
 
     @property
     def obs_dim(self):
@@ -200,12 +201,15 @@ class NewReplayBuffer(object):
             if self._stored_steps < self._size:
                 self._stored_steps += 1
 
+        self._valid = np.where(np.logical_and(~np.isnan(self._terminal_discounts[:,0]), self._terminal_discounts[:,0] < 0.35))[0]
+
     def add_trajectories(self, trajectories: List[List[Experience]], force: bool = False):
         for trajectory in trajectories:
             self.add_trajectory(trajectory, force)
 
     def sample(self, batch_size, return_dict: bool = False):
         idxs = np.random.choice(self._stored_steps, batch_size)
+        #idxs = np.random.choice(self._valid, batch_size)
 
         obs = self._obs[idxs]
         actions = self._actions[idxs]
