@@ -99,6 +99,29 @@ class CVAE(nn.Module):
         return mu_logvar[:,:mu_logvar.shape[-1] // 2], (mu_logvar[:,mu_logvar.shape[-1] // 2:] / 2).exp()
 
 
+class WLinear(nn.Module):
+    def __init__(self, in_features: int, out_features: int, bias_size: Optional[int] = None):
+        super().__init__()
+        if bias_size is None:
+            bias_size = out_features
+
+        self.z = nn.Parameter(torch.empty(100).normal_(0, 1. / bias_size))
+        print(self.z.mean(), self.z.std().item())
+        self.fc1 = nn.Linear(100, 100)
+        self.fc2 = nn.Linear(100, 100)
+        self.fc3 = nn.Linear(100, in_features * out_features + out_features)
+        self.seq = nn.Sequential(self.fc1, nn.ReLU(), self.fc2, nn.ReLU(), self.fc3)
+        self.w_idx = in_features * out_features
+        self.weight = self.fc1.weight
+        self._linear = self.fc1
+        
+    def forward(self, x: torch.tensor):
+        theta = self.seq(self.z)
+        w = theta[:self.w_idx].view(x.shape[-1], -1)
+        b = theta[self.w_idx:]
+        return x @ w + b
+    
+
 class BiasLinear(nn.Module):
     def __init__(self, in_features: int, out_features: int, bias_size: Optional[int] = None):
         super().__init__()
@@ -115,7 +138,7 @@ class BiasLinear(nn.Module):
 
 
 class MLP(nn.Module):
-    def __init__(self, layer_widths: List[int], final_activation: Callable = lambda x: x, bias_linear: bool = False, extra_head_layers: List[int] = None):
+    def __init__(self, layer_widths: List[int], final_activation: Callable = lambda x: x, bias_linear: bool = False, extra_head_layers: List[int] = None, w_linear: bool = False):
         super().__init__()
 
         if len(layer_widths) < 2:
@@ -125,7 +148,10 @@ class MLP(nn.Module):
         self.seq = nn.Sequential()
         self._head = extra_head_layers is not None
 
-        linear = BiasLinear if bias_linear else nn.Linear
+        if not w_linear:
+            linear = BiasLinear if bias_linear else nn.Linear
+        else:
+            linear = WLinear
         self.bias_linear = bias_linear
         
         for idx in range(len(layer_widths) - 1):
