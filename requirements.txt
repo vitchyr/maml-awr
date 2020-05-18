@@ -2,7 +2,7 @@ torch
 numpy
 git+git://github.com/facebookresearch/higher.git@59537fa#egg=higher
 git+https://github.com/rlworkgroup/metaworld.git@44b2e41#egg=metaworld
-gym
+gym==0.12.1
 imageio
 mujoco_py
 tensorboard
