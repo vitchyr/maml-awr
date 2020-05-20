@@ -82,11 +82,11 @@ def main(args):
         args.type = 'train'
         if args.task is None:
             args.task = list(HARD_MODE_ARGS_KWARGS[args.type].keys())[args.task_idx]       
-        args_kwargs =  HARD_MODE_ARGS_KWARGS[args.type][args.task]
+        args_kwargs = HARD_MODE_ARGS_KWARGS[args.type][args.task]
         args_kwargs['kwargs']['obs_type'] = 'with_goal'
         args_kwargs['task'] = args.task
         env = HARD_MODE_CLS_DICT[args.type][args.task](*args_kwargs['args'], **args_kwargs['kwargs'])
-        
+
     if args.env == 'ml45':
         env = TimeLimit(env, max_episode_steps = 150)
         pickle.dump(args_kwargs, open(args.log_dir + '/env_{}_{}_task{}.pkl'.format(args.env, args.type, args.task_idx), "wb" ))   

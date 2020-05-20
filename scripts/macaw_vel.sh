@@ -7,7 +7,13 @@
 #SBATCH --gres=gpu:1
 #SBATCH --job-name="vel"
 
-source env4/bin/activate
+eval "$(conda shell.bash hook)"
+conda activate macaw
 which python
 
-python -m run --name macaw_vel --log_dir log/newruns2 --device cuda:0 --task_config config/cheetah_vel/half_tasks_offline.json --macaw_params config/alg/standard.json
+NAME="macaw_vel"
+LOG_DIR="log/newruns4"
+TASK_CONFIG="config/cheetah_vel/half_tasks_offline.json"
+MACAW_PARAMS="config/alg/standard.json"
+
+./scripts/runner.sh $NAME $LOG_DIR $TASK_CONFIG $MACAW_PARAMS

@@ -79,8 +79,16 @@ class NewReplayBuffer(object):
     def __init__(self, size: int, obs_dim: int, action_dim: int, discount_factor: float = 0.99,
                  immutable: bool = False, load_from: str = None, silent: bool = False, skip: int = 1,
                  stream_to_disk: bool = False):
+        if size == -1 and load_from is None:
+            raise Exception("Can't have size == -1 and no offline buffer")
+
         self.immutable = immutable
 
+        if load_from is not None:
+            f = h5py.File(load_from, 'r')
+            if size == -1:
+                size = f['obs'].shape[0]
+        
         size //= skip
         if stream_to_disk:
             f = tempfile.mkdtemp()
@@ -118,7 +126,6 @@ class NewReplayBuffer(object):
         else:
             if not silent:
                 print(f'Loading trajectories from {load_from}')
-            f = h5py.File(load_from, 'r')
             if f['obs'].shape[-1] != self.obs_dim:
                 raise RuntimeError(f"Loaded data has different obs_dim from new buffer ({f['obs'].shape[-1]}, {self.obs_dim})")
             if f['actions'].shape[-1] != self.action_dim:
@@ -126,7 +133,7 @@ class NewReplayBuffer(object):
 
             stored = f['obs'].shape[0]
             n_seed = min(stored, self._size * skip)
-            if stored > self._size:
+            if stored > self._size * skip:
                 if not silent:
                     print(f"Attempted to load {stored} offline steps into buffer of size {self._size}.")
                     print(f"Loading only the last {n_seed//skip} steps from offline buffer")
