@@ -13,6 +13,6 @@
     "maml_steps": 1,
     "eval_maml_steps": 1,
     "lrlr": 1e-2,
-    "wlinear": true,
+    "wlinear": false,
     "buffer_skip": 2
 }

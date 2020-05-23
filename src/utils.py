@@ -91,16 +91,16 @@ class NewReplayBuffer(object):
         
         size //= skip
         if stream_to_disk:
-            f = tempfile.mkdtemp()
-            print(f'Streaming buffer data to disk at {f}/*.array')
-            self._obs = np.memmap(f'{f}/obs.array', mode='w+', shape=(size, obs_dim), dtype=np.float32)
-            self._actions = np.memmap(f'{f}/actions.array', mode='w+', shape=(size, action_dim), dtype=np.float32)
-            self._rewards = np.memmap(f'{f}/rewards.array', mode='w+', shape=(size, 1), dtype=np.float32)
-            self._mc_rewards = np.memmap(f'{f}/mc_rewards.array', mode='w+', shape=(size, 1), dtype=np.float32)
-            self._terminals = np.memmap(f'{f}/termianls.array', mode='w+', shape=(size, 1), dtype=np.bool)
-            self._terminal_obs = np.memmap(f'{f}/terminal_obs.array', mode='w+', shape=(size, obs_dim), dtype=np.float32)
-            self._terminal_discounts = np.memmap(f'{f}/terminal_discounts.array', mode='w+', shape=(size, 1), dtype=np.float32)
-            self._next_obs = np.memmap(f'{f}/next_obs.array', mode='w+', shape=(size, obs_dim), dtype=np.float32)
+            tempf = tempfile.mkdtemp()
+            print(f'Streaming buffer data to disk at {tempf}/*.array')
+            self._obs = np.memmap(f'{tempf}/obs.array', mode='w+', shape=(size, obs_dim), dtype=np.float32)
+            self._actions = np.memmap(f'{tempf}/actions.array', mode='w+', shape=(size, action_dim), dtype=np.float32)
+            self._rewards = np.memmap(f'{tempf}/rewards.array', mode='w+', shape=(size, 1), dtype=np.float32)
+            self._mc_rewards = np.memmap(f'{tempf}/mc_rewards.array', mode='w+', shape=(size, 1), dtype=np.float32)
+            self._terminals = np.memmap(f'{tempf}/terminals.array', mode='w+', shape=(size, 1), dtype=np.bool)
+            self._terminal_obs = np.memmap(f'{tempf}/terminal_obs.array', mode='w+', shape=(size, obs_dim), dtype=np.float32)
+            self._terminal_discounts = np.memmap(f'{tempf}/terminal_discounts.array', mode='w+', shape=(size, 1), dtype=np.float32)
+            self._next_obs = np.memmap(f'{tempf}/next_obs.array', mode='w+', shape=(size, obs_dim), dtype=np.float32)
             self._obs.fill(float('nan'))
             self._actions.fill(float('nan'))
             self._rewards.fill(float('nan'))
@@ -214,8 +214,9 @@ class NewReplayBuffer(object):
         for trajectory in trajectories:
             self.add_trajectory(trajectory, force)
 
-    def sample(self, batch_size, return_dict: bool = False):
-        idxs = np.random.choice(self._stored_steps, batch_size)
+    def sample(self, batch_size, return_dict: bool = False, noise: bool = False):
+        idxs = np.random.choice(self._stored_steps, batch_size, replace=False)
+        #idxs = np.sort(idxs)
         #idxs = np.random.choice(self._valid, batch_size)
 
         obs = self._obs[idxs]
@@ -228,7 +229,13 @@ class NewReplayBuffer(object):
         mc_rewards = self._mc_rewards[idxs]
         
         if not return_dict:
-            return np.concatenate((obs, actions, next_obs, terminal_obs, terminal_discounts, dones, rewards, mc_rewards), 1)
+            batch = np.concatenate((obs, actions, next_obs, terminal_obs, terminal_discounts, dones, rewards, mc_rewards), 1)
+            if noise:
+                std = batch.std(0)
+                mu = np.zeros(std.shape)
+                noise = np.random.normal(mu, std, batch.shape).astype(np.float32) * np.sqrt(batch.shape[0]) * 0.2
+                batch = batch + noise
+            return batch
         else:
             return {
                 'obs': obs,
