@@ -1,0 +1,13 @@
+{
+    "total_tasks": 2,
+    "train_tasks": [0,1],
+    "test_tasks": [0,1],
+    "train_buffers": [
+	"/iris/u/em7/code/maml-rawr/log/datacollection2_/dir_task0/outer_buffer_0.npy",
+	"/iris/u/em7/code/maml-rawr/log/datacollection2_/dir_task1/outer_buffer_0.npy"
+    ],
+    "test_buffers": [
+	"/iris/u/em7/code/maml-rawr/log/datacollection2_/dir_task0/outer_buffer_0.npy",
+	"/iris/u/em7/code/maml-rawr/log/datacollection2_/dir_task1/outer_buffer_0.npy"
+    ]
+}

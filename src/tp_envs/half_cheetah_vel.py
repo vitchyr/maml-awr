@@ -23,10 +23,10 @@ class HalfCheetahVelEnv(HalfCheetahEnv):
         model-based control", 2012
         (https://homes.cs.washington.edu/~todorov/papers/TodorovIROS12.pdf)
     """
-    def __init__(self, task={}, n_tasks=2, randomize_tasks=True):
-        self._task = task
-        self.tasks = self.sample_tasks(n_tasks)
-        self._goal_vel = self.tasks[0].get('velocity', 0.0)
+    def __init__(self, tasks=[{}], randomize_tasks=True):
+        self.tasks = tasks
+        self._task = self.tasks[0]
+        self._goal_vel = self._task.get('velocity', 0.0)
         self._goal = self._goal_vel
         super(HalfCheetahVelEnv, self).__init__()
 
@@ -46,9 +46,10 @@ class HalfCheetahVelEnv(HalfCheetahEnv):
             reward_ctrl=-ctrl_cost, task=self._task)
         return (observation, reward, done, infos)
 
-    def sample_tasks(self, num_tasks):
-        np.random.seed(1337)
-        velocities = np.random.uniform(0.0, 3.0, size=(num_tasks,))
+    def sample_tasks(self, num_tasks, seed: int = 1337):
+        np.random.seed(seed)
+        #velocities = np.random.uniform(0.0, 3.0, size=(num_tasks,))
+        velocities = np.linspace(0.075,3,40)
         tasks = [{'velocity': velocity} for velocity in velocities]
         return tasks
 

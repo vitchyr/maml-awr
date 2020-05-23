@@ -8,8 +8,8 @@ from . import register_env
 @register_env('ant-goal')
 class AntGoalEnv(MultitaskAntEnv):
     def __init__(self, task={}, n_tasks=2, randomize_tasks=True, **kwargs):
-        super(AntGoalEnv, self).__init__(task, n_tasks, **kwargs)
-
+        super().__init__(task, n_tasks, **kwargs)
+        
     def step(self, action):
         self.do_simulation(action, self.frame_skip)
         goal_marker_idx = self.sim.model.site_name2id('goal')
@@ -19,9 +19,8 @@ class AntGoalEnv(MultitaskAntEnv):
         
         xposafter = np.array(self.get_body_com("torso"))
 
-        goal_reward = -np.sum(np.abs(xposafter[:2] - self._goal)) + 5.0 # make it happy, not suicidal
-
-        ctrl_cost = .1 * np.square(action).sum()
+        goal_reward = -np.sum(np.abs(xposafter[:2] - self._goal)) + 4.0 # make it happy, not suicidal
+        ctrl_cost = 0.5 * 1e-2 * np.square(action).sum()
         contact_cost = 0.5 * 1e-3 * np.sum(
             np.square(np.clip(self.sim.data.cfrc_ext, -1, 1)))
         survive_reward = 0.05
@@ -30,9 +29,7 @@ class AntGoalEnv(MultitaskAntEnv):
         notdone = np.isfinite(state).all() \
                   and state[2] >= 0.2 and state[2] <= 1.0
         done = not notdone
-
-        reward = goal_reward - 0.2 * (ctrl_cost + contact_cost) + survive_reward
-
+        reward = goal_reward - ctrl_cost - contact_cost + survive_reward
         ob = self._get_obs()
         return ob, reward, done, dict(
             goal_forward=goal_reward,
@@ -61,9 +58,10 @@ class AntGoalEnv(MultitaskAntEnv):
 #        return Step(ob, float(reward), done)
 
     def sample_tasks(self, num_tasks):
-        a = np.random.random(num_tasks) * 2 * np.pi
-        r = 6 * np.random.random(num_tasks) ** 0.5
-        goals = np.stack((r * np.cos(a), r * np.sin(a)), axis=-1)
+#        a = np.random.random(num_tasks) * 2 * np.pi
+#        r = 3 * np.random.random(num_tasks) ** 0.5
+#        goals = np.stack((r * np.cos(a), r * np.sin(a)), axis=-1)
+        goals = np.random.uniform(-3.0, 3.0, (num_tasks, 2, ))
         tasks = [{'goal': goal} for goal in goals]
         return tasks
 

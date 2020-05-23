@@ -1,0 +1,9 @@
+{
+    "env": "cheetah_dir",
+    "tasks": "/iris/u/em7/code/maml-rawr/tasks/cheetah_dir_tasks",
+    "total_tasks": 2,
+    "train_tasks": [1],
+    "test_tasks": [1],
+    "train_buffers": [],
+    "test_buffers": []
+}

@@ -1,0 +1,9 @@
+{
+    "env": "cheetah_vel",
+    "task_paths": "/iris/u/em7/code/maml-rawr/offline_data/cheetah_vel/converted/task{}.pkl",
+    "total_tasks": 5,
+    "train_tasks": [0, 1, 2, 3, 4],
+    "test_tasks": [0, 1, 2, 3, 4],
+    "train_buffer_paths": "/iris/u/em7/code/maml-rawr/offline_data/cheetah_vel/converted/task{}.hdf5",
+    "test_buffer_paths": "/iris/u/em7/code/maml-rawr/offline_data/cheetah_vel/converted/task{}.hdf5"
+}

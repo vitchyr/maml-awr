@@ -1,0 +1,14 @@
+{
+    "env": "cheetah_dir",
+    "total_tasks": 2,
+    "train_tasks": [0,1],
+    "test_tasks": [0,1],
+    "train_buffers": [
+	"/iris/u/em7/code/maml-rawr/offline_data/cheetah_dir/task0_train.npy",
+	"/iris/u/em7/code/maml-rawr/offline_data/cheetah_dir/task1_train.npy"
+    ],
+    "test_buffers": [
+	"/iris/u/em7/code/maml-rawr/offline_data/cheetah_dir/task0_test.npy",
+	"/iris/u/em7/code/maml-rawr/offline_data/cheetah_dir/task1_test.npy"
+    ]
+}

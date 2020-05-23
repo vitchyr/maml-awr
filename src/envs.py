@@ -6,33 +6,67 @@ from src.tp_envs.ant_dir import AntDirEnv as AntDirEnv_
 from src.tp_envs.ant_goal import AntGoalEnv as AntGoalEnv_
 from src.tp_envs.humanoid_dir import HumanoidDirEnv as HumanoidDirEnv_
 from src.tp_envs.walker_rand_params_wrapper import WalkerRandParamsWrappedEnv as WalkerRandParamsWrappedEnv_
+from gym.spaces import Box
+from metaworld.benchmarks.base import Benchmark
+from metaworld.envs.mujoco.multitask_env import MultiClassMultiTaskEnv
+from metaworld.envs.mujoco.env_dict import HARD_MODE_ARGS_KWARGS, HARD_MODE_CLS_DICT
+from gym.wrappers import TimeLimit
+from copy import deepcopy
 
 
-class Env(object):
-    def step(self, action: np.ndarray) -> Tuple[np.ndarray, float, bool, dict]:
-        raise NotImplementedError()
+class ML45Env(object):
+    def __init__(self):
+        self.n_tasks = 50
+        self.tasks = list(HARD_MODE_ARGS_KWARGS['train'].keys()) + list(HARD_MODE_ARGS_KWARGS['test'].keys())
 
-    def reset(self) -> np.ndarray:
-        raise NotImplementedError()
+        self._max_episode_steps = 150
 
-    def n_tasks() -> int:
-        raise NotImplementedError()
+        self._env = None
+        self._envs = []
+
+        _cls_dict = {**HARD_MODE_CLS_DICT['train'], **HARD_MODE_CLS_DICT['test']}
+        _args_kwargs = {**HARD_MODE_ARGS_KWARGS['train'], **HARD_MODE_ARGS_KWARGS['test']}
+        for idx in range(self.n_tasks):
+            task = self.tasks[idx]
+            args_kwargs = _args_kwargs[task]
+            args_kwargs['kwargs']['obs_type'] = 'with_goal'
+            args_kwargs['task'] = task
+            env = _cls_dict[task](*args_kwargs['args'], **args_kwargs['kwargs'])
+            self._envs.append(TimeLimit(env, max_episode_steps=self._max_episode_steps))
+        
+        self.set_task_idx(0)
+
+    def set_task_idx(self, idx):
+        self._env = self._envs[idx]
+
+    def __getattribute__(self, name):
+        '''
+        If we try to access attributes that only exist in the env, return the
+        env implementation.
+        '''
+        try:
+            return object.__getattribute__(self, name)
+        except AttributeError as e:
+            e_ = e
+            try:
+                return object.__getattribute__(self._env, name)
+            except AttributeError as env_exception:
+                pass
+            except Exception as env_exception:
+                e_ = env_exception
+        raise e_
+
 
 class HalfCheetahDirEnv(HalfCheetahDirEnv_):
-    def __init__(self, tasks: List[dict] = None, task_idx: int = 0, single_task: bool = False, include_goal: bool = False):
+    def __init__(self, tasks: List[dict], include_goal: bool = False):
         self.include_goal = include_goal
         super(HalfCheetahDirEnv, self).__init__()
         if tasks is None:
             tasks = [{'direction': 1}, {'direction': -1}]
         self.tasks = tasks
-        self._task = tasks[task_idx]
-        if single_task:
-            self.tasks = self.tasks[task_idx:task_idx+1]
-        self._goal_dir = self._task['direction']
-        self._goal = self._goal_dir
+        self.set_task_idx(0)
         self._max_episode_steps = 200
-        self.info_dim = 1
-    
+
     def _get_obs(self):
         if self.include_goal:
             idx = 0
@@ -48,58 +82,47 @@ class HalfCheetahDirEnv(HalfCheetahDirEnv_):
             obs = super()._get_obs()
         return obs
     
-#    def step(self, action):
-#        obs, rew, done, info = super().step(action)
-#        info['info'] = self._goal_dir
-#        return (obs, rew, done, info)
-
     def set_task(self, task):
         self._task = task
         self._goal_dir = self._task['direction']
-        self._goal = self._goal_dir
         self.reset()
 
     def set_task_idx(self, idx):
-        self._task = self.tasks[idx]
-        self._goal_dir = self._task['direction']
-        self._goal = self._goal_dir
-        self.reset()
+        self.set_task(self.tasks[idx])
         
+
 class HalfCheetahVelEnv(HalfCheetahVelEnv_):
-    def __init__(self, tasks: List[dict] = None, task_idx: int = 0, single_task: bool = False, include_goal: bool = False):
+    def __init__(self, tasks: List[dict] = None, include_goal: bool = False, one_hot_goal: bool = False, n_tasks: int = None):
         self.include_goal = include_goal
-        super(HalfCheetahVelEnv, self).__init__()        
+        self.one_hot_goal = one_hot_goal
         if tasks is None:
-            #tasks = [{'velocity': v} for v in np.linspace(0,3,41)[1:]]
-            tasks = self.sample_tasks(130)
-        self.tasks = tasks
-        self._task = tasks[task_idx]
-        if single_task:
-            self.tasks = self.tasks[task_idx:task_idx+1]
-        self._goal_vel = self._task['velocity']
-        self._goal = self._goal_vel
+            assert n_tasks is not None, "Either tasks or n_tasks must be non-None"
+            tasks = self.sample_tasks(n_tasks)
+        self.n_tasks = len(tasks)
+        super().__init__(tasks)
+        self.set_task_idx(0)
         self._max_episode_steps = 200
-        self.info_dim = 1
-    
+
     def _get_obs(self):
         if self.include_goal:
             obs = super()._get_obs()
-            obs = np.concatenate([obs, np.array([self._goal_vel])])
+            if self.one_hot_goal:
+                goal = np.zeros((self.n_tasks,))
+                goal[self.tasks.index(self._task)] = 1
+            else:
+                goal = np.array([self._goal_vel])
+            obs = np.concatenate([obs, goal])
         else:
             obs = super()._get_obs()
+
         return obs
         
-#    def step(self, action):
-#        obs, rew, done, info = super().step(action)
-#        info['info'] = self._goal_vel
-#        return (obs, rew, done, info)
-    
     def set_task(self, task):
         self._task = task
         self._goal_vel = self._task['velocity']
-        self._goal = self._goal_vel
         self.reset()
 
+<<<<<<< HEAD
 <<<<<<< HEAD
     def set_task_idx(self, idx):
         self._task = self.tasks[idx]
@@ -130,9 +153,21 @@ class HalfCheetahVelEnv(HalfCheetahEnv):
     """
     def __init__(self, tasks: List[dict] = None, task_idx: int = 0, single_task: bool = False):
 >>>>>>> origin/master
+=======
+    def set_task_idx(self, idx):
+        self.task_idx = idx
+        self.set_task(self.tasks[idx])
+
+class AntDirEnv(AntDirEnv_):
+    def __init__(self, tasks: List[dict], n_tasks: int = None, include_goal: bool = False):
+        self.include_goal = include_goal
+        super(AntDirEnv, self).__init__(forward_backward=n_tasks == 2)
+>>>>>>> origin/master
         if tasks is None:
-            tasks = self.sample_tasks(2) #Only backward-forward tasks
+            assert n_tasks is not None, "Either tasks or n_tasks must be non-None"
+            tasks = self.sample_tasks(n_tasks)
         self.tasks = tasks
+<<<<<<< HEAD
         self._task = tasks[task_idx]
         if single_task:
             self.tasks = self.tasks[task_idx:task_idx+1]
@@ -215,16 +250,48 @@ class HalfCheetahVelEnv(HalfCheetahEnv):
         tasks = [{'velocity': velocity} for velocity in velocities]
         return tasks
 >>>>>>> origin/master
+=======
+        self.n_tasks = len(self.tasks)
+        self.set_task_idx(0)
+        self._max_episode_steps = 200
+    
+    def _get_obs(self):
+        if self.include_goal:
+            idx = 0
+            try:
+                idx = self.tasks.index(self._task)
+            except:
+                pass
+            one_hot = np.zeros(50, dtype=np.float32)
+            one_hot[idx] = 1.0
+            obs = super()._get_obs()
+            obs = np.concatenate([obs, one_hot])
+        else:
+            obs = super()._get_obs()
+        return obs
+    
+    def set_task(self, task):
+        self._task = task
+        self._goal = task['goal']
+        self.reset()
+>>>>>>> origin/master
 
     def set_task_idx(self, idx):
-        self._task = self.tasks[idx]
-        self._goal = self._task['goal']
-        self.reset()
+        self.set_task(self.tasks[idx])
         
+
+######################################################
+######################################################
+# <BEGIN DEPRECATED> #################################
+######################################################
+######################################################
 class AntGoalEnv(AntGoalEnv_):
-    def __init__(self, tasks: List[dict] = None, task_idx: int = 0, single_task: bool = False, include_goal: bool = False):
+    def __init__(self, tasks: List[dict] = None, task_idx: int = 0, single_task: bool = False, include_goal: bool = False,
+                 reward_offset: float = 0.0, can_die: bool = False):
         self.include_goal = include_goal
-        super(AntGoalEnv, self).__init__()
+        self.reward_offset = reward_offset
+        self.can_die = can_die
+        super().__init__()
         if tasks is None:
             tasks = self.sample_tasks(130) #Only backward-forward tasks
         self.tasks = tasks
@@ -243,11 +310,6 @@ class AntGoalEnv(AntGoalEnv_):
         else:
             obs = super()._get_obs()
         return obs
-
-#    def step(self, action):
-#        obs, rew, done, info = super().step(action)
-#        info['info'] = self._goal
-#        return (obs, rew, done, info)
     
     def set_task(self, task):
         self._task = task
@@ -260,10 +322,14 @@ class AntGoalEnv(AntGoalEnv_):
         self.reset()
         
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> origin/master
 class HumanoidDirEnv(HumanoidDirEnv_):
     def __init__(self, tasks: List[dict] = None, task_idx: int = 0, single_task: bool = False, include_goal: bool = False):
         self.include_goal = include_goal
         super(HumanoidDirEnv, self).__init__()
+<<<<<<< HEAD
 =======
 
 class HalfCheetahDirEnv(HalfCheetahEnv):
@@ -284,6 +350,8 @@ class HalfCheetahDirEnv(HalfCheetahEnv):
     """
     def __init__(self, tasks: List[dict] = None, task_idx: int = 0, single_task: bool = False):
 >>>>>>> origin/master
+=======
+>>>>>>> origin/master
         if tasks is None:
             tasks = self.sample_tasks(130) #Only backward-forward tasks
         self.tasks = tasks
@@ -291,6 +359,9 @@ class HalfCheetahDirEnv(HalfCheetahEnv):
         if single_task:
             self.tasks = self.tasks[task_idx:task_idx+1]
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> origin/master
         self._goal = self._task['goal']
         self._max_episode_steps = 200
         self.info_dim = 1
@@ -310,6 +381,7 @@ class HalfCheetahDirEnv(HalfCheetahEnv):
             done = False
         return (obs, rew, done, info)
     
+<<<<<<< HEAD
 =======
         self._direction = self._task['direction']
 
@@ -335,6 +407,8 @@ class HalfCheetahDirEnv(HalfCheetahEnv):
         return (observation, reward, done, infos)
 
 >>>>>>> origin/master
+=======
+>>>>>>> origin/master
     def set_task(self, task):
         self._task = task
         self._goal = task['goal']
@@ -342,19 +416,22 @@ class HalfCheetahDirEnv(HalfCheetahEnv):
 
     def set_task_idx(self, idx):
         self._task = self.tasks[idx]
-        self._goal = self._task['goal']    
+        self._goal = self._task['goal']
         self.reset()
-    
+######################################################
+######################################################
+# </END DEPRECATED> ##################################
+######################################################
+######################################################
+
 class WalkerRandParamsWrappedEnv(WalkerRandParamsWrappedEnv_):
-    def __init__(self, tasks: List[dict] = None, task_idx: int = 0, single_task: bool = False, include_goal: bool = False):
+    def __init__(self, tasks: List[dict] = None, n_tasks: int = None, include_goal: bool = False):
         self.include_goal = include_goal
-        super(WalkerRandParamsWrappedEnv, self).__init__(n_tasks=50)
-        if tasks is None:
-            tasks = self.sample_tasks(50) 
-        self.tasks = tasks
-        self._task = self.tasks[task_idx]
-        if single_task:
-            self.tasks = self.tasks[task_idx:task_idx+1]
+        super(WalkerRandParamsWrappedEnv, self).__init__(n_tasks=n_tasks if n_tasks is not None else 2)
+        if tasks is not None:
+            self.tasks = tasks
+        self.n_tasks = len(self.tasks)
+        self.set_task_idx(0)
         self._max_episode_steps = 200
         
     def _get_obs(self):
@@ -364,21 +441,13 @@ class WalkerRandParamsWrappedEnv(WalkerRandParamsWrappedEnv_):
                 idx = self._goal
             except:
                 pass
-#            one_hot = np.zeros(len(self.tasks), dtype=np.float32)
-            one_hot = np.zeros(50, dtype=np.float32)
+            one_hot = np.zeros(self.n_tasks, dtype=np.float32)
             one_hot[idx] = 1.0
             obs = super()._get_obs()
             obs = np.concatenate([obs, one_hot])
         else:
             obs = super()._get_obs()
         return obs
-        
-#    def step(self, action):
-#        obs, rew, done, info = super().step(action)
-#        if done == True:
-#            rew = rew - 1.0
-#            done = False
-#        return (obs, rew, done, info)
         
     def set_task_idx(self, idx):
         self._task = self.tasks[idx]

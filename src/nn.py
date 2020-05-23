@@ -99,6 +99,65 @@ class CVAE(nn.Module):
         return mu_logvar[:,:mu_logvar.shape[-1] // 2], (mu_logvar[:,mu_logvar.shape[-1] // 2:] / 2).exp()
 
 
+class WLinear(nn.Module):
+    def __init__(self, in_features: int, out_features: int, bias_size: Optional[int] = None, paaa=None):
+        super().__init__()
+
+        self.pa = paaa
+        if bias_size is None:
+            bias_size = out_features
+
+        dim = 100
+        self.z = nn.Parameter(torch.empty(dim).normal_(0, 1. / out_features))
+        print(self.z.mean(), self.z.std().item())
+        self.fc = nn.Linear(dim, in_features * out_features + out_features)
+        self.seq = self.fc
+        self.w_idx = in_features * out_features
+        self.weight = self.fc.weight
+        self._linear = self.fc
+        self.out_f = out_features
+
+    def adaptation_parameters(self):
+        return [self.z]
+
+    def forward(self, x: torch.tensor):
+        #theta = self.fc(self.z + torch.empty_like(self.z).normal_(0, 1. / self.out_f))
+        theta = self.fc(self.z)
+        w = theta[:self.w_idx].view(x.shape[-1], -1)
+        b = theta[self.w_idx:]
+        return x @ w + b
+
+
+class WLinearMix(nn.Module):
+    def __init__(self, in_features: int, out_features: int, depth: int = 3, n_mix: int = 5, dim: int = 100):
+        super().__init__()
+
+        self.z = nn.Parameter(torch.empty(dim).normal_(0, 1. / (max(in_features, out_features) * n_mix)))
+        print('Mix', self.z.mean(), self.z.std().item())
+
+        self.m = nn.ModuleList([nn.Linear(dim, dim) for _ in range(depth - 1)])
+        self.out = nn.Linear(dim, n_mix * (in_features * out_features + out_features))
+        self.scales = nn.Parameter(torch.ones(n_mix))
+        
+        self.n_mix = n_mix
+        self.w_idx = in_features * out_features
+        self.weight = self.out.weight
+        self._linear = self.out
+
+    def forward(self, x: torch.tensor):
+        theta = self.z
+        for m in self.m:
+            theta = m(theta).relu()
+        theta = self.out(theta).tanh()
+        theta = theta.view(-1, self.n_mix)# * self.scales.view(1,self.n_mix)
+        w = theta[:self.w_idx].view(self.n_mix, -1, x.shape[-1])
+        b = theta[self.w_idx:].view(self.n_mix, 1, -1)
+        stack = (w.unsqueeze(1) @ x.unsqueeze(0).unsqueeze(-1)).squeeze(-1) + b
+        #stack = torch.stack([x @ w[:,:,idx] + b[:,:,idx] for idx in range(self.n_mix)], -1)#torch.einsum('ij,klm->ilm', x,w) + b
+        
+        return stack.mean(0)
+
+
 class BiasLinear(nn.Module):
     def __init__(self, in_features: int, out_features: int, bias_size: Optional[int] = None):
         super().__init__()
@@ -110,12 +169,15 @@ class BiasLinear(nn.Module):
         self._weight = nn.Parameter(torch.empty(bias_size, out_features))
         nn.init.xavier_normal_(self._weight)
 
+    def adaptation_parameters(self):
+        return self.parameters()
+        
     def forward(self, x: torch.tensor):
         return self._linear(x) + self._bias @ self._weight
 
 
 class MLP(nn.Module):
-    def __init__(self, layer_widths: List[int], final_activation: Callable = lambda x: x, bias_linear: bool = False, extra_head_layers: List[int] = None):
+    def __init__(self, layer_widths: List[int], final_activation: Callable = lambda x: x, bias_linear: bool = False, extra_head_layers: List[int] = None, w_linear: bool = False):
         super().__init__()
 
         if len(layer_widths) < 2:
@@ -125,10 +187,17 @@ class MLP(nn.Module):
         self.seq = nn.Sequential()
         self._head = extra_head_layers is not None
 
-        linear = BiasLinear if bias_linear else nn.Linear
-
+        if not w_linear:
+            linear = BiasLinear if bias_linear else nn.Linear
+        else:
+            linear = WLinear
+        self.bias_linear = bias_linear
+        self.aparams = []
+        
         for idx in range(len(layer_widths) - 1):
-            self.seq.add_module(f'fc_{idx}', linear(layer_widths[idx], layer_widths[idx + 1]))
+            w = linear(layer_widths[idx], layer_widths[idx + 1])
+            self.aparams.extend(w.adaptation_parameters())
+            self.seq.add_module(f'fc_{idx}', w)
             if idx < len(layer_widths) - 2:
                 self.seq.add_module(f'relu_{idx}', nn.ReLU())
 
@@ -140,10 +209,18 @@ class MLP(nn.Module):
             extra_head_layers = [layer_widths[-2] + layer_widths[-1]] + extra_head_layers
 
             for idx, (infc, outfc) in enumerate(zip(extra_head_layers[:-1], extra_head_layers[1:])):
-                self.head_seq.add_module(f'fc_{idx}', linear(extra_head_layers[idx], extra_head_layers[idx + 1]))
-                if idx < len(extra_head_layers) - 2:
-                    self.seq.add_module(f'relu_{idx}', nn.ReLU())
-                
+                self.head_seq.add_module(f'relu_{idx}', nn.ReLU())
+                w = linear(extra_head_layers[idx], extra_head_layers[idx + 1])
+                self.aparams.extend(w.adaptation_parameters())
+                self.head_seq.add_module(f'fc_{idx}', w)
+
+    def bias_parameters(self):
+        return [self.seq[0]._linear.bias] if self.bias_linear else [self.seq[0].bias]
+
+    def adaptation_parameters(self):
+        return self.parameters()
+        return self.aparams
+    
     def forward(self, x: torch.tensor, acts: Optional[torch.tensor] = None):
         if self._head and acts is not None:
             h = self.pre_seq(x)
