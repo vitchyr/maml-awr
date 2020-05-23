@@ -193,9 +193,8 @@ class MAMLRAWR(object):
             self._inner_policy_lr, self._inner_value_lr = args.inner_policy_lr, args.inner_value_lr
         else:
             self._inner_policy_lr, self._inner_value_lr = 0, 0
-
-        self._policy_lrs = [torch.nn.Parameter(torch.tensor(float(np.log(self._inner_policy_lr))).to(args.device)) for p in self._adaptation_policy.adaptation_parameters()]
-        self._value_lrs = [torch.nn.Parameter(torch.tensor(float(np.log(self._inner_value_lr))).to(args.device)) for p in self._value_function.adaptation_parameters()]
+        self._policy_lrs = [torch.nn.Parameter(torch.tensor(float(np.log(self._inner_policy_lr)) if self._inner_policy_lr > 0 else 10000.).to(args.device)) for p in self._adaptation_policy.adaptation_parameters()]
+        self._value_lrs = [torch.nn.Parameter(torch.tensor(float(np.log(self._inner_value_lr)) if self._inner_value_lr > 0 else 10000.).to(args.device)) for p in self._value_function.adaptation_parameters()]
         self._policy_lr_optimizer = O.Adam(self._policy_lrs, lr=self._args.lrlr)
         self._value_lr_optimizer = O.Adam(self._value_lrs, lr=self._args.lrlr)
 
@@ -419,7 +418,7 @@ class MAMLRAWR(object):
 
     def eval_multitask(self, train_step_idx: int, writer: SummaryWriter):
         rewards = np.full((len(self.task_config.test_tasks), self._args.eval_maml_steps+1), float('nan'))
-        trajectories = []
+        trajectories, successes = [], []
 
         log_steps = [1, 5, 20]
         reward_dict = defaultdict(list)
@@ -445,7 +444,7 @@ class MAMLRAWR(object):
                 opt.step()
                 opt.zero_grad()
 
-                ap_loss, _, _, _ = self.adaptation_policy_loss_on_batch(ap, None, vf, batch, None, inner=False)
+                ap_loss, _, _, _ = self.adaptation_policy_loss_on_batch(ap, None, vf, batch, task_idx=None, inner=True)
                 ap_loss.backward()
                 ap_opt.step()
                 ap_opt.zero_grad()
@@ -459,7 +458,7 @@ class MAMLRAWR(object):
                 if self._args.eval:
                     rewards[i,step+1] = adapted_reward
                     writer.add_scalar(f'Eval_Reward/Task_{test_task_idx}', adapted_reward, step + 1)
-        trajectories.append(adapted_trajectory)
+            trajectories.append(adapted_trajectory)
         for s in log_steps:
             writer.add_scalar(f'FT_Eval_Reward/Mean_Step{s}', np.mean(reward_dict[s]), train_step_idx)
             writer.add_scalar(f'FT_Eval_Success/Mean_Step{s}', np.mean(reward_dict[s]), train_step_idx)

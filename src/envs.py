@@ -107,16 +107,10 @@ class HalfCheetahVelEnv(HalfCheetahVelEnv_):
         if self.include_goal:
             obs = super()._get_obs()
             if self.one_hot_goal:
-                if self.train:
-                    goal = np.zeros((self.n_tasks,))
-                    goal[self.tasks.index(self._task)] = 1
-                else:
-                    goal = np.zeros((self.n_tasks,))
+                goal = np.zeros((self.n_tasks,))
+                goal[self.tasks.index(self._task)] = 1
             else:
-                if self.train:
-                    goal = np.array([self._goal_vel])
-                else:
-                    goal = np.array([-1.])
+                goal = np.array([self._goal_vel])
             obs = np.concatenate([obs, goal])
         else:
             obs = super()._get_obs()
