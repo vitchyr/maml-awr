@@ -49,6 +49,7 @@ def print_(s: str, c: bool, end=None):
 
 
 class MAMLRAWR(object):
+<<<<<<< HEAD
     def __init__(self, args: argparse.Namespace, env: Env, log_dir: str, 
                  name: str = None,
                  policy_hidden_layers: List[int] = [32, 32], 
@@ -62,6 +63,13 @@ class MAMLRAWR(object):
                  discount_factor: float = 0.99, 
                  grad_clip: float = 100.):
         
+=======
+    def __init__(self, args: argparse.Namespace, env: Env, log_dir: str, name: str = None,
+                 policy_hidden_layers: List[int] = [32, 32], value_function_hidden_layers: List[int] = [32, 32],
+                 training_iterations: int = 20000, action_sigma: float = 0.2,
+                 visualization_interval: int = 100, silent: bool = False, replay_buffer_length: int = 1000,
+                 gradient_steps_per_iteration: int = 1, discount_factor: float = 0.99, grad_clip: float = 100.):
+>>>>>>> origin/master
         self._env = env
         self._log_dir = log_dir
         self._name = name if name is not None else 'throwaway_test_run'
@@ -127,12 +135,20 @@ class MAMLRAWR(object):
         
         
         self._inner_buffers = [ReplayBuffer(self._env._max_episode_steps, self._env.observation_space.shape[0], env_action_dim(self._env),
+<<<<<<< HEAD
                                             0, max_trajectories=replay_buffer_length, discount_factor=discount_factor,
+=======
+                                            self._env.info_dim, max_trajectories=replay_buffer_length, discount_factor=discount_factor,
+>>>>>>> origin/master
                                             immutable=args.offline or args.offline_inner, load_from=inner_buffer[i], silent=silent,
                                             trim_suffix=args.trim_episodes)
                                for i, task in enumerate(self._env.tasks)]
         self._outer_buffers = [ReplayBuffer(self._env._max_episode_steps, self._env.observation_space.shape[0], env_action_dim(self._env),
+<<<<<<< HEAD
                                             0, max_trajectories=replay_buffer_length, discount_factor=discount_factor,
+=======
+                                            self._env.info_dim, max_trajectories=replay_buffer_length, discount_factor=discount_factor,
+>>>>>>> origin/master
                                             immutable=args.offline or args.offline_outer, load_from=outer_buffer[i], silent=silent,
                                             trim_suffix=args.trim_episodes)
                                for i, task in enumerate(self._env.tasks)]
@@ -506,7 +522,11 @@ class MAMLRAWR(object):
         train_rewards = []
         rollouts = []
         successes = []
+<<<<<<< HEAD
         for i, (inner_buffer, outer_buffer, full_buffer) in enumerate(zip(self._inner_buffers, self._outer_buffers, self._full_buffers)):
+=======
+        for i, (inner_buffer, outer_buffer) in enumerate(zip(self._inner_buffers, self._outer_buffers)):
+>>>>>>> origin/master
             self._env.set_task_idx(i)
             
             # Sample J training batches for independent adaptations [L7]
@@ -566,6 +586,7 @@ class MAMLRAWR(object):
                 #  which is not actually performed here
                 meta_value_function_loss, value, mc, mc_std = self.value_function_loss_on_batch(f_value_function, meta_batch, task_idx=i)
                 meta_value_grad = A.grad(meta_value_function_loss, f_value_function.parameters(time=0), retain_graph=self._args.iw_exploration)
+<<<<<<< HEAD
                 if self._args.iw_exploration:
                     value_exploration_grad = A.grad(meta_value_function_loss, self._exploration_policy.parameters(), retain_graph=True)
 
@@ -575,6 +596,17 @@ class MAMLRAWR(object):
                 meta_value_losses.append(meta_value_function_loss.item())
                 meta_value_grads.append(meta_value_grad)
                 if self._args.iw_exploration:
+=======
+                if self._args.iw_exploration:
+                    value_exploration_grad = A.grad(meta_value_function_loss, self._exploration_policy.parameters(), retain_graph=True)
+
+                outer_values.append(value.item())
+                outer_mc_means.append(mc.item())
+                outer_mc_stds.append(mc_std.item())
+                meta_value_losses.append(meta_value_function_loss.item())
+                meta_value_grads.append(meta_value_grad)
+                if self._args.iw_exploration:
+>>>>>>> origin/master
                     value_exploration_grads.append(value_exploration_grad)
                 value_functions.append(f_value_function)
             ##################################################################################################
@@ -653,14 +685,21 @@ class MAMLRAWR(object):
                         inner_buffer.add_trajectory(adapted_trajectory)
                 if not (self._args.offline or self._args.offline_outer):
                     outer_buffer.add_trajectory(adapted_trajectory)
+<<<<<<< HEAD
                     full_buffer.add_trajectory(adapted_trajectory)
+=======
+>>>>>>> origin/master
             else:
                 success = False
                     
             if train_step_idx % self._visualization_interval == 0:
                 if self._args.render:
                     print_(f'Visualizing task {i}, test rollout', self._silent)
+<<<<<<< HEAD
                 test_trajectory, test_reward, success_ = self._rollout_policy(adaptation_policies[-1], self._env, test=True,
+=======
+                test_trajectory, test_reward, success_ = self._rollout_policy(adaptation_policies[-1], self._env, test=False,
+>>>>>>> origin/master
                                                                     render=self._args.render)
                 successes.append(max(success, success_))
                 if self._args.render:
@@ -697,6 +736,10 @@ class MAMLRAWR(object):
 
         if self._args.eval:
             return rollouts, test_rewards, train_rewards, meta_value_losses, meta_policy_losses, value_functions[-1], successes
+<<<<<<< HEAD
+=======
+
+>>>>>>> origin/master
         # Meta-update value function [L14]
         grad = self.update_model_with_grads(self._value_function, meta_value_grads, self._value_function_optimizer, self._grad_clip)
         if grad is not None:
@@ -716,6 +759,7 @@ class MAMLRAWR(object):
         ############################################################################3
         # Update exploration policy [WIP] [L16]
         ############################################################################3
+<<<<<<< HEAD
 #        if self._args.train_exploration:
 #            if self._args.cvae:
 #                if train_step_idx % self._args.gradient_steps_per_iteration == 0:
@@ -733,6 +777,25 @@ class MAMLRAWR(object):
 #                    writer.add_scalar(f'Exploration_Grad', grad, train_step_idx)
 #            else:
 #                self.train_awr_exploration(train_step_idx, batches, meta_batches, adaptation_policies, value_functions, writer)
+=======
+        if self._args.train_exploration:
+            if self._args.cvae:
+                if train_step_idx % self._args.gradient_steps_per_iteration == 0:
+                    self.train_vae_exploration(train_step_idx, writer)
+            elif self._args.iw_exploration:
+                if self._args.exploration_reg is not None:
+                    exploration_reg_loss = self._args.exploration_reg * iweight_logits.pow(2).mean()
+                    extra_grad = A.grad(exploration_reg_loss, self._exploration_policy.parameters())
+                    writer.add_scalar(f'Exploration_Reg_Loss', exploration_reg_loss.detach().item(), train_step_idx)
+                    writer.add_scalar(f'Exploration_Reg_Grad', torch.cat([g.view(-1) for g in extra_grad]).norm(2), train_step_idx)
+                else:
+                    extra_grad = None
+                grad = self.update_model_with_grads(self._exploration_policy, exploration_grads, self._exploration_policy_optimizer, self._grad_clip, extra_grad=extra_grad)
+                if grad is not None:
+                    writer.add_scalar(f'Exploration_Grad', grad, train_step_idx)
+            else:
+                self.train_awr_exploration(train_step_idx, batches, meta_batches, adaptation_policies, value_functions, writer)
+>>>>>>> origin/master
         ############################################################################3
 
         return rollouts, test_rewards, train_rewards, meta_value_losses, meta_policy_losses, value_functions, successes

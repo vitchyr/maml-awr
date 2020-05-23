@@ -1,14 +1,11 @@
 import argparse
-import numpy as np
 import torch
 
 import torch.distributions as D
-import torch.nn as nn
 import torch.optim as O
 
 from src.nn import CVAE
 from src.utils import ReplayBuffer
-from src.utils import kld
 from torch.utils.tensorboard import SummaryWriter
 
 
@@ -23,14 +20,14 @@ def get_args():
     parser.add_argument('--discount_factor', type=float, default=0.99)
     parser.add_argument('--batch_size', type=int, default=256)
     parser.add_argument('--lr', type=float, default=1e-4)
-    parser.add_argument('--device', type=str, default='cuda')
-    parser.add_argument('--trajectory_skip', type=int, default=1)
+    parser.add_argument('--device', type=str, default='cpu')
+    parser.add_argument('--trajectory_skip', type=int, default=10)
     parser.add_argument('--kld_coef', type=float, default=1.)
     parser.add_argument('--log_path', type=str)
     return parser.parse_args()
 
 
-def train_vae_exploration(policy: nn.Module, optimizer: torch.optim.Optimizer,
+def train_vae_exploration(self, policy: nn.Module, optimizer: torch.optim.Optimizer,
                           writer: SummaryWriter, args: argparse.Namespace, buf: ReplayBuffer):
     policy.to(args.device)
     losses = []
@@ -79,15 +76,13 @@ def train_vae_exploration(policy: nn.Module, optimizer: torch.optim.Optimizer,
         mu_zs.append(pz_t[:,:pz_t.shape[-1]//2:].detach().cpu().numpy())
         std_zs.append(pz_t[:,pz_t.shape[-1]//2:].div(2).exp().detach().cpu().numpy())
 
-        writer.add_scalar(f'Explore_Loss', np.mean(losses), step)
-        writer.add_scalar(f'Explore_Loss_Recon', np.mean(recon_losses), step)
-        writer.add_scalar(f'Explore_Loss_KLD', np.mean(kld_losses), step)
-        writer.add_histogram(f'Explore_Mu', np.mean(mu_ys), step)
-        writer.add_histogram(f'Explore_Sigma', np.mean(std_ys), step)
-        writer.add_histogram(f'Explore_ZMu', np.mean(mu_zs), step)
-        writer.add_histogram(f'Explore_ZSigma', np.mean(std_zs), step)
-    
-    torch.save(policy.state_dict(), '/policies/exploration_policy.pt')
+    writer.add_scalar(f'Explore_Loss', np.mean(losses), train_step_idx)
+    writer.add_scalar(f'Explore_Loss_Recon', np.mean(recon_losses), train_step_idx)
+    writer.add_scalar(f'Explore_Loss_KLD', np.mean(kld_losses), train_step_idx)
+    writer.add_histogram(f'Explore_Mu', np.mean(mu_ys), train_step_idx)
+    writer.add_histogram(f'Explore_Sigma', np.mean(std_ys), train_step_idx)
+    writer.add_histogram(f'Explore_ZMu', np.mean(mu_zs), train_step_idx)
+    writer.add_histogram(f'Explore_ZSigma', np.mean(std_zs), train_step_idx)
 
 
 def combine_buffers(args: argparse.Namespace) -> ReplayBuffer:

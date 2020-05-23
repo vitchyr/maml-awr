@@ -72,7 +72,7 @@ class Experience():
         next_state: np.ndarray,
         reward: float,
         done: bool,
-        #log_prob: float,
+        log_prob: float,
         info: np.ndarray = None,
         next_info: np.ndarray = None):
 
@@ -81,6 +81,7 @@ class Experience():
         self.next_state = next_state
         self.reward = reward
         self.done = done
+        self.log_prob = log_prob
         self.info = info
         self.next_info = next_info
         return
@@ -127,7 +128,6 @@ class MiniBatch(object):
 
 class ReplayBuffer(object):
     @staticmethod
-    #def join(buffers: List[ReplayBuffer]) -> ReplayBuffer:
     def join(buffers):
         b0 = buffers[0]
         trajectories = np.concatenate([b._trajectories for b in buffers])
@@ -140,8 +140,7 @@ class ReplayBuffer(object):
 
     def __init__(self, trajectory_length: int, state_dim: int, action_dim: int, info_dim: int = 0, max_trajectories: int = 10000,
                  discount_factor: float = 0.99, immutable: bool = False, load_from: str = None, silent: bool = False, trim_suffix: int = 0):
-        self._trajectories = np.empty((max_trajectories, trajectory_length, state_dim + action_dim + state_dim + state_dim + info_dim * 2 + 1 + 1 + 1 + 1), dtype=np.float32)
-        self._trajectories.fill(np.float('nan'))
+        self._trajectories = np.empty((max_trajectories, trajectory_length, state_dim + action_dim + state_dim + state_dim + info_dim * 2 + 1 + 1 + 1 + 1 + 1), dtype=np.float32)
         self._stored_trajectories = 0
         self._new_trajectory_idx = 0
         self._max_trajectories = max_trajectories
@@ -209,8 +208,8 @@ class ReplayBuffer(object):
                 self._trajectories[self._new_trajectory_idx, -(idx + 1), slice_idx:slice_idx + self._info_dim] = experience.next_info
                 slice_idx += self._info_dim
 
-            #self._trajectories[self._new_trajectory_idx, -(idx + 1), slice_idx:slice_idx + 1] = experience.log_prob
-            #slice_idx += 1
+            self._trajectories[self._new_trajectory_idx, -(idx + 1), slice_idx:slice_idx + 1] = experience.log_prob
+            slice_idx += 1
             
             terminal_factor *= self._discount_factor
             self._trajectories[self._new_trajectory_idx, -(idx + 1), slice_idx:slice_idx + 1] = terminal_factor

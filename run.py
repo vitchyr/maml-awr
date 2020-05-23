@@ -33,7 +33,7 @@ def get_metaworld_tasks(env_id: str = 'ml10'):
             tasks = _extract_tasks(env)
         else:
             env = ML10.get_train_tasks()
-            tasks = _extract_tasks(env)# skip_task_idxs=[0])
+            tasks = _extract_tasks(env, skip_task_idxs=[0])
 
         if args.task_idx is not None:
             tasks = [tasks[args.task_idx]]
@@ -127,13 +127,11 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
         elif args.env == 'ant_goal':
             env = AntGoalEnv(task_idx=args.task_idx, single_task=True, include_goal = args.include_goal)
         elif args.env == 'cheetah_dir':
-            env = HalfCheetahDirEnv(task_idx=args.task_idx, single_task=True, include_goal = args.include_goal)
+            env = HalfCheetahDirEnv(task_idx=args.task_idx, single_task=True)
         elif args.env == 'cheetah_vel':
-            env = HalfCheetahVelEnv(task_idx=args.task_idx, single_task=True, include_goal = args.include_goal)
-        elif args.env == 'humanoid_dir':
-            env = HumanoidDirEnv(task_idx=args.task_idx, single_task=True, include_goal = args.include_goal)
-        elif args.env == 'walker_param':
-            env = WalkerRandParamsWrappedEnv(task_idx=args.task_idx, single_task=True, include_goal = args.include_goal)
+            env = HalfCheetahVelEnv(task_idx=args.task_idx, single_task=True)
+        elif args.env == 'ml10':
+            env = get_metaworld_tasks(args.env)
         elif args.env == 'point_mass':
             raise NotImplementedError('TODO: eric-mitchell')
             #env = PointMass1DEnv(args.task_idx)
