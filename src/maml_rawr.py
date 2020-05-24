@@ -89,7 +89,7 @@ class MAMLRAWR(object):
         self.task_config = task_config
 
         check_config(task_config)
-        goal_dim = self._env.n_tasks if args.multitask else 0
+        goal_dim = task_config.total_tasks if args.multitask else 0
         self._observation_dim = env.observation_space.shape[0] + (args.trim_obs if args.trim_obs else 0) - goal_dim
         self._action_dim = env_action_dim(env)
 
