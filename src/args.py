@@ -4,6 +4,8 @@ import json
 
 def get_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
+    parser.add_argument('--from_disk', action='store_true')
+    parser.add_argument('--archive', type=str, default=None)
     parser.add_argument('--wlinear', action='store_true')
     parser.add_argument('--macaw_params', type=str, default=None)
     parser.add_argument('--target_vf_alpha', type=float, default=0.9)

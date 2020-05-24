@@ -250,10 +250,10 @@ class HumanoidDirEnv(HumanoidDirEnv_):
 class WalkerRandParamsWrappedEnv(WalkerRandParamsWrappedEnv_):
     def __init__(self, tasks: List[dict] = None, n_tasks: int = None, include_goal: bool = False):
         self.include_goal = include_goal
-        super(WalkerRandParamsWrappedEnv, self).__init__(n_tasks=n_tasks if n_tasks is not None else 2)
-        if tasks is not None:
-            self.tasks = tasks
-        self.n_tasks = len(self.tasks)
+        self.n_tasks = len(tasks) if tasks is not None else n_tasks
+        
+        super(WalkerRandParamsWrappedEnv, self).__init__(tasks, n_tasks)
+
         self.set_task_idx(0)
         self._max_episode_steps = 200
         
