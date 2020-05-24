@@ -10,9 +10,7 @@ class WalkerRandParamsWrappedEnv(Walker2DRandParamsEnv):
         super(WalkerRandParamsWrappedEnv, self).__init__()
         self.tasks = self.sample_tasks(n_tasks)
         self.reset_task(0)
-
-    def n_tasks() -> int:
-        return len(self.tasks)
+        self.n_tasks = n_tasks
 
     def get_all_task_idx(self):
         return range(len(self.tasks))
