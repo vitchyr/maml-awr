@@ -5,6 +5,8 @@ import numpy as np
 import tempfile
 import torch
 import torch.nn as nn
+import os
+import random
 
 
 class RunningEstimator(object):
@@ -80,7 +82,8 @@ class NewReplayBuffer(object):
                  immutable: bool = False, load_from: str = None, silent: bool = False, skip: int = 1,
                  stream_to_disk: bool = False):
         if size == -1 and load_from is None:
-            raise Exception("Can't have size == -1 and no offline buffer")
+            print("Can't have size == -1 and no offline buffer - defaulting to 1M steps")
+            size = 1000000
 
         self.immutable = immutable
 
@@ -89,26 +92,46 @@ class NewReplayBuffer(object):
             if size == -1:
                 size = f['obs'].shape[0]
         
+        needs_to_load = True
         size //= skip
         if stream_to_disk:
-            tempf = tempfile.mkdtemp()
-            print(f'Streaming buffer data to disk at {tempf}/*.array')
-            self._obs = np.memmap(f'{tempf}/obs.array', mode='w+', shape=(size, obs_dim), dtype=np.float32)
-            self._actions = np.memmap(f'{tempf}/actions.array', mode='w+', shape=(size, action_dim), dtype=np.float32)
-            self._rewards = np.memmap(f'{tempf}/rewards.array', mode='w+', shape=(size, 1), dtype=np.float32)
-            self._mc_rewards = np.memmap(f'{tempf}/mc_rewards.array', mode='w+', shape=(size, 1), dtype=np.float32)
-            self._terminals = np.memmap(f'{tempf}/terminals.array', mode='w+', shape=(size, 1), dtype=np.bool)
-            self._terminal_obs = np.memmap(f'{tempf}/terminal_obs.array', mode='w+', shape=(size, obs_dim), dtype=np.float32)
-            self._terminal_discounts = np.memmap(f'{tempf}/terminal_discounts.array', mode='w+', shape=(size, 1), dtype=np.float32)
-            self._next_obs = np.memmap(f'{tempf}/next_obs.array', mode='w+', shape=(size, obs_dim), dtype=np.float32)
-            self._obs.fill(float('nan'))
-            self._actions.fill(float('nan'))
-            self._rewards.fill(float('nan'))
-            self._mc_rewards.fill(float('nan'))
-            self._terminals.fill(float('nan'))
-            self._terminal_obs.fill(float('nan'))
-            self._terminal_discounts.fill(float('nan'))
-            self._next_obs.fill(float('nan'))
+            name = os.path.splitext(os.path.basename(os.path.normpath(load_from)))[0]
+            if os.path.exists('/scr-ssd'):
+                path = f'/scr-ssd/em7/{name}'
+            else:
+                path = f'/scr/em7/{name}'
+            if os.path.exists(path):
+                if not silent:
+                    print(f'Using existing replay buffer memmap at {path}')
+                needs_to_load = False
+                self._obs = np.memmap(f'{path}/obs.array', mode='r', shape=(size, obs_dim), dtype=np.float32)
+                self._actions = np.memmap(f'{path}/actions.array', mode='r', shape=(size, action_dim), dtype=np.float32)
+                self._rewards = np.memmap(f'{path}/rewards.array', mode='r', shape=(size, 1), dtype=np.float32)
+                self._mc_rewards = np.memmap(f'{path}/mc_rewards.array', mode='r', shape=(size, 1), dtype=np.float32)
+                self._terminals = np.memmap(f'{path}/terminals.array', mode='r', shape=(size, 1), dtype=np.bool)
+                self._terminal_obs = np.memmap(f'{path}/terminal_obs.array', mode='r', shape=(size, obs_dim), dtype=np.float32)
+                self._terminal_discounts = np.memmap(f'{path}/terminal_discounts.array', mode='r', shape=(size, 1), dtype=np.float32)
+                self._next_obs = np.memmap(f'{path}/next_obs.array', mode='r', shape=(size, obs_dim), dtype=np.float32)
+            else:
+                if not silent:
+                    print(f'Creating replay buffer memmap at {path}')
+                os.makedirs(path)
+                self._obs = np.memmap(f'{path}/obs.array', mode='w+', shape=(size, obs_dim), dtype=np.float32)
+                self._actions = np.memmap(f'{path}/actions.array', mode='w+', shape=(size, action_dim), dtype=np.float32)
+                self._rewards = np.memmap(f'{path}/rewards.array', mode='w+', shape=(size, 1), dtype=np.float32)
+                self._mc_rewards = np.memmap(f'{path}/mc_rewards.array', mode='w+', shape=(size, 1), dtype=np.float32)
+                self._terminals = np.memmap(f'{path}/terminals.array', mode='w+', shape=(size, 1), dtype=np.bool)
+                self._terminal_obs = np.memmap(f'{path}/terminal_obs.array', mode='w+', shape=(size, obs_dim), dtype=np.float32)
+                self._terminal_discounts = np.memmap(f'{path}/terminal_discounts.array', mode='w+', shape=(size, 1), dtype=np.float32)
+                self._next_obs = np.memmap(f'{path}/next_obs.array', mode='w+', shape=(size, obs_dim), dtype=np.float32)
+                self._obs.fill(float('nan'))
+                self._actions.fill(float('nan'))
+                self._rewards.fill(float('nan'))
+                self._mc_rewards.fill(float('nan'))
+                self._terminals.fill(float('nan'))
+                self._terminal_obs.fill(float('nan'))
+                self._terminal_discounts.fill(float('nan'))
+                self._next_obs.fill(float('nan'))
         else:
             self._obs = np.full((size, obs_dim), float('nan'), dtype=np.float32)
             self._actions = np.full((size, action_dim), float('nan'), dtype=np.float32)
@@ -124,8 +147,6 @@ class NewReplayBuffer(object):
             self._stored_steps = 0
             self._discount_factor = discount_factor
         else:
-            if not silent:
-                print(f'Loading trajectories from {load_from}')
             if f['obs'].shape[-1] != self.obs_dim:
                 raise RuntimeError(f"Loaded data has different obs_dim from new buffer ({f['obs'].shape[-1]}, {self.obs_dim})")
             if f['actions'].shape[-1] != self.action_dim:
@@ -133,21 +154,25 @@ class NewReplayBuffer(object):
 
             stored = f['obs'].shape[0]
             n_seed = min(stored, self._size * skip)
-            if stored > self._size * skip:
-                if not silent:
-                    print(f"Attempted to load {stored} offline steps into buffer of size {self._size}.")
-                    print(f"Loading only the last {n_seed//skip} steps from offline buffer")
-
             self._stored_steps = n_seed // skip
-            self._discount_factor = f['discount_factor'][()]
-            self._obs[:self._stored_steps] = f['obs'][-n_seed + int(skip > 1):][::skip]
-            self._actions[:self._stored_steps] = f['actions'][-n_seed + int(skip > 1):][::skip]
-            self._rewards[:self._stored_steps] = f['rewards'][-n_seed + int(skip > 1):][::skip]
-            self._mc_rewards[:self._stored_steps] = f['mc_rewards'][-n_seed + int(skip > 1):][::skip]
-            self._terminals[:self._stored_steps] = f['terminals'][-n_seed + int(skip > 1):][::skip]
-            self._terminal_obs[:self._stored_steps] = f['terminal_obs'][-n_seed + int(skip > 1):][::skip]
-            self._terminal_discounts[:self._stored_steps] = f['terminal_discounts'][-n_seed + int(skip > 1):][::skip]
-            self._next_obs[:self._stored_steps] = f['next_obs'][-n_seed + int(skip > 1):][::skip]
+
+            if needs_to_load:
+                if stored > self._size * skip:
+                    if not silent:
+                        print(f"Attempted to load {stored} offline steps into buffer of size {self._size}.")
+                        print(f"Loading only the last {n_seed//skip} steps from offline buffer")
+                if not silent:
+                    print(f'Loading trajectories from {load_from}')
+
+                self._discount_factor = f['discount_factor'][()]
+                self._obs[:self._stored_steps] = f['obs'][-n_seed + int(skip > 1):][::skip]
+                self._actions[:self._stored_steps] = f['actions'][-n_seed + int(skip > 1):][::skip]
+                self._rewards[:self._stored_steps] = f['rewards'][-n_seed + int(skip > 1):][::skip]
+                self._mc_rewards[:self._stored_steps] = f['mc_rewards'][-n_seed + int(skip > 1):][::skip]
+                self._terminals[:self._stored_steps] = f['terminals'][-n_seed + int(skip > 1):][::skip]
+                self._terminal_obs[:self._stored_steps] = f['terminal_obs'][-n_seed + int(skip > 1):][::skip]
+                self._terminal_discounts[:self._stored_steps] = f['terminal_discounts'][-n_seed + int(skip > 1):][::skip]
+                self._next_obs[:self._stored_steps] = f['next_obs'][-n_seed + int(skip > 1):][::skip]
 
             f.close()
 
@@ -215,8 +240,7 @@ class NewReplayBuffer(object):
             self.add_trajectory(trajectory, force)
 
     def sample(self, batch_size, return_dict: bool = False, noise: bool = False):
-        idxs = np.random.choice(self._stored_steps, batch_size, replace=False)
-        #idxs = np.sort(idxs)
+        idxs = np.array(random.sample(range(self._stored_steps), batch_size))
         #idxs = np.random.choice(self._valid, batch_size)
 
         obs = self._obs[idxs]
@@ -231,9 +255,9 @@ class NewReplayBuffer(object):
         if not return_dict:
             batch = np.concatenate((obs, actions, next_obs, terminal_obs, terminal_discounts, dones, rewards, mc_rewards), 1)
             if noise:
-                std = batch.std(0)
+                std = batch.std(0) * np.sqrt(batch_size)
                 mu = np.zeros(std.shape)
-                noise = np.random.normal(mu, std, batch.shape).astype(np.float32) * np.sqrt(batch.shape[0]) * 0.2
+                noise = np.random.normal(mu, std, batch.shape).astype(np.float32)
                 batch = batch + noise
             return batch
         else:
