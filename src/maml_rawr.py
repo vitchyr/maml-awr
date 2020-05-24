@@ -82,10 +82,8 @@ class MAMLRAWR(object):
         self._action_dim = env_action_dim(env)
 
         policy_head = [32, 1] if args.advantage_head_coef is not None else None
-        net_shape = [300,300,300]
         self._adaptation_policy = MLP([self._observation_dim + goal_dim] +
-                                      #[args.net_width] * args.net_depth +
-                                      net_shape + 
+                                      [args.net_width] * args.net_depth +
                                       [self._action_dim],
                                       final_activation=torch.tanh,
                                       bias_linear=not args.no_bias_linear,
@@ -109,8 +107,7 @@ class MAMLRAWR(object):
                                bias_linear=not args.no_bias_linear,
                                w_linear=args.wlinear).to(args.device)
         self._value_function = MLP([self._observation_dim + goal_dim] +
-                                   #[args.net_width] * args.net_depth +
-                                   net_shape + 
+                                   [args.net_width] * args.net_depth +
                                    [1],
                                    bias_linear=not args.no_bias_linear,
                                    w_linear=args.wlinear).to(args.device)

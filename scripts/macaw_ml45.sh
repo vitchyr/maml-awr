@@ -11,8 +11,8 @@ eval "$(conda shell.bash hook)"
 conda activate macaw
 which python
 
-NAME="macaw_ml45_standard"
-LOG_DIR="log/newruns4"
+NAME="macaw_ml45"
+LOG_DIR="log/NeurIPS"
 TASK_CONFIG="config/ml45/default.json"
 MACAW_PARAMS="config/alg/standard_ml45.json"
 
