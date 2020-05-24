@@ -85,7 +85,7 @@ def get_gym_env(env):
     elif env == 'humanoid':
         env = gym.make('Humanoid-v2')
     else:
-        raise NotImplementedError(f'Unknown env: {env}')
+        raise NotImplementedError('Unknown env: {:s}'.format(env))
         
     env.tasks = [{}]
 
@@ -113,7 +113,7 @@ def run(args, instance_idx=0):
         for task_idx in (range(task_config.total_tasks if args.task_idx is None else [args.task_idx])):
             with open(task_config.task_paths.format(task_idx), 'rb') as f:
                 task_info = pickle.load(f)
-                assert len(task_info) == 1, f'Unexpected task info: {task_info}'
+                assert len(task_info) == 1, 'Unexpected task info: {:s}'.format(str(task_info))
                 tasks.append(task_info[0])
 
     #if args.task_idx is not None:
@@ -140,7 +140,7 @@ def run(args, instance_idx=0):
     elif task_config.env == 'ml45':
         env = ML45Env()
     else:
-        raise RuntimeError(f'Invalid env name {task_config.env}')
+        raise RuntimeError('Invalid env name {:s}'.format(task_config.env))
 
     if args.episode_length is not None:
         env._max_episode_steps = args.episode_length
