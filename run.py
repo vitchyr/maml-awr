@@ -77,7 +77,7 @@ def get_ml45():
     return
     
 
-def get_gym_env(env: str):
+def get_gym_env(env):
     if env == 'ant':
         env = gym.make('Ant-v2')
     elif env == 'walker':
@@ -150,7 +150,7 @@ def run(args, instance_idx=0):
     if instance_idx == 0:
         name = args.name
     else:
-        name = f'{args.name}_{instance_idx}'
+        name = '{:s}_{:d}'.format(args.name, instance_idx)
 
     seed = args.seed if args.seed is not None else instance_idx
     random.seed(seed)
