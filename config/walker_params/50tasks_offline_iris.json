@@ -8,7 +8,7 @@
 		    34,35,36,37,38,40,41,
 		    42,44,45,46,47,48,49],
     "test_tasks": [43,15,12,39,2],
-    "task_paths": "/home/ec2-user/compsci_stuff/maml_awr_data/walker_dir/env_walker_param_train_task{}.pkl",
-    "train_buffer_paths": "/home/ec2-user/compsci_stuff/maml_awr_data/walker_dir/buffers_walker_param_train_{}_sub_task_0.hdf5",
-    "test_buffer_paths": "/home/ec2-user/compsci_stuff/maml_awr_data/walker_dir/buffers_walker_param_train_{}_sub_task_0.hdf5"
+    "task_paths": "/home/ec2-user/compsci_stuff/maml_awr_data/walker_params/env_walker_param_train_task{}.pkl",
+    "train_buffer_paths": "/home/ec2-user/compsci_stuff/maml_awr_data/walker_params/buffers_walker_param_train_{}_sub_task_0.hdf5",
+    "test_buffer_paths": "/home/ec2-user/compsci_stuff/maml_awr_data/walker_params/buffers_walker_param_train_{}_sub_task_0.hdf5"
 }
