@@ -7,6 +7,54 @@ from src.tp_envs.ant_goal import AntGoalEnv as AntGoalEnv_
 from src.tp_envs.humanoid_dir import HumanoidDirEnv as HumanoidDirEnv_
 from src.tp_envs.walker_rand_params_wrapper import WalkerRandParamsWrappedEnv as WalkerRandParamsWrappedEnv_
 from gym.spaces import Box
+from metaworld.benchmarks.base import Benchmark
+from metaworld.envs.mujoco.multitask_env import MultiClassMultiTaskEnv
+from metaworld.envs.mujoco.env_dict import HARD_MODE_ARGS_KWARGS, HARD_MODE_CLS_DICT
+from gym.wrappers import TimeLimit
+from copy import deepcopy
+
+
+class ML45Env(object):
+    def __init__(self):
+        self.n_tasks = 50
+        self.tasks = list(HARD_MODE_ARGS_KWARGS['train'].keys()) + list(HARD_MODE_ARGS_KWARGS['test'].keys())
+
+        self._max_episode_steps = 150
+
+        self._env = None
+        self._envs = []
+
+        _cls_dict = {**HARD_MODE_CLS_DICT['train'], **HARD_MODE_CLS_DICT['test']}
+        _args_kwargs = {**HARD_MODE_ARGS_KWARGS['train'], **HARD_MODE_ARGS_KWARGS['test']}
+        for idx in range(self.n_tasks):
+            task = self.tasks[idx]
+            args_kwargs = _args_kwargs[task]
+            args_kwargs['kwargs']['obs_type'] = 'with_goal'
+            args_kwargs['task'] = task
+            env = _cls_dict[task](*args_kwargs['args'], **args_kwargs['kwargs'])
+            self._envs.append(TimeLimit(env, max_episode_steps=self._max_episode_steps))
+        
+        self.set_task_idx(0)
+
+    def set_task_idx(self, idx):
+        self._env = self._envs[idx]
+
+    def __getattribute__(self, name):
+        '''
+        If we try to access attributes that only exist in the env, return the
+        env implementation.
+        '''
+        try:
+            return object.__getattribute__(self, name)
+        except AttributeError as e:
+            e_ = e
+            try:
+                return object.__getattribute__(self._env, name)
+            except AttributeError as env_exception:
+                pass
+            except Exception as env_exception:
+                e_ = env_exception
+        raise e_
 
 
 class HalfCheetahDirEnv(HalfCheetahDirEnv_):
@@ -59,16 +107,10 @@ class HalfCheetahVelEnv(HalfCheetahVelEnv_):
         if self.include_goal:
             obs = super()._get_obs()
             if self.one_hot_goal:
-                if self.train:
-                    goal = np.zeros((self.n_tasks,))
-                    goal[self.tasks.index(self._task)] = 1
-                else:
-                    goal = np.zeros((self.n_tasks,))
+                goal = np.zeros((self.n_tasks,))
+                goal[self.tasks.index(self._task)] = 1
             else:
-                if self.train:
-                    goal = np.array([self._goal_vel])
-                else:
-                    goal = np.array([-1.])
+                goal = np.array([self._goal_vel])
             obs = np.concatenate([obs, goal])
         else:
             obs = super()._get_obs()
@@ -81,6 +123,7 @@ class HalfCheetahVelEnv(HalfCheetahVelEnv_):
         self.reset()
 
     def set_task_idx(self, idx):
+        self.task_idx = idx
         self.set_task(self.tasks[idx])
 
 class AntDirEnv(AntDirEnv_):
@@ -234,4 +277,3 @@ class WalkerRandParamsWrappedEnv(WalkerRandParamsWrappedEnv_):
         self._goal = idx
         self.set_task(self._task)
         self.reset()
-   
