@@ -29,7 +29,7 @@ class HalfCheetahDirEnv(HalfCheetahEnv):
         self._task = task
         self._goal_dir = task.get('direction', 1)
         self._goal = self._goal_dir
-		self.n_tasks = len(self.tasks)
+        self.n_tasks = len(self.tasks)
         super(HalfCheetahDirEnv, self).__init__()
 
     def step(self, action):
