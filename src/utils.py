@@ -69,16 +69,16 @@ def kld(p, q):
 class Experience():
     def __init__(self,
         state: np.ndarray,
-		action: np.ndarray,
-		next_state: np.ndarray,
-		reward: float,
-		done: bool):
+        action: np.ndarray,
+        next_state: np.ndarray,
+        reward: float,
+        done: bool):
 
-		self.state = state
-		self.action = action
-		self.next_state = next_state
-		self.reward = reward
-		self.done = done
+        self.state = state
+        self.action = action
+        self.next_state = next_state
+        self.reward = reward
+        self.done = done
         return
 
 
