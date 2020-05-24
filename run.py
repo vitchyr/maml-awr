@@ -16,7 +16,7 @@ from src.args import get_args
 
 
 def get_metaworld_tasks(env_id='ml10'):
-    def _extract_tasks(env_, skip_task_idxs: Optional[List[int]] = []):
+    def _extract_tasks(env_, skip_task_idxs=[]):
         task_idxs = set()
         tasks = [None for _ in range(env.num_tasks - len(skip_task_idxs))]
         while len(task_idxs) < env.num_tasks - len(skip_task_idxs):
@@ -104,7 +104,7 @@ def get_gym_env(env: str):
     return env
 
 
-def run(args: argparse.Namespace, instance_idx: int = 0):
+def run(args, instance_idx=0):
     with open(args.task_config, 'r') as f:
         task_config = json.load(f, object_hook=lambda d: namedtuple('X', d.keys())(*d.values()))
 
