@@ -44,7 +44,7 @@ def get_metaworld_tasks(env_id='ml10'):
 
         def set_task_idx(idx):
             env.set_task(tasks[idx])
-        def task_description(batch: None, one_hot: bool = True):
+        def task_description(batch: None, one_hot=True):
             one_hot = env.active_task_one_hot.astype(np.float32)
             if batch:
                 one_hot = one_hot[None,:].repeat(batch, 0)
@@ -94,7 +94,7 @@ def get_gym_env(env: str):
         pass
     env.set_task_idx = set_task_idx
 
-    def task_description(batch: None, one_hot: bool = True):
+    def task_description(batch, one_hot=True):
         one_hot = np.zeros((1,))
         if batch:
             one_hot = one_hot[None,:].repeat(batch, 0)
