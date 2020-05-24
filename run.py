@@ -15,7 +15,7 @@ from src.maml_rawr import MAMLRAWR
 from src.args import get_args
 
 
-def get_metaworld_tasks(env_id: str = 'ml10'):
+def get_metaworld_tasks(env_id='ml10'):
     def _extract_tasks(env_, skip_task_idxs: Optional[List[int]] = []):
         task_idxs = set()
         tasks = [None for _ in range(env.num_tasks - len(skip_task_idxs))]
