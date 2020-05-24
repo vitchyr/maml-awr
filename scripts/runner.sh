@@ -6,7 +6,7 @@ LOG_DIR=$2
 TASK_CONFIG=$3
 MACAW_PARAMS=$4
 
-CMD="python3 -u -m run --device cuda:0 --name $NAME --log_dir $LOG_DIR --task_config $TASK_CONFIG --macaw_params $MACAW_PARAMS"
+CMD="python3 -u -m run --device cpu --name $NAME --log_dir $LOG_DIR --task_config $TASK_CONFIG --macaw_params $MACAW_PARAMS"
 
 echo "***************************************************"
 echo "***************************************************"
