@@ -12,7 +12,7 @@ conda activate macaw
 which python
 
 NAME="macaw_dir"
-LOG_DIR="log/newruns4"
+LOG_DIR="log/NeurIPS"
 TASK_CONFIG="config/cheetah_dir/2tasks_offline.json"
 MACAW_PARAMS="config/alg/standard.json"
 

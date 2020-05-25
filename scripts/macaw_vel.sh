@@ -12,8 +12,8 @@ conda activate macaw
 which python
 
 NAME="macaw_vel"
-LOG_DIR="log/newruns4"
-TASK_CONFIG="config/cheetah_vel/half_tasks_offline.json"
+LOG_DIR="log/NeurIPS"
+TASK_CONFIG="config/cheetah_vel/40tasks_offline.json"
 MACAW_PARAMS="config/alg/standard.json"
 
 ./scripts/runner.sh $NAME $LOG_DIR $TASK_CONFIG $MACAW_PARAMS

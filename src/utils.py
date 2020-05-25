@@ -93,7 +93,8 @@ class NewReplayBuffer(object):
             size = 1000000
 
         self.immutable = immutable
-
+        self.stream_to_disk = stream_to_disk
+        
         if load_from is not None:
             f = h5py.File(load_from, 'r')
             if size == -1:

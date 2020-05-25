@@ -12,8 +12,8 @@ conda activate macaw
 which python
 
 NAME="macaw_ant"
-LOG_DIR="log/newruns4"
-TASK_CONFIG="config/ant_dir/50tasks_offline_iris.json"
+LOG_DIR="log/NeurIPS"
+TASK_CONFIG="config/ant_dir/50tasks_offline.json"
 MACAW_PARAMS="config/alg/standard.json"
 
 ./scripts/runner.sh $NAME $LOG_DIR $TASK_CONFIG $MACAW_PARAMS

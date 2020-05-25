@@ -29,7 +29,11 @@ class ML45Env(object):
         for idx in range(self.n_tasks):
             task = self.tasks[idx]
             args_kwargs = _args_kwargs[task]
-            args_kwargs['kwargs']['obs_type'] = 'with_goal'
+            if idx == 28 or idx == 29:
+                args_kwargs['kwargs']['obs_type'] = 'plain'
+                args_kwargs['kwargs']['random_init'] = False
+            else:
+                args_kwargs['kwargs']['obs_type'] = 'with_goal'
             args_kwargs['task'] = task
             env = _cls_dict[task](*args_kwargs['args'], **args_kwargs['kwargs'])
             self._envs.append(TimeLimit(env, max_episode_steps=self._max_episode_steps))
