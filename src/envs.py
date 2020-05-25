@@ -15,12 +15,14 @@ from copy import deepcopy
 
 
 class ML45Env(object):
-    def __init__(self):
+    def __init__(self, include_goal: bool = False):
         self.n_tasks = 50
         self.tasks = list(HARD_MODE_ARGS_KWARGS['train'].keys()) + list(HARD_MODE_ARGS_KWARGS['test'].keys())
 
         self._max_episode_steps = 150
 
+        self.include_goal = include_goal
+        self._task_idx = None
         self._env = None
         self._envs = []
 
@@ -40,7 +42,31 @@ class ML45Env(object):
         
         self.set_task_idx(0)
 
+    @property
+    def observation_space(self):
+        space = self._env.observation_space
+        if self.include_goal:
+            space = Box(low=space.low[0], high=space.high[0], shape=(space.shape[0] + len(self.tasks),))
+        return space
+
+    def reset(self):
+        obs = self._env.reset()
+        if self.include_goal:
+            one_hot = np.zeros(len(self.tasks), dtype=np.float32)
+            one_hot[self._task_idx] = 1.0
+            obs = np.concatenate([obs, one_hot])
+        return obs
+
+    def step(self, action):
+        o, r, d, i = self._env.step(action)
+        if self.include_goal:
+            one_hot = np.zeros(len(self.tasks), dtype=np.float32)
+            one_hot[self._task_idx] = 1.0
+            o = np.concatenate([o, one_hot])
+        return o, r, d, i
+
     def set_task_idx(self, idx):
+        self._task_idx = idx
         self._env = self._envs[idx]
 
     def __getattribute__(self, name):

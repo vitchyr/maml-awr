@@ -138,7 +138,7 @@ def run(args, instance_idx=0):
     elif task_config.env == 'ml10':
         env = get_metaworld_tasks(task_config.env)
     elif task_config.env == 'ml45':
-        env = ML45Env()
+        env = ML45Env(include_goal=args.multitask or args.include_goal)
     else:
         raise RuntimeError('Invalid env name {:s}'.format(task_config.env))
 
