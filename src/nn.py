@@ -4,8 +4,8 @@ from typing import List, Callable, Optional
 
 
 class DeepSet(nn.Module):
-    def __init__(self, element_dim: int, encoding_dim: int = 64,
-                 encoder_hidden: List[int] = [128, 128]):
+    def __init__(self, element_dim: int, encoding_dim: int = 256,
+                 encoder_hidden: List[int] = [128, 128], output_dim: int = 128):
         super().__init__()
         encoder_hidden = [element_dim] + encoder_hidden + [encoding_dim]
         encoders = []
@@ -14,7 +14,7 @@ class DeepSet(nn.Module):
             if idx < len(encoder_hidden) - 1:
                 encoders.append(nn.ReLU())
         self.encoder = nn.Sequential(*encoders)
-
+        
         self.aggregator = lambda x: x.mean(-1)
 
     def forward(self, x):

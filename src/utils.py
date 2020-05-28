@@ -174,7 +174,6 @@ class NewReplayBuffer(object):
                 self._terminal_obs[:self._stored_steps] = f['terminal_obs'][-n_seed + int(skip > 1):][::skip]
                 self._terminal_discounts[:self._stored_steps] = f['terminal_discounts'][-n_seed + int(skip > 1):][::skip]
                 self._next_obs[:self._stored_steps] = f['next_obs'][-n_seed + int(skip > 1):][::skip]
-
             f.close()
 
         self._write_location = self._stored_steps % self._size
@@ -240,8 +239,12 @@ class NewReplayBuffer(object):
         for trajectory in trajectories:
             self.add_trajectory(trajectory, force)
 
-    def sample(self, batch_size, return_dict: bool = False, noise: bool = False):
-        idxs = np.array(random.sample(range(self._stored_steps), batch_size))
+    def sample(self, batch_size, return_dict: bool = False, noise: bool = False, contiguous: bool = False):
+        if contiguous:
+            idx = np.random.randint(0, self._stored_steps - batch_size)
+            idxs = slice(idx, idx + batch_size)
+        else:
+            idxs = np.array(random.sample(range(self._stored_steps), batch_size))
         #idxs = np.random.choice(self._valid, batch_size)
 
         obs = self._obs[idxs]
