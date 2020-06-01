@@ -1,0 +1,4 @@
+{
+    "load_inner_buffer": false,
+    "advantage_head_coef": 0.0
+}

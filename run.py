@@ -108,6 +108,9 @@ def run(args, instance_idx=0):
     with open(args.task_config, 'r') as f:
         task_config = json.load(f, object_hook=lambda d: namedtuple('X', d.keys())(*d.values()))
 
+    if args.advantage_head_coef == 0:
+        args.advantage_head_coef = None
+        
     if task_config.env != 'ml45':
         tasks = []
         for task_idx in (range(task_config.total_tasks if args.task_idx is None else [args.task_idx])):
