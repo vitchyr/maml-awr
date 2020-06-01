@@ -12,7 +12,7 @@ else
     MACAW_OVERRIDE_PARAMS=$5
 fi
 
-CMD="python -u -m run --device cpu --name $NAME --log_dir $LOG_DIR --task_config $TASK_CONFIG --macaw_params $MACAW_PARAMS --macaw_override_params $MACAW_OVERRIDE_PARAMS"
+CMD="python3 -u -m run --device cpu --name $NAME --log_dir $LOG_DIR --task_config $TASK_CONFIG --macaw_params $MACAW_PARAMS --macaw_override_params $MACAW_OVERRIDE_PARAMS"
 
 echo "***************************************************"
 echo "***************************************************"
