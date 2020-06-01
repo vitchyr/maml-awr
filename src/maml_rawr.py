@@ -328,7 +328,7 @@ class MAMLRAWR(object):
         with torch.no_grad():
             if target is None:
                 target = value_function
-            mc_value_estimates = self.mc_value_estimates_on_batch(target, batch, task_idx, self._args.no_bootstrap and inner)
+            mc_value_estimates = self.mc_value_estimates_on_batch(target, batch, task_idx, self._args.no_bootstrap and (inner or self._args.multitask))
 
         targets = mc_value_estimates
         
@@ -541,112 +541,6 @@ class MAMLRAWR(object):
         else:
             return self.eval_macaw(train_step_idx, writer)
 
-        '''
-        rewards = np.full((len(self.task_config.test_tasks), self._args.eval_maml_steps+1), float('nan'))
-        trajectories, successes = [], []
-
-        if self._args.multitask:
-            log_steps = [1, 5, 20]
-            reward_dict = defaultdict(list)
-            for i, (test_task_idx, test_buffer) in enumerate(zip(self.task_config.test_tasks, self._test_buffers)):
-                self._env.set_task_idx(test_task_idx)
-
-                if self._args.eval:
-                    adapted_trajectory, adapted_reward, success = self._rollout_policy(self._adaptation_policy, self._env, sample_mode=True, render=self._args.render)
-                    trajectories.append(adapted_trajectory)
-                    rewards[i,0] = adapted_reward
-                    successes.append(success)
-                    writer.add_scalar(f'Eval_Reward/Task_{test_task_idx}', adapted_reward, 0)
-
-                vf = deepcopy(self._value_function)
-                ap = deepcopy(self._adaptation_policy)
-                opt = O.SGD(vf.parameters(), lr=self._args.mt_value_lr)
-                ap_opt = O.SGD(ap.parameters(), lr=self._args.mt_policy_lr)
-                batch = torch.tensor(test_buffer.sample(self._args.inner_batch_size), requires_grad=False).to(self._device)
-                for step in range(max(log_steps)):
-                    vf_loss, _, _, _ = self.value_function_loss_on_batch(vf, batch, task_idx=None, inner=True)
-                    (vf_loss / (1 if step == 0 else vf_loss.detach())).backward()
-                    opt.step()
-                    opt.zero_grad()
-                    ap_loss, _, _, _ = self.adaptation_policy_loss_on_batch(ap, None, vf, batch, None, inner=step == 0)
-                    ap_loss.backward()
-                    ap_opt.step()
-                    ap_opt.zero_grad()
-                    adapted_trajectory, adapted_reward, success = self._rollout_policy(ap, self._env, sample_mode=True)
-                    print(i, step, adapted_reward)
-                    if (step + 1) in log_steps:
-                        reward_dict[step+1].append(adapted_reward)
-                        writer.add_scalar(f'FT_Eval_Reward/Task_{i}_Step{step}', adapted_reward, train_step_idx)
-                    if self._args.eval:
-                        rewards[i,step+1] = adapted_reward
-                        writer.add_scalar(f'Eval_Reward/Task_{test_task_idx}', adapted_reward, step + 1)
-
-            for s in log_steps:
-                writer.add_scalar(f'FT_Eval_Reward/Mean_Step{s}', np.mean(reward_dict[s]), train_step_idx)
-            successes = []
-            trajectories = []
-            if not self._args.eval:
-                rewards = np.array(reward_dict[log_steps[-1]])[:,None]
-        else:
-            for i, (test_task_idx, test_buffer) in enumerate(zip(self.task_config.test_tasks, self._test_buffers)):
-                self._env.set_task_idx(test_task_idx)
-
-                if self._args.eval:
-                    adapted_trajectory, adapted_reward, success = self._rollout_policy(self._adaptation_policy, self._env, sample_mode=True, render=self._args.render)
-                    trajectories.append(adapted_trajectory)
-                    rewards[i,0] = adapted_reward
-                    successes.append(success)
-                    writer.add_scalar(f'Eval_Reward/Task_{test_task_idx}', adapted_reward, 0)
-
-                value_batch = torch.tensor(test_buffer.sample(self._args.inner_batch_size), requires_grad=False).to(self._device)
-                value_sub_batches = value_batch.view(self._args.eval_maml_steps, value_batch.shape[0] // self._args.eval_maml_steps, *value_batch.shape[1:]) # Split data to use different data for each gradient step
-                #policy_batch = value_batchtorch.tensor(test_buffer.sample(self._args.inner_batch_size), requires_grad=False).to(self._device)
-                policy_sub_batches = value_sub_batches#policy_batch.view(self._args.eval_maml_steps, policy_batch.shape[0] // self._args.eval_maml_steps, *policy_batch.shape[1:]) # Split data to use different data for each gradient step
-
-                value_function = deepcopy(self._value_function)
-                vf_target = deepcopy(value_function)
-                DEBUG('******************************************* EVAL **********************************', self._args.debug)
-                opt = O.SGD([{'params': p, 'lr': None} for p in value_function.adaptation_parameters()])
-                with higher.innerloop_ctx(value_function, opt, override={'lr': [F.softplus(l) for l in self._value_lrs]}) as (f_value_function, diff_value_opt):
-                    for eval_step in range(self._maml_steps):
-                        #print(f'VALUE STEP {eval_step}')
-                        DEBUG(f'**************** EVAL STEP {eval_step} *******************', self._args.debug)
-                        sub_batch = value_sub_batches[eval_step]
-                        loss, _, _, _ = self.value_function_loss_on_batch(f_value_function, sub_batch, task_idx=test_task_idx, inner=True, target=vf_target)
-                        diff_value_opt.step(loss)
-
-                        # Soft update target value function parameters
-                        self.soft_update(f_value_function, vf_target)
-                        
-                        policy = deepcopy(self._adaptation_policy)
-                        policy_opt = O.SGD([{'params': p, 'lr': None} for p in policy.adaptation_parameters()])
-                        with higher.innerloop_ctx(policy, policy_opt, override={'lr': [F.softplus(l) for l in self._policy_lrs]}) as (f_policy, diff_policy_opt):
-                            for policy_step in range(eval_step + 1):
-                                #print(f'POLICY STEP {policy_step}')
-                                policy_sub_batch = policy_sub_batches[policy_step]
-                                loss, _, _, _ = self.adaptation_policy_loss_on_batch(f_policy, None, f_value_function, policy_sub_batch, test_task_idx, inner=True)
-                                diff_policy_opt.step(loss)
-
-                            adapted_trajectory, adapted_reward, success = self._rollout_policy(f_policy, self._env, sample_mode=True, render=self._args.render)
-                            trajectories.append(adapted_trajectory)
-                            rewards[i,eval_step+1] = adapted_reward
-                            successes.append(success)
-                            if self._args.eval:
-                                writer.add_scalar(f'Eval_Reward/Task_{test_task_idx}', adapted_reward, (eval_step + 1))
-                        del f_policy, diff_policy_opt
-
-                del f_value_function, diff_value_opt
-
-                writer.add_scalar(f'Eval_Reward/Task_{test_task_idx}', adapted_reward, train_step_idx)
-                writer.add_scalar(f'Eval_Success/Task_{test_task_idx}', success, train_step_idx)
-        if self._args.eval:
-            for idx, r in enumerate(rewards.mean(0)):
-                writer.add_scalar(f'Eval_Reward/Mean', r, idx)
-        else:
-            writer.add_scalar(f'Eval_Reward/Mean', rewards.mean(0)[self._maml_steps], train_step_idx)
-        return trajectories, rewards[:,-1], np.array(successes)
-    '''
-
     # This function is the body of the main training loop [L4]
     # At every iteration, it adds rollouts from the exploration policy and one of the adapted policies
     #  to the replay buffer. It also updates the adaptation value function, adaptation policy, and
@@ -712,110 +606,121 @@ class MAMLRAWR(object):
             ##################################################################################################
             # Adapt value function and collect meta-gradients
             ##################################################################################################
-            vf = self._value_function
-            vf.train()
-            vf_target = deepcopy(vf)
-            opt = O.SGD([{'params': p, 'lr': None} for p in vf.adaptation_parameters()])
-            with higher.innerloop_ctx(vf, opt, override={'lr': [F.softplus(l) for l in self._value_lrs]}, copy_initial_weights=False) as (f_value_function, diff_value_opt):
-                if self._inner_value_lr > 0 and len(self._env.tasks) > 1:
-                    for step in range(self._maml_steps):
-                        DEBUG(f'################# VALUE STEP {step} ###################', self._args.debug)
-                        sub_batch = value_batch.view(self._args.maml_steps, value_batch.shape[0] // self._args.maml_steps, *value_batch.shape[1:])[step]
-                        loss, value_inner, mc_inner, mc_std_inner = self.value_function_loss_on_batch(f_value_function, sub_batch, inner=True, task_idx=train_task_idx, target=vf_target)#, iweights=iweights_no_action_)
-
-                        inner_values.append(value_inner.item())
-                        inner_mc_means.append(mc_inner.item())
-                        inner_mc_stds.append(mc_std_inner.item())
-                        diff_value_opt.step(loss)
-                        inner_value_losses.append(loss.item())
-
-                        # Soft update target value function parameters
-                        self.soft_update(f_value_function, vf_target)
-
-                # Collect grads for the value function update in the outer loop [L14],
-                #  which is not actually performed here
-                meta_value_function_loss, value, mc, mc_std = self.value_function_loss_on_batch(f_value_function, meta_batch, task_idx=train_task_idx, target=vf_target)
+            if self._args.multitask:
+                vf_target = self._value_function
+                meta_value_function_loss, value, mc, mc_std = self.value_function_loss_on_batch(self._value_function, meta_batch, task_idx=train_task_idx, target=vf_target)
                 total_vf_loss = meta_value_function_loss / len(self.task_config.train_tasks)
-                if self._args.value_reg > 0:
-                    total_vf_loss = total_vf_loss + self._args.value_reg * self._value_function(value_batch[:,:self._observation_dim]).pow(2).mean()
                 total_vf_loss.backward()
 
                 outer_values.append(value.item())
                 outer_mc_means.append(mc.item())
                 outer_mc_stds.append(mc_std.item())
                 meta_value_losses.append(meta_value_function_loss.item())
-                ##################################################################################################
 
-                ##################################################################################################
-                # Adapt Q function and collect meta-gradients
-                ##################################################################################################
-                if self._args.q:
-                    q_opt = O.SGD(self._q_function.parameters(), lr=self._inner_value_lr)
-                    with higher.innerloop_ctx(self._q_function, q_opt, copy_initial_weights=False) as (f_q_function, diff_q_opt):
-                        if self._inner_value_lr > 0 and len(self._env.tasks) > 1:
-                            for step in range(self._maml_steps):
-                                sub_batch = value_batch.view(self._args.maml_steps, value_batch.shape[0] // self._args.maml_steps, *value_batch.shape[1:])[step]
-                                # Compute loss and adapt value function [L9]
-                                loss = self.q_function_loss_on_batch(f_q_function, f_value_function, sub_batch, inner=True, task_idx=train_task_idx)
-                                diff_q_opt.step(loss)
-                                inner_q_losses.append(loss.item())
+                meta_policy_loss, outer_adv, outer_weights_, _ = self.adaptation_policy_loss_on_batch(self._adaptation_policy, None,
+                                                                                                      self._value_function, policy_meta_batch, train_task_idx)
+                (meta_policy_loss / len(self.task_config.train_tasks)).backward()
+                
+                outer_weights.append(outer_weights_.mean().item())
+                outer_advantages.append(outer_adv.item())
+                meta_policy_losses.append(meta_policy_loss.item())
+                
+                # Sample adapted policy trajectory, add to replay buffer i [L12]
+                if train_step_idx % self._gradient_steps_per_iteration == 0:
+                    adapted_trajectory, adapted_reward, success = self._rollout_policy(self._adaptation_policy, self._env, sample_mode=self._args.offline)
+                    train_rewards.append(adapted_reward)
+                    successes.append(success)
+                    
+                    if not (self._args.offline or self._args.offline_inner):
+                        inner_buffer.add_trajectory(adapted_trajectory)
+                    if not (self._args.offline or self._args.offline_outer):
+                        outer_buffer.add_trajectory(adapted_trajectory)
+                else:
+                    success = False
 
-                        # Collect grads for the value function update in the outer loop [L14],
-                        #  which is not actually performed here
-                        meta_q_function_loss = self.q_function_loss_on_batch(f_q_function, f_value_function, meta_batch, task_idx=train_task_idx)
-                        (meta_q_function_loss / len(self.task_config.train_tasks)).backward()
-
-                        meta_q_losses.append(meta_q_function_loss.item())
-                        q_functions.append(f_q_function)
-
-                ##################################################################################################
-                # Adapt policy and collect meta-gradients
-                ##################################################################################################
-                adapted_value_function = f_value_function
-                adapted_q_function = q_functions[-1] if self._args.q else None
-                opt = O.SGD([{'params': p, 'lr': None} for p in self._adaptation_policy.adaptation_parameters()])
-                self._adaptation_policy.train()
-                with higher.innerloop_ctx(self._adaptation_policy, opt, override={'lr': [F.softplus(l) for l in self._policy_lrs]}, copy_initial_weights=False) as (f_adaptation_policy, diff_policy_opt):
-                    if self._inner_policy_lr > 0 and len(self._env.tasks) > 1:
+            else:
+                vf = self._value_function
+                vf.train()
+                vf_target = deepcopy(vf)
+                opt = O.SGD([{'params': p, 'lr': None} for p in vf.adaptation_parameters()])
+                with higher.innerloop_ctx(vf, opt, override={'lr': [F.softplus(l) for l in self._value_lrs]}, copy_initial_weights=False) as (f_value_function, diff_value_opt):
+                    if self._inner_value_lr > 0 and len(self._env.tasks) > 1:
                         for step in range(self._maml_steps):
-                            DEBUG(f'################# POLICY STEP {step} ###################', self._args.debug)
-                            sub_batch = policy_batch.view(self._args.maml_steps, policy_batch.shape[0] // self._args.maml_steps, *policy_batch.shape[1:])[step]
-                            loss, adv, weights, adv_loss = self.adaptation_policy_loss_on_batch(f_adaptation_policy, adapted_q_function,
-                                                                                               adapted_value_function, sub_batch, train_task_idx, inner=True)
+                            DEBUG(f'################# VALUE STEP {step} ###################', self._args.debug)
+                            sub_batch = value_batch.view(self._args.maml_steps, value_batch.shape[0] // self._args.maml_steps, *value_batch.shape[1:])[step]
+                            loss, value_inner, mc_inner, mc_std_inner = self.value_function_loss_on_batch(f_value_function, sub_batch, inner=True, task_idx=train_task_idx, target=vf_target)#, iweights=iweights_no_action_)
 
-                            diff_policy_opt.step(loss)
-                            inner_policy_losses.append(loss.item())
-                            if adv_loss is not None:
-                                adv_policy_losses.append(adv_loss.item())
-                            inner_advantages.append(adv.item())
-                            inner_weights.append(weights.mean().item())
+                            inner_values.append(value_inner.item())
+                            inner_mc_means.append(mc_inner.item())
+                            inner_mc_stds.append(mc_std_inner.item())
+                            diff_value_opt.step(loss)
+                            inner_value_losses.append(loss.item())
 
-                    meta_policy_loss, outer_adv, outer_weights_, _ = self.adaptation_policy_loss_on_batch(f_adaptation_policy, adapted_q_function,
-                                                                                                        adapted_value_function, policy_meta_batch, train_task_idx)
-                    (meta_policy_loss / len(self.task_config.train_tasks)).backward()
+                            # Soft update target value function parameters
+                            self.soft_update(f_value_function, vf_target)
 
-                    outer_weights.append(outer_weights_.mean().item())
-                    outer_advantages.append(outer_adv.item())
-                    meta_policy_losses.append(meta_policy_loss.item())
+                    # Collect grads for the value function update in the outer loop [L14],
+                    #  which is not actually performed here
+                    meta_value_function_loss, value, mc, mc_std = self.value_function_loss_on_batch(f_value_function, meta_batch, task_idx=train_task_idx, target=vf_target)
+                    total_vf_loss = meta_value_function_loss / len(self.task_config.train_tasks)
+                    if self._args.value_reg > 0:
+                        total_vf_loss = total_vf_loss + self._args.value_reg * self._value_function(value_batch[:,:self._observation_dim]).pow(2).mean()
+                    total_vf_loss.backward()
+
+                    outer_values.append(value.item())
+                    outer_mc_means.append(mc.item())
+                    outer_mc_stds.append(mc_std.item())
+                    meta_value_losses.append(meta_value_function_loss.item())
                     ##################################################################################################
-            
-                    # Sample adapted policy trajectory, add to replay buffer i [L12]
-                    if train_step_idx % self._gradient_steps_per_iteration == 0:
-                        adapted_trajectory, adapted_reward, success = self._rollout_policy(f_adaptation_policy, self._env, sample_mode=self._args.offline)
-                        train_rewards.append(adapted_reward)
-                        successes.append(success)
 
-                        if not (self._args.offline or self._args.offline_inner):
-                            if self._args.sample_exploration_inner:
-                                exploration_trajectory, _, _ = self._rollout_policy(self._exploration_policy, self._env, sample_mode=False)
-                                inner_buffer.add_trajectory(exploration_trajectory)
-                            else:
-                                inner_buffer.add_trajectory(adapted_trajectory)
-                        if not (self._args.offline or self._args.offline_outer):
-                            outer_buffer.add_trajectory(adapted_trajectory)
-                            #full_buffer.add_trajectory(adapted_trajectory)
-                    else:
-                        success = False
+                    ##################################################################################################
+                    # Adapt policy and collect meta-gradients
+                    ##################################################################################################
+                    adapted_value_function = f_value_function
+                    adapted_q_function = q_functions[-1] if self._args.q else None
+                    opt = O.SGD([{'params': p, 'lr': None} for p in self._adaptation_policy.adaptation_parameters()])
+                    self._adaptation_policy.train()
+                    with higher.innerloop_ctx(self._adaptation_policy, opt, override={'lr': [F.softplus(l) for l in self._policy_lrs]}, copy_initial_weights=False) as (f_adaptation_policy, diff_policy_opt):
+                        if self._inner_policy_lr > 0 and len(self._env.tasks) > 1:
+                            for step in range(self._maml_steps):
+                                DEBUG(f'################# POLICY STEP {step} ###################', self._args.debug)
+                                sub_batch = policy_batch.view(self._args.maml_steps, policy_batch.shape[0] // self._args.maml_steps, *policy_batch.shape[1:])[step]
+                                loss, adv, weights, adv_loss = self.adaptation_policy_loss_on_batch(f_adaptation_policy, adapted_q_function,
+                                                                                                   adapted_value_function, sub_batch, train_task_idx, inner=True)
+
+                                diff_policy_opt.step(loss)
+                                inner_policy_losses.append(loss.item())
+                                if adv_loss is not None:
+                                    adv_policy_losses.append(adv_loss.item())
+                                inner_advantages.append(adv.item())
+                                inner_weights.append(weights.mean().item())
+
+                        meta_policy_loss, outer_adv, outer_weights_, _ = self.adaptation_policy_loss_on_batch(f_adaptation_policy, adapted_q_function,
+                                                                                                            adapted_value_function, policy_meta_batch, train_task_idx)
+                        (meta_policy_loss / len(self.task_config.train_tasks)).backward()
+
+                        outer_weights.append(outer_weights_.mean().item())
+                        outer_advantages.append(outer_adv.item())
+                        meta_policy_losses.append(meta_policy_loss.item())
+                        ##################################################################################################
+
+                        # Sample adapted policy trajectory, add to replay buffer i [L12]
+                        if train_step_idx % self._gradient_steps_per_iteration == 0:
+                            adapted_trajectory, adapted_reward, success = self._rollout_policy(f_adaptation_policy, self._env, sample_mode=self._args.offline)
+                            train_rewards.append(adapted_reward)
+                            successes.append(success)
+
+                            if not (self._args.offline or self._args.offline_inner):
+                                if self._args.sample_exploration_inner:
+                                    exploration_trajectory, _, _ = self._rollout_policy(self._exploration_policy, self._env, sample_mode=False)
+                                    inner_buffer.add_trajectory(exploration_trajectory)
+                                else:
+                                    inner_buffer.add_trajectory(adapted_trajectory)
+                            if not (self._args.offline or self._args.offline_outer):
+                                outer_buffer.add_trajectory(adapted_trajectory)
+                                #full_buffer.add_trajectory(adapted_trajectory)
+                        else:
+                            success = False
 
             if train_step_idx % self._gradient_steps_per_iteration == 0:
                 if len(inner_value_losses):
@@ -830,6 +735,7 @@ class MAMLRAWR(object):
                     writer.add_scalar(f'Weight_Mean_Inner/Task_{train_task_idx}', np.mean(inner_weights), train_step_idx)
                     writer.add_scalar(f'MC_Mean_Inner/Task_{train_task_idx}', np.mean(inner_mc_means), train_step_idx)
                     writer.add_scalar(f'MC_std_Inner/Task_{train_task_idx}', np.mean(inner_mc_stds), train_step_idx)
+                    writer.add_histogram(f'Inner_Weights/Task_{train_task_idx}', weights, train_step_idx)
                 writer.add_scalar(f'Value_Mean_Outer/Task_{train_task_idx}', np.mean(outer_values), train_step_idx)
                 writer.add_scalar(f'Weight_Mean_Outer/Task_{train_task_idx}', np.mean(outer_weights), train_step_idx)
                 writer.add_scalar(f'Advantage_Mean_Outer/Task_{train_task_idx}', np.mean(outer_advantages), train_step_idx)
@@ -841,7 +747,6 @@ class MAMLRAWR(object):
                 writer.add_scalar(f'Loss_Policy_Outer/Task_{train_task_idx}', np.mean(meta_policy_losses), train_step_idx)
                 writer.add_histogram(f'Value_LRs', F.softplus(torch.stack(self._value_lrs)), train_step_idx)
                 writer.add_histogram(f'Policy_LRs', F.softplus(torch.stack(self._policy_lrs)), train_step_idx)
-                writer.add_histogram(f'Inner_Weights/Task_{train_task_idx}', weights, train_step_idx)
                 writer.add_histogram(f'Outer_Weights/Task_{train_task_idx}', outer_weights_, train_step_idx)
                 #if train_step_idx % self._visualization_interval == 0:
                 #    writer.add_scalar(f'Reward_Test/Task_{train_task_idx}', test_reward, train_step_idx)
