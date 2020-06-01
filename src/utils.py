@@ -80,7 +80,7 @@ class Experience(NamedTuple):
 class NewReplayBuffer(object):
     def __init__(self, size: int, obs_dim: int, action_dim: int, discount_factor: float = 0.99,
                  immutable: bool = False, load_from: str = None, silent: bool = False, skip: int = 1,
-                 stream_to_disk: bool = False):
+                 stream_to_disk: bool = False, mode: str = 'end'):
         if size == -1 and load_from is None:
             print("Can't have size == -1 and no offline buffer - defaulting to 1M steps")
             size = 1000000
@@ -158,22 +158,35 @@ class NewReplayBuffer(object):
             self._stored_steps = n_seed // skip
 
             if needs_to_load:
+                if not silent:
+                    print(f'Loading trajectories from {load_from}')
                 if stored > self._size * skip:
                     if not silent:
                         print(f"Attempted to load {stored} offline steps into buffer of size {self._size}.")
-                        print(f"Loading only the last {n_seed//skip} steps from offline buffer")
-                if not silent:
-                    print(f'Loading trajectories from {load_from}')
+                        print(f"Loading only the **{mode}** {n_seed//skip} steps from offline buffer")
+
+                chunk_size = n_seed# + int(skip > 1)
 
                 self._discount_factor = f['discount_factor'][()]
-                self._obs[:self._stored_steps] = f['obs'][-n_seed + int(skip > 1):][::skip]
-                self._actions[:self._stored_steps] = f['actions'][-n_seed + int(skip > 1):][::skip]
-                self._rewards[:self._stored_steps] = f['rewards'][-n_seed + int(skip > 1):][::skip]
-                self._mc_rewards[:self._stored_steps] = f['mc_rewards'][-n_seed + int(skip > 1):][::skip]
-                self._terminals[:self._stored_steps] = f['terminals'][-n_seed + int(skip > 1):][::skip]
-                self._terminal_obs[:self._stored_steps] = f['terminal_obs'][-n_seed + int(skip > 1):][::skip]
-                self._terminal_discounts[:self._stored_steps] = f['terminal_discounts'][-n_seed + int(skip > 1):][::skip]
-                self._next_obs[:self._stored_steps] = f['next_obs'][-n_seed + int(skip > 1):][::skip]
+                if mode == 'end':
+                    h5slice = slice(-chunk_size, stored)
+                elif mode == 'middle':
+                    center = stored // 2
+                    h5slice = slice(center // 2 - chunk_size // 2,center // 2 + chunk_size // 2)
+                elif mode == 'start':
+                    h5slice = slice(chunk_size)
+                else:
+                    raise Exception(f'No such mode {mode}')
+
+                self._obs[:self._stored_steps] = f['obs'][h5slice][::skip]
+                self._actions[:self._stored_steps] = f['actions'][h5slice][::skip]
+                self._rewards[:self._stored_steps] = f['rewards'][h5slice][::skip]
+                self._mc_rewards[:self._stored_steps] = f['mc_rewards'][h5slice][::skip]
+                self._terminals[:self._stored_steps] = f['terminals'][h5slice][::skip]
+                self._terminal_obs[:self._stored_steps] = f['terminal_obs'][h5slice][::skip]
+                self._terminal_discounts[:self._stored_steps] = f['terminal_discounts'][h5slice][::skip]
+                self._next_obs[:self._stored_steps] = f['next_obs'][h5slice][::skip]
+
             f.close()
 
         self._write_location = self._stored_steps % self._size

@@ -4,12 +4,14 @@ import json
 
 def get_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
+    parser.add_argument('--buffer_mode', type=str, default='end')
     parser.add_argument('--value_reg', type=float, default=0)
     parser.add_argument('--contiguous', action='store_true')
     parser.add_argument('--from_disk', action='store_true')
     parser.add_argument('--archive', type=str, default=None)
     parser.add_argument('--wlinear', action='store_true')
     parser.add_argument('--macaw_params', type=str, default=None)
+    parser.add_argument('--macaw_override_params', type=str, default=None)
     parser.add_argument('--target_vf_alpha', type=float, default=0.9)
     parser.add_argument('--bootstrap_grad', action='store_true')
     parser.add_argument('--buffer_skip', type=int, default=1)
@@ -52,6 +54,7 @@ def get_args() -> argparse.Namespace:
     parser.add_argument('--train_steps', type=int, default=1000000)
     parser.add_argument('--batch_size', type=int, default=256)
     parser.add_argument('--inner_batch_size', type=int, default=32)
+    parser.add_argument('--eval_batch_size', type=int, default=32)
     parser.add_argument('--inner_policy_lr', type=float, default=0.01)
     parser.add_argument('--inner_value_lr', type=float, default=0.01)
     parser.add_argument('--outer_policy_lr', type=float, default=1e-3)
@@ -78,7 +81,7 @@ def get_args() -> argparse.Namespace:
     parser.add_argument('--offline_outer', action='store_true')
     parser.add_argument('--offline_inner', action='store_true')
     parser.add_argument('--grad_clip', type=float, default=1e9) # Essentially no clip, but use this to measure the size of gradients
-    parser.add_argument('--exp_advantage_clip', type=float, default=10.0)
+    parser.add_argument('--exp_advantage_clip', type=float, default=20.0)
     parser.add_argument('--eval_maml_steps', type=int, default=1)
     parser.add_argument('--maml_steps', type=int, default=1)
     parser.add_argument('--adaptation_temp', type=float, default=1)
@@ -99,4 +102,11 @@ def get_args() -> argparse.Namespace:
         for k, v in params.items():
             setattr(args, k, v)
 
+    if args.macaw_override_params is not None:
+        with open(args.macaw_override_params, 'r') as f:
+            params = json.load(f)
+
+        for k, v in params.items():
+            setattr(args, k, v)
+            
     return args

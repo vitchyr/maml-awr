@@ -138,9 +138,14 @@ class MAMLRAWR(object):
             self._adaptation_policy_optimizer.load_state_dict(archive['policy_opt'])
             self._policy_lrs = archive['policy_lrs']
             self._value_lrs = archive['vf_lrs']
+            if 'adv_coef' in archive:
+                self._adv_coef = archive['adv_coef']
+            else:
+                self._adv_coef = None
         else:
             self._policy_lrs = None
             self._value_lrs = None
+            self._adv_coef = None
 
         has_train_buffers = hasattr(task_config, 'train_buffer_paths') and not args.eval
         has_test_buffers = hasattr(task_config, 'test_buffer_paths')
@@ -156,16 +161,16 @@ class MAMLRAWR(object):
         self._test_buffers = [NewReplayBuffer(args.inner_buffer_size, self._observation_dim, env_action_dim(self._env),
                                               discount_factor=discount_factor,
                                               immutable=test_buffers[i] is not None, load_from=test_buffers[i], silent=silent, skip=args.inner_buffer_skip,
-                                              stream_to_disk=args.from_disk)
+                                              stream_to_disk=args.from_disk, mode=args.buffer_mode)
                                for i, task in enumerate(task_config.test_tasks)]
 
         self._inner_buffers = [NewReplayBuffer(args.inner_buffer_size, self._observation_dim, env_action_dim(self._env),
                                                discount_factor=discount_factor,
                                                immutable=args.offline or args.offline_inner, load_from=inner_buffers[i], silent=silent, skip=args.inner_buffer_skip,
-                                               stream_to_disk=args.from_disk)
+                                               stream_to_disk=args.from_disk, mode=args.buffer_mode)
                                for i, task in enumerate(task_config.train_tasks)]
         
-        if args.offline and args.load_inner_buffer and args.load_outer_buffer and (args.replay_buffer_size == args.inner_buffer_size) and (args.buffer_skip == args.inner_buffer_skip):
+        if args.offline and args.load_inner_buffer and args.load_outer_buffer and (args.replay_buffer_size == args.inner_buffer_size) and (args.buffer_skip == args.inner_buffer_skip) and args.buffer_mode == 'end':
             self._outer_buffers = self._inner_buffers
         else:
             self._outer_buffers = [NewReplayBuffer(args.replay_buffer_size, self._observation_dim, env_action_dim(self._env),
@@ -187,9 +192,14 @@ class MAMLRAWR(object):
         if self._policy_lrs is None:
             self._policy_lrs = [torch.nn.Parameter(torch.tensor(float(np.log(self._inner_policy_lr)) if self._inner_policy_lr > 0 else 10000.).to(args.device)) for p in self._adaptation_policy.adaptation_parameters()]
             self._value_lrs = [torch.nn.Parameter(torch.tensor(float(np.log(self._inner_value_lr)) if self._inner_value_lr > 0 else 10000.).to(args.device)) for p in self._value_function.adaptation_parameters()]
+            if args.advantage_head_coef is not None:
+                self._adv_coef = torch.nn.Parameter(torch.tensor(float(np.log(args.advantage_head_coef))).to(args.device))
+                                                                 
         self._policy_lr_optimizer = O.Adam(self._policy_lrs, lr=self._args.lrlr)
         self._value_lr_optimizer = O.Adam(self._value_lrs, lr=self._args.lrlr)
-
+        if args.advantage_head_coef is not None:
+            self._adv_coef_optimizer = O.Adam([self._adv_coef], lr=self._args.lrlr)
+        
         self._adaptation_temperature = args.adaptation_temp
         self._device = torch.device(args.device)
         self._cpu = torch.device('cpu')
@@ -380,7 +390,7 @@ class MAMLRAWR(object):
         adv_prediction_loss = None
         if inner:
             if self._args.advantage_head_coef is not None:
-                adv_prediction_loss = self._args.advantage_head_coef *  (advantage_prediction.squeeze() - advantages) ** 2
+                adv_prediction_loss = F.softplus(self._adv_coef) *  (advantage_prediction.squeeze() - advantages) ** 2
                 losses = losses + adv_prediction_loss
                 adv_prediction_loss = adv_prediction_loss.mean()
 
@@ -427,7 +437,7 @@ class MAMLRAWR(object):
             ap = deepcopy(self._adaptation_policy)
             opt = O.Adam(vf.parameters(), lr=self._args.mt_value_lr)
             ap_opt = O.Adam(ap.parameters(), lr=self._args.mt_policy_lr)
-            batch = torch.tensor(test_buffer.sample(self._args.inner_batch_size), requires_grad=False).to(self._device)
+            batch = torch.tensor(test_buffer.sample(self._args.eval_batch_size), requires_grad=False).to(self._device)
             for step in range(max(log_steps)):
                 vf_loss, _, _, _ = self.value_function_loss_on_batch(vf, batch, task_idx=None, inner=True)
                 vf_loss.backward()
@@ -477,7 +487,7 @@ class MAMLRAWR(object):
                 successes.append(success)
                 writer.add_scalar(f'Eval_Reward/Task_{test_task_idx}', adapted_reward, 0)
 
-            value_batch = torch.tensor(test_buffer.sample(self._args.inner_batch_size, contiguous=self._args.contiguous), requires_grad=False).to(self._device)
+            value_batch = torch.tensor(test_buffer.sample(self._args.eval_batch_size), requires_grad=False).to(self._device)
             value_sub_batches = value_batch.view(self._args.eval_maml_steps, value_batch.shape[0] // self._args.eval_maml_steps, *value_batch.shape[1:]) # Split data to use different data for each gradient step
             policy_batch = value_batch#torch.tensor(test_buffer.sample(self._args.inner_batch_size), requires_grad=False).to(self._device)
             policy_sub_batches = policy_batch.view(self._args.eval_maml_steps, policy_batch.shape[0] // self._args.eval_maml_steps, *policy_batch.shape[1:]) # Split data to use different data for each gradient step
@@ -661,7 +671,7 @@ class MAMLRAWR(object):
         train_rewards = []
         rollouts = []
         successes = []
-        if self._args.task_batch_size is not None:
+        if self._args.task_batch_size is not None and len(self.task_config.train_tasks) > self._args.task_batch_size:
             tasks = random.sample(self.task_config.train_tasks, self._args.task_batch_size)
         else:
             tasks = self.task_config.train_tasks
@@ -839,7 +849,10 @@ class MAMLRAWR(object):
                 if train_step_idx % self._gradient_steps_per_iteration == 0:
                     writer.add_scalar(f'Reward_Train/Task_{train_task_idx}', adapted_reward, train_step_idx)
                     writer.add_scalar(f'Success_Train/Task_{train_task_idx}', np.mean(success), train_step_idx)
-                
+
+        if self._args.advantage_head_coef is not None:
+            writer.add_scalar(f'Adv_Coef', F.softplus(self._adv_coef).item(), train_step_idx)
+
         # Meta-update value function [L14]
         grad = self.update_model(self._value_function, self._value_function_optimizer, clip=self._grad_clip)
         writer.add_scalar(f'Value_Outer_Grad', grad, train_step_idx)
@@ -856,6 +869,8 @@ class MAMLRAWR(object):
         if self._args.lrlr > 0:
             self.update_params(self._value_lrs, self._value_lr_optimizer)
             self.update_params(self._policy_lrs, self._policy_lr_optimizer)
+            if self._args.advantage_head_coef is not None:
+                self.update_params([self._adv_coef], self._adv_coef_optimizer)
             
         return rollouts, test_rewards, train_rewards, meta_value_losses, meta_policy_losses, None, successes
 
@@ -988,6 +1003,9 @@ class MAMLRAWR(object):
                     'vf_lrs': self._value_lrs,
                     'policy_lrs': self._policy_lrs
                 }
+                if self._args.advantage_head_coef is not None:
+                    archive['adv_coef'] = self._adv_coef
+
                 torch.save(archive, f'{log_path}/archive_LATEST.pt')
                 if t % 10000 == 0:
                     torch.save(archive, f'{log_path}/archive_{t}.pt')

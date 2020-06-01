@@ -1,5 +1,5 @@
 {
-    "advantage_head_coef": 0.01,
+    "advantage_head_coef": 0.0,
     "offline": true,
     "load_inner_buffer": true,
     "load_outer_buffer": true,
