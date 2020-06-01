@@ -13,5 +13,6 @@
     "buffer_skip": 1,
     "multitask": true,
     "task_batch_size": 5,
-    "vis_interval": 1000
+    "vis_interval": 1000,
+    "no_bootstrap": true
 }
