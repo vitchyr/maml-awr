@@ -13,7 +13,7 @@ which python
 
 LOG_DIR="log/NeurIPS2"
 MACAW_PARAMS="config/alg/standard.json"
-OVERRIDE="config/alg/overrides/noadv.json"
+OVERRIDE="config/alg/overrides/mamlawr.json"
 ########################################################################
 
 NAME="mamlawr_dir"
