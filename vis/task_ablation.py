@@ -51,6 +51,7 @@ def get_vals(path: str):
 def extract_macaw(path, terminate: int = None):
     y = []
     x = []
+    pearl = False
     try:
         for entry in summary_iterator(path):
             try:
@@ -59,8 +60,12 @@ def extract_macaw(path, terminate: int = None):
                     step, tag, value = entry.step, v.tag, v.simple_value
                     if terminate and step > terminate:
                         break
-                    if tag != 'Eval_Reward/Mean':
+                    if tag != 'Eval_Reward/Mean' and tag != 'test_tasks_mean_reward/mean_return':
                         continue
+                    if tag == 'test_tasks_mean_reward/mean_return':
+                        pearl = True
+                        step *= 2000
+
                     #print(tag, step, value)
                     y.append(value)
                     x.append(step)
@@ -70,7 +75,8 @@ def extract_macaw(path, terminate: int = None):
     except Exception as e:
         print(e)
 
-    y = gaussian_filter1d(y, sigma=5)        
+    sigma = 5
+    y = gaussian_filter1d(y, sigma=sigma if not pearl else sigma/8.)        
     return np.array(x).astype(np.float32) / 1000, np.array(y)
 
 
@@ -83,15 +89,19 @@ def trim(x, y, val):
         return x, y
 
 def run(args: argparse.Namespace):
-    macaw_start_x, macaw_start_y = extract_macaw(args.start_path, args.terminate)
-    macaw_middle_x, macaw_middle_y = extract_macaw(args.middle_path, args.terminate)
-    macaw_end_x, macaw_end_y = extract_macaw(args.end_path, args.terminate)
+    macaw_half_x, macaw_half_y = extract_macaw(args.half_path, args.terminate)
+    macaw_quarter_x, macaw_quarter_y = extract_macaw(args.quarter_path, args.terminate)
+    macaw_eighth_x, macaw_eighth_y = extract_macaw(args.eighth_path, args.terminate)
+    macaw_sixteenth_x, macaw_sixteenth_y = extract_macaw(args.sixteenth_path, args.terminate)
 
-    maml_start_x, maml_start_y = extract_macaw(args.maml_start_path, args.terminate)
-    maml_middle_x, maml_middle_y = extract_macaw(args.maml_middle_path, args.terminate)
-    maml_end_x, maml_end_y = extract_macaw(args.maml_end_path, args.terminate)
-    
-    fig, axes = plt.subplots(nrows=1, ncols=1, figsize=(9,6))
+    pearl_half_x, pearl_half_y = extract_macaw(args.pearl_half_path, args.terminate)
+    pearl_quarter_x, pearl_quarter_y = extract_macaw(args.pearl_quarter_path, args.terminate)
+    pearl_eighth_x, pearl_eighth_y = extract_macaw(args.pearl_eighth_path, args.terminate)
+    pearl_sixteenth_x, pearl_sixteenth_y = extract_macaw(args.pearl_sixteenth_path, args.terminate)
+
+    w = 9
+    h = 6
+    fig, axes = plt.subplots(nrows=1, ncols=1, figsize=(w,h))
     axes.tick_params(axis=u'both', which=u'both',length=0)
     axes.grid(linestyle='--', linewidth=0.75)
     axes.spines['top'].set_visible(False)
@@ -99,22 +109,33 @@ def run(args: argparse.Namespace):
     axes.spines['bottom'].set_visible(False)
     axes.spines['left'].set_visible(False)
     
-    color = next(axes._get_lines.prop_cycler)['color']
-    l1, = axes.plot(macaw_end_x, macaw_end_y, color=color, label='Good Data')
-    l2, = axes.plot(maml_end_x, maml_end_y, '--', color=color)
-    color = next(axes._get_lines.prop_cycler)['color']
-    color = next(axes._get_lines.prop_cycler)['color']
-    axes.plot(macaw_middle_x, macaw_middle_y, color=color, label='Medium Data')
-    axes.plot(maml_middle_x, maml_middle_y,  '--', color=color)
-    color = next(axes._get_lines.prop_cycler)['color']
-    axes.plot(macaw_start_x, macaw_start_y, color=color, label='Bad Data')
-    axes.plot(maml_start_x, maml_start_y,  '--', color=color)
+    color1 = next(axes._get_lines.prop_cycler)['color']
+    color2 = next(axes._get_lines.prop_cycler)['color']
+    color2 = next(axes._get_lines.prop_cycler)['color']
+    color3 = next(axes._get_lines.prop_cycler)['color']
+    color4 = next(axes._get_lines.prop_cycler)['color']
+    color4 = next(axes._get_lines.prop_cycler)['color']
+    color4 = next(axes._get_lines.prop_cycler)['color']
+
+    l1, = axes.plot(macaw_half_x, macaw_half_y, color=color1, label='20 Tasks')
+    l2, = axes.plot(pearl_half_x, pearl_half_y, '--', color=color1)
+
+    axes.plot(macaw_quarter_x, macaw_quarter_y, color=color2, label='10 Tasks')
+    axes.plot(pearl_quarter_x, pearl_quarter_y, '--', color=color2)
+
+    axes.plot(macaw_eighth_x, macaw_eighth_y, color=color3, label='5 Tasks')
+    axes.plot(pearl_eighth_x, pearl_eighth_y, '--', color=color3)
+
+    axes.plot(macaw_sixteenth_x, macaw_sixteenth_y, color=color4, label='3 Tasks')
+    axes.plot(pearl_sixteenth_x, pearl_sixteenth_y, '--', color=color4)
+
+    axes.set_title('Test Performance Under Various Task Samplings')
+
     #axes.set_xscale('log')
-    axes.set_title('Data Quality Ablation')
     axes.set_xlabel('Training Steps (thousands)')
     axes.set_ylabel('Reward')
-    leg1 = axes.legend(loc=4)
-    leg2 = axes.legend([l1, l2], ['MACAW', 'No Adv Head'], loc='lower center')
+    leg1 = axes.legend(loc='lower right')
+    leg2 = axes.legend([l1,l2], ['MACAW', 'PEARL'], loc='lower center')
     leg2.legendHandles[0].set_color('black')
     leg2.legendHandles[1].set_color('black')
     plt.gca().add_artist(leg1)
@@ -124,12 +145,20 @@ def run(args: argparse.Namespace):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--start_path', type=str)
-    parser.add_argument('--middle_path', type=str)
-    parser.add_argument('--end_path', type=str)
-    parser.add_argument('--maml_start_path', type=str)
-    parser.add_argument('--maml_middle_path', type=str)
-    parser.add_argument('--maml_end_path', type=str)
+    parser.add_argument('--half_path', type=str)
+    parser.add_argument('--quarter_path', type=str)
+    parser.add_argument('--eighth_path', type=str)
+    parser.add_argument('--sixteenth_path', type=str)
+    parser.add_argument('--pearl_half_path', type=str)
+    parser.add_argument('--pearl_quarter_path', type=str)
+    parser.add_argument('--pearl_eighth_path', type=str)
+    parser.add_argument('--pearl_sixteenth_path', type=str)
+    '''
+    parser.add_argument('--half_path', type=str)
+    parser.add_argument('--quarter_path', type=str)
+    parser.add_argument('--eighth_path', type=str)
+    parser.add_argument('--sixteenth_path', type=str)
+    '''
     parser.add_argument('--terminate', type=int, default=None)
-    parser.add_argument('--name', type=str)
+    parser.add_argument('--name', type=str, default='task_ablation')
     run(parser.parse_args())

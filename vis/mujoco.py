@@ -47,7 +47,7 @@ def get_vals(path: str):
     return means, medians, stds, lowerq, upperq, mins, maxs
 
 
-def extract_macaw(path, terminate: int = None):
+def extract_macaw(path, prefix: str = None, terminate: int = None):
     y = []
     x = []
     try:

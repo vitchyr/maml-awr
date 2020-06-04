@@ -3,12 +3,15 @@
     "load_inner_buffer": true,
     "load_outer_buffer": true,
     "replay_buffer_size": -1,
+    "inner_buffer_size": -1,
     "outer_value_lr": 0.000001,
     "outer_policy_lr": 0.0001,
     "mt_policy_lr": 0.001,
     "mt_value_lr": 0.000001,
     "batch_size": 256,
     "inner_batch_size": 256,
-    "buffer_skip": 2,
+    "eval_batch_size": 256,
+    "buffer_skip": 7,
+    "inner_buffer_skip": 7,
     "multitask": true
 }

@@ -16,9 +16,9 @@ MACAW_PARAMS="config/alg/standard.json"
 
 ########################################################################
 
-NAME="macaw_vel_extreme"
-TASK_CONFIG="config/cheetah_vel/extreme_tasks_offline.json"
-./scripts/runner.sh $NAME $LOG_DIR $TASK_CONFIG $MACAW_PARAMS
+NAME="macaw_vel_sixteenth"
+TASK_CONFIG="config/cheetah_vel/sixteenth_tasks_offline.json"
+./scripts/runner.sh $NAME $LOG_DIR $TASK_CONFIG $MACAW_PARAMS &
 
 ########################################################################
 

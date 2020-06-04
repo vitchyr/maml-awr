@@ -1,0 +1,4 @@
+{
+    "eval_maml_steps": 20,
+    "advantage_head_coef": 0.0003
+}

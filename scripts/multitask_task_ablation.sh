@@ -18,7 +18,7 @@ MACAW_PARAMS="config/alg/multitask.json"
 
 NAME="multitask_vel_sixteenth"
 TASK_CONFIG="config/cheetah_vel/sixteenth_tasks_offline.json"
-./scripts/runner.sh $NAME $LOG_DIR $TASK_CONFIG $MACAW_PARAMS
+./scripts/runner.sh $NAME $LOG_DIR $TASK_CONFIG $MACAW_PARAMS &
 
 ########################################################################
 

@@ -1,0 +1,14 @@
+python -m vis.arch --name arch \
+       --dir_path log/NeurIPS_Final/macaw_dir4/tb/events.out.tfevents.1590728125.iris1.stanford.edu.42318.0 \
+       --vel_path log/NeurIPS_Final/macaw_vel4/tb/events.out.tfevents.1590728198.iris1.stanford.edu.42321.0 \
+       --walker_path log/NeurIPS_Final/macaw_walker4/tb/events.out.tfevents.1590728142.iris1.stanford.edu.42319.0 \
+       --ant_path log/NeurIPS_Final/macaw_ant4/tb/events.out.tfevents.1590728232.iris1.stanford.edu.42320.0 \
+       --maml_dir_path log/NeurIPS2/mamlawr_dir.1/tb/events.out.tfevents.1591142152.iris3.stanford.edu.16638.0 \
+       --maml_vel_path log/NeurIPS2/mamlawr_vel.1/tb/events.out.tfevents.1591142152.iris3.stanford.edu.16637.0 \
+       --maml_walker_path log/NeurIPS2/mamlawr_walker.1/tb/events.out.tfevents.1591142174.iris3.stanford.edu.16636.0 \
+       --maml_ant_path log/NeurIPS2/mamlawr_ant.1/tb/events.out.tfevents.1591142311.iris3.stanford.edu.16635.0 \
+       --wlinear_dir_path log/NeurIPS3/macaw_dir_nowlinear/tb/events.out.tfevents.1590817013.iris-ws-3.stanford.edu.432.0 \
+       --wlinear_vel_path log/NeurIPS3/macaw_vel_nowlinear/tb/events.out.tfevents.1590817013.iris-ws-3.stanford.edu.436.0 \
+       --wlinear_walker_path log/NeurIPS3/macaw_walker_nowlinear/tb/events.out.tfevents.1590817014.iris-ws-3.stanford.edu.427.0 \
+       --wlinear_ant_path log/NeurIPS3/macaw_ant_nowlinear/tb/events.out.tfevents.1590817077.iris-ws-3.stanford.edu.438.0 \
+       --terminate 200000

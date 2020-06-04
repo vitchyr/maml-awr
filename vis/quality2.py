@@ -47,7 +47,6 @@ def get_vals(path: str):
 
     return means, medians, stds, lowerq, upperq, mins, maxs
 
-
 def extract_macaw(path, terminate: int = None):
     y = []
     x = []
@@ -98,38 +97,31 @@ def run(args: argparse.Namespace):
     axes.spines['right'].set_visible(False)
     axes.spines['bottom'].set_visible(False)
     axes.spines['left'].set_visible(False)
+    axes2 = axes.twinx()
     
     color = next(axes._get_lines.prop_cycler)['color']
-    l1, = axes.plot(macaw_end_x, macaw_end_y, color=color, label='Good Data')
-    l2, = axes.plot(maml_end_x, maml_end_y, '--', color=color)
+    axes.plot(macaw_x, macaw_reward, color=color, label='MACAW')
+    axes2.plot(macaw_x, macaw_success, '--', color=color)
     color = next(axes._get_lines.prop_cycler)['color']
     color = next(axes._get_lines.prop_cycler)['color']
-    axes.plot(macaw_middle_x, macaw_middle_y, color=color, label='Medium Data')
-    axes.plot(maml_middle_x, maml_middle_y,  '--', color=color)
+    axes.plot(pearl_x, pearl_reward, color=color, label='')
+    axes2.plot(pearl_x, pearl_success,  '--', color=color)
     color = next(axes._get_lines.prop_cycler)['color']
-    axes.plot(macaw_start_x, macaw_start_y, color=color, label='Bad Data')
-    axes.plot(maml_start_x, maml_start_y,  '--', color=color)
-    #axes.set_xscale('log')
-    axes.set_title('Data Quality Ablation')
+    axes.plot(mt_x, mt_reward, color=color, label='Bad Data')
+    axes.plot(mt_x, mt_success,  '--', color=color)
+    axes.set_title('Meta-World ML45 Benchmark')
     axes.set_xlabel('Training Steps (thousands)')
     axes.set_ylabel('Reward')
-    leg1 = axes.legend(loc=4)
-    leg2 = axes.legend([l1, l2], ['MACAW', 'No Adv Head'], loc='lower center')
-    leg2.legendHandles[0].set_color('black')
-    leg2.legendHandles[1].set_color('black')
-    plt.gca().add_artist(leg1)
+    axes.legend(loc=4)
     plt.tight_layout()
     fig.savefig(args.name)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--start_path', type=str)
-    parser.add_argument('--middle_path', type=str)
-    parser.add_argument('--end_path', type=str)
-    parser.add_argument('--maml_start_path', type=str)
-    parser.add_argument('--maml_middle_path', type=str)
-    parser.add_argument('--maml_end_path', type=str)
+    parser.add_argument('--macaw_path', type=str)
+    parser.add_argument('--pearl_path', type=str)
+    parser.add_argument('--mt_path', type=str)
     parser.add_argument('--terminate', type=int, default=None)
     parser.add_argument('--name', type=str)
     run(parser.parse_args())
