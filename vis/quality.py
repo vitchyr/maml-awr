@@ -10,16 +10,16 @@ import re
 from scipy.ndimage.filters import gaussian_filter1d
 
 
-SMALL_SIZE = 14
-MEDIUM_SIZE = 16
-BIGGER_SIZE = 20
+SMALL_SIZE = 16
+MEDIUM_SIZE = 17
+BIGGER_SIZE = 24
 
 plt.rc('font', size=MEDIUM_SIZE)          # controls default text sizes
 #plt.rc('axes', titlesize=SMALL_SIZE)     # fontsize of the axes title
 #plt.rc('axes', labelsize=MEDIUM_SIZE)    # fontsize of the x and y labels
 #plt.rc('xtick', labelsize=SMALL_SIZE)    # fontsize of the tick labels
 #plt.rc('ytick', labelsize=SMALL_SIZE)    # fontsize of the tick labels
-#plt.rc('legend', fontsize=SMALL_SIZE)    # legend fontsize
+plt.rc('legend', fontsize=SMALL_SIZE)    # legend fontsize
 plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
 
 
@@ -100,17 +100,17 @@ def run(args: argparse.Namespace):
     axes.spines['left'].set_visible(False)
     
     color = next(axes._get_lines.prop_cycler)['color']
-    l1, = axes.plot(macaw_end_x, macaw_end_y, color=color, label='Good Data')
-    l2, = axes.plot(maml_end_x, maml_end_y, '--', color=color)
+    l1, = axes.plot(macaw_end_x, macaw_end_y, color=color, linewidth=3, label='Good Data')
+    l2, = axes.plot(maml_end_x, maml_end_y, '--', color=color, linewidth=3)
     color = next(axes._get_lines.prop_cycler)['color']
     color = next(axes._get_lines.prop_cycler)['color']
-    axes.plot(macaw_middle_x, macaw_middle_y, color=color, label='Medium Data')
-    axes.plot(maml_middle_x, maml_middle_y,  '--', color=color)
+    axes.plot(macaw_middle_x, macaw_middle_y, color=color, linewidth=3, label='Medium Data')
+    axes.plot(maml_middle_x, maml_middle_y,  '--', color=color, linewidth=3)
     color = next(axes._get_lines.prop_cycler)['color']
-    axes.plot(macaw_start_x, macaw_start_y, color=color, label='Bad Data')
-    axes.plot(maml_start_x, maml_start_y,  '--', color=color)
+    axes.plot(macaw_start_x, macaw_start_y, color=color, linewidth=3, label='Bad Data')
+    axes.plot(maml_start_x, maml_start_y,  '--', color=color, linewidth=3)
     #axes.set_xscale('log')
-    axes.set_title('Data Quality Ablation')
+    axes.set_title('Learning with Sub-Optimal Adaptation Data')
     axes.set_xlabel('Training Steps (thousands)')
     axes.set_ylabel('Reward')
     leg1 = axes.legend(loc=4)

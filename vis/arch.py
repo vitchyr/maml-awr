@@ -116,19 +116,19 @@ def run(args: argparse.Namespace):
     color3 = next(axes[0,0]._get_lines.prop_cycler)['color']
 
     axes[0,0].plot(macaw_dir_x, macaw_dir_y, color=color1, label='MACAW')
-    axes[0,0].plot(maml_dir_x, maml_dir_y, color=color2, label='No Adv Head')
+    #axes[0,0].plot(maml_dir_x, maml_dir_y, color=color2, label='No Adv Head')
     axes[0,0].plot(wlinear_dir_x, wlinear_dir_y, color=color3, label='No Weight Transf.')
 
     axes[0,1].plot(macaw_vel_x, macaw_vel_y, color=color1, label='MACAW')
-    axes[0,1].plot(maml_vel_x, maml_vel_y, color=color2, label='No Adv Head')
+    #axes[0,1].plot(maml_vel_x, maml_vel_y, color=color2, label='No Adv Head')
     axes[0,1].plot(wlinear_vel_x, wlinear_vel_y, color=color3, label='No Weight Transf.')
 
     axes[1,0].plot(macaw_walker_x, macaw_walker_y, color=color1, label='MACAW')
-    axes[1,0].plot(maml_walker_x, maml_walker_y, color=color2, label='No Adv Head')
+    #axes[1,0].plot(maml_walker_x, maml_walker_y, color=color2, label='No Adv Head')
     axes[1,0].plot(wlinear_walker_x, wlinear_walker_y, color=color3, label='No Weight Transf.')
 
     axes[1,1].plot(macaw_ant_x, macaw_ant_y, color=color1, label='MACAW')
-    axes[1,1].plot(maml_ant_x, maml_ant_y, color=color2, label='No Adv Head')
+    #axes[1,1].plot(maml_ant_x, maml_ant_y, color=color2, label='No Adv Head')
     axes[1,1].plot(wlinear_ant_x, wlinear_ant_y, color=color3, label='No Weight Transf.')
 
     axes[0,0].set_title('Cheetah-Direction')
@@ -140,7 +140,7 @@ def run(args: argparse.Namespace):
             a.set_xlabel('Training Steps (thousands)')
             a.set_ylabel('Reward')
     axes[0,0].legend(loc=4)
-    plt.suptitle('Ablating Architectural Components of MACAW')
+    plt.suptitle('Ablating the Weight Transformation in MACAW')
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     fig.savefig(args.name)
 

@@ -1,14 +1,2 @@
-python -m vis.mujoco_neurips \
-       --macaw_dir_path log/NeurIPS2/macaw_dir4/tb/events.out.tfevents.1590728125.iris1.stanford.edu.42318.0 \
-       --macaw_vel_path log/NeurIPS2/macaw_vel4/tb/events.out.tfevents.1590728198.iris1.stanford.edu.42321.0 \
-       --macaw_walker_path log/NeurIPS2/macaw_walker4/tb/events.out.tfevents.1590728142.iris1.stanford.edu.42319.0 \
-       --macaw_ant_path log/NeurIPS2/macaw_ant4/tb/events.out.tfevents.1590728232.iris1.stanford.edu.42320.0 \
-       --pearl_dir_path /iris/u/rafailov/SCRATCH/tensorboard/cheetah_dir2/events.out.tfevents.1586951587.iris-hp-z8.stanford.edu \
-       --pearl_vel_path /iris/u/rafailov/SCRATCH/tensorboard/cheetah_vel/events.out.tfevents.1586795651.iris1.stanford.edu \
-       --pearl_walker_path /iris/u/rafailov/SCRATCH/tensorboard/walker_params_2/events.out.tfevents.1586567879.iris1.stanford.edu \
-       --pearl_ant_path /iris/u/rafailov/SCRATCH/tensorboard/ant_dir_final_FIXED/events.out.tfevents.1590552763.iris2.stanford.edu \
-       --mt_dir_path vis/tb_dir.npy \
-       --mt_vel_path vis/tb_vel.npy \
-       --mt_walker_path vis/tb_walker.npy \
-       --mt_ant_path vis/tb_ant.npy \
-       --terminate 10000000
+python -m vis.mujoco_neurips        --macaw_dir_path log/NeurIPS2/macaw_dir4/tb/events.out.tfevents.1590728125.iris1.stanford.edu.42318.0        --macaw_vel_path log/NeurIPS2/macaw_vel4/tb/events.out.tfevents.1590728198.iris1.stanford.edu.42321.0        --macaw_walker_path log/NeurIPS2/macaw_walker4/tb/events.out.tfevents.1590728142.iris1.stanford.edu.42319.0        --macaw_ant_path log/NeurIPS2/macaw_ant4/tb/events.out.tfevents.1590728232.iris1.stanford.edu.42320.0        --pearl_dir_path /iris/u/rafailov/SCRATCH/tensorboard/cheetah_dir2/events.out.tfevents.1586951587.iris-hp-z8.stanford.edu        --pearl_vel_path /iris/u/rafailov/SCRATCH/tensorboard/cheetah_vel/events.out.tfevents.1586795651.iris1.stanford.edu        --pearl_walker_path /iris/u/rafailov/SCRATCH/tensorboard/walker_params_2/events.out.tfevents.1586567879.iris1.stanford.edu        --pearl_ant_path /iris/u/rafailov/SCRATCH/tensorboard/ant_dir_final_FIXED/events.out.tfevents.1590552763.iris2.stanford.edu        --mt_dir_path vis/tb_dir.npy        --mt_vel_path vis/tb_vel.npy        --mt_walker_path vis/tb_walker2.npy        --mt_ant_path vis/tb_ant.npy
+

@@ -52,7 +52,9 @@ def load_mt(path):
     x = np.load(path, allow_pickle=True)[()]['x']
     y = np.load(path, allow_pickle=True)[()]['y']
 
-    return x, y
+    y = gaussian_filter1d(y, sigma=3)
+    return trim(x,y,2000)
+    #return x, y
 
 
 def extract_macaw(path, terminate: int = None, prefix: str = None):
@@ -102,15 +104,15 @@ def extract_macaw(path, terminate: int = None, prefix: str = None):
     if d is not None:
         x = np.sort(list(d.keys()))
         y = np.array([np.mean(d[x_]) for x_ in x])
-    y = gaussian_filter1d(y, sigma=2)        
-    return np.array(x).astype(np.float32), np.array(y)
-
+    y = gaussian_filter1d(y, sigma=4)        
+    x, y = np.array(x).astype(np.float32), np.array(y)
+    return trim(x,y,2000)
 
 def trim(x, y, val):
-    v = np.where(np.squeeze(x) > val)[0]
+    v = np.where(np.squeeze(x) >= val)[0]
     if len(v) > 0:
         v = v[0]
-        return x[:v], y[:v]
+        return x[v:], y[v:]
     else:
         return x, y
 
@@ -134,39 +136,48 @@ def run(args: argparse.Namespace):
     h = w/2
     fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(w,h))
 
-    axes[0,0].plot(dir_macaw_x, dir_macaw_y)
-    axes[0,0].plot(dir_mt_x, dir_mt_y)
-    color = next(axes[0,0]._get_lines.prop_cycler)['color']
-    axes[0,0].plot(dir_pearl_x, dir_pearl_y)
+    color1 = next(axes[0,0]._get_lines.prop_cycler)['color']
+    color2 = next(axes[0,0]._get_lines.prop_cycler)['color']
+    color3 = next(axes[0,0]._get_lines.prop_cycler)['color']
+    color3 = next(axes[0,0]._get_lines.prop_cycler)['color']
+
+    axes[0,0].plot(dir_macaw_x, dir_macaw_y, color=color1, linewidth=2)
+    axes[0,0].plot([dir_macaw_x[-1], dir_pearl_x[-1]], [dir_macaw_y[-1]] * 2, color=color1, linewidth=2)
+    axes[0,0].plot(dir_mt_x, dir_mt_y, linewidth=2, color=color2)
+    axes[0,0].plot([dir_mt_x[-1], dir_pearl_x[-1]], [dir_mt_y[-1]] * 2, color=color2, linewidth=2)
+    axes[0,0].plot(dir_pearl_x, dir_pearl_y, linewidth=2, color=color3)
     axes[0,0].set_title('Cheetah-Direction')
     axes[0,0].set_xlabel('Training Steps')
     axes[0,0].set_ylabel('Reward')
     
-    axes[0,1].plot(vel_macaw_x, vel_macaw_y)
-    axes[0,1].plot(vel_mt_x, vel_mt_y)
-    color = next(axes[0,1]._get_lines.prop_cycler)['color']
-    axes[0,1].plot(vel_pearl_x, vel_pearl_y)
+    axes[0,1].plot(vel_macaw_x, vel_macaw_y, linewidth=2, color=color1)
+    axes[0,1].plot([vel_macaw_x[-1], vel_pearl_x[-1]], [vel_macaw_y[-1]] * 2, color=color1, linewidth=2)
+    axes[0,1].plot(vel_mt_x, vel_mt_y, linewidth=2, color=color2)
+    axes[0,1].plot([vel_mt_x[-1], vel_pearl_x[-1]], [vel_mt_y[-1]] * 2, color=color2, linewidth=2)
+    axes[0,1].plot(vel_pearl_x, vel_pearl_y, linewidth=2, color=color3)
     axes[0,1].set_title('Cheetah-Velocity')
     axes[0,1].set_xlabel('Training Steps')
     axes[0,1].set_ylabel('Reward')
 
-    axes[1,0].plot(walker_macaw_x, walker_macaw_y, label='MACAW')
-    axes[1,0].plot(walker_mt_x, walker_mt_y, label='MT + Fine tune')
-    color = next(axes[1,0]._get_lines.prop_cycler)['color']
-    axes[1,0].plot(walker_pearl_x, walker_pearl_y, label='PEARL')
+    axes[1,0].plot(walker_macaw_x, walker_macaw_y, linewidth=2, label='MACAW', color=color1)
+    axes[1,0].plot([walker_macaw_x[-1], walker_pearl_x[-1]], [walker_macaw_y[-1]] * 2, linewidth=2, color=color1)
+    axes[1,0].plot(walker_mt_x, walker_mt_y, linewidth=2, label='MT + fine tune', color=color2)
+    axes[1,0].plot([walker_mt_x[-1], walker_pearl_x[-1]], [walker_mt_y[-1]] * 2, linewidth=2, color=color2)
+    axes[1,0].plot(walker_pearl_x, walker_pearl_y, linewidth=2, label='PEARL', color=color3)
     axes[1,0].set_title('Walker-Params')
     axes[1,0].set_xlabel('Training Steps')
     axes[1,0].set_ylabel('Reward')
-    axes[1,0].legend(loc=2)
+    #axes[1,0].legend(loc=2)
     
-    axes[1,1].plot(ant_macaw_x, ant_macaw_y)
-    axes[1,1].plot(ant_mt_x, ant_mt_y)
-    color = next(axes[1,1]._get_lines.prop_cycler)['color']
-    axes[1,1].plot(ant_pearl_x, ant_pearl_y)
+    axes[1,1].plot(ant_macaw_x, ant_macaw_y, linewidth=2, label='MACAW', color=color1)
+    axes[1,1].plot([ant_macaw_x[-1], ant_pearl_x[-1]], [ant_macaw_y[-1]] * 2, linewidth=2, color=color1)
+    axes[1,1].plot(ant_mt_x, ant_mt_y, linewidth=2, label='MT + fine tune', color=color2)
+    axes[1,1].plot([ant_mt_x[-1], ant_pearl_x[-1]], [ant_mt_y[-1]] * 2, linewidth=2, color=color2)
+    axes[1,1].plot(ant_pearl_x, ant_pearl_y, linewidth=2, label='PEARL', color=color3)
     axes[1,1].set_title('Ant-Direction')
     axes[1,1].set_xlabel('Training Steps')
     axes[1,1].set_ylabel('Reward')
-
+    axes[1,1].legend(loc='lower left', bbox_to_anchor=(0,0.13))
     for ax in axes:
         for a in ax:
             a.set_xscale('log')
