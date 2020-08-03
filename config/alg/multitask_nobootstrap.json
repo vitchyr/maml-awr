@@ -12,7 +12,10 @@
     "eval_batch_size": 256,
     "buffer_skip": 1,
     "multitask": true,
+    "net_depth": 3,
+    "net_width": 100,
     "task_batch_size": 5,
     "vis_interval": 1000,
-    "no_bootstrap": true
+    "no_bootstrap": true,
+    "instances": 4
 }

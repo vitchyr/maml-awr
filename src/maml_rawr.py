@@ -179,19 +179,12 @@ class MAMLRAWR(object):
                                                    stream_to_disk=args.from_disk)
                                    for i, task in enumerate(task_config.train_tasks)]
 
-        #self._full_buffers = [NewReplayBuffer(args.replay_buffer_size, self._observation_dim, env_action_dim(self._env),
-        #                                   discount_factor=discount_factor, immutable=args.offline or args.offline_outer, silent=silent)
-        #                      for i, task in enumerate(task_config.train_tasks)]
-
         self._training_iterations = training_iterations
-        if not self._args.multitask:
-            #self._inner_policy_lr, self._inner_value_lr = args.inner_policy_lr / args.maml_steps ** 2, args.inner_value_lr / args.maml_steps ** 2
-            self._inner_policy_lr, self._inner_value_lr = args.inner_policy_lr, args.inner_value_lr
-        else:
-            self._inner_policy_lr, self._inner_value_lr = 0, 0
         if self._policy_lrs is None:
-            self._policy_lrs = [torch.nn.Parameter(torch.tensor(float(np.log(self._inner_policy_lr)) if self._inner_policy_lr > 0 else 10000.).to(args.device)) for p in self._adaptation_policy.adaptation_parameters()]
-            self._value_lrs = [torch.nn.Parameter(torch.tensor(float(np.log(self._inner_value_lr)) if self._inner_value_lr > 0 else 10000.).to(args.device)) for p in self._value_function.adaptation_parameters()]
+            self._policy_lrs = [torch.nn.Parameter(torch.tensor(float(np.log(self._args.inner_policy_lr)) if not self._args.multitask else 10000.).to(args.device))
+                                for p in self._adaptation_policy.adaptation_parameters()]
+            self._value_lrs = [torch.nn.Parameter(torch.tensor(float(np.log(self._args.inner_value_lr)) if not self._args.multitask else 10000.).to(args.device))
+                               for p in self._value_function.adaptation_parameters()]
             if args.advantage_head_coef is not None:
                 self._adv_coef = torch.nn.Parameter(torch.tensor(float(np.log(args.advantage_head_coef))).to(args.device))
                                                                  
@@ -435,8 +428,8 @@ class MAMLRAWR(object):
 
             vf = deepcopy(self._value_function)
             ap = deepcopy(self._adaptation_policy)
-            opt = O.Adam(vf.parameters(), lr=self._args.mt_value_lr)
-            ap_opt = O.Adam(ap.parameters(), lr=self._args.mt_policy_lr)
+            opt = O.Adam(vf.parameters(), lr=self._args.inner_value_lr)
+            ap_opt = O.Adam(ap.parameters(), lr=self._args.inner_policy_lr)
             batch = torch.tensor(test_buffer.sample(self._args.eval_batch_size), requires_grad=False).to(self._device)
             for step in range(max(log_steps)):
                 vf_loss, _, _, _ = self.value_function_loss_on_batch(vf, batch, task_idx=None, inner=True)
@@ -581,9 +574,9 @@ class MAMLRAWR(object):
 
             # Sample J training batches for independent adaptations [L7]
             value_batch = torch.tensor(inner_buffer.sample(self._args.inner_batch_size, contiguous=self._args.contiguous), requires_grad=False).to(self._device)
-            policy_batch = value_batch#torch.tensor(inner_buffer.sample(self._args.inner_batch_size), requires_grad=False).to(self._device)
+            policy_batch = value_batch
             meta_batch = torch.tensor(outer_buffer.sample(self._args.batch_size), requires_grad=False).to(self._device)
-            policy_meta_batch = meta_batch#torch.tensor(outer_buffer.sample(self._args.batch_size), requires_grad=False).to(self._device)
+            policy_meta_batch = meta_batch
 
             inner_q_losses = []
             meta_q_losses = []
@@ -637,14 +630,13 @@ class MAMLRAWR(object):
                         outer_buffer.add_trajectory(adapted_trajectory)
                 else:
                     success = False
-
             else:
                 vf = self._value_function
                 vf.train()
                 vf_target = deepcopy(vf)
                 opt = O.SGD([{'params': p, 'lr': None} for p in vf.adaptation_parameters()])
                 with higher.innerloop_ctx(vf, opt, override={'lr': [F.softplus(l) for l in self._value_lrs]}, copy_initial_weights=False) as (f_value_function, diff_value_opt):
-                    if self._inner_value_lr > 0 and len(self._env.tasks) > 1:
+                    if len(self._env.tasks) > 1:
                         for step in range(self._maml_steps):
                             DEBUG(f'################# VALUE STEP {step} ###################', self._args.debug)
                             sub_batch = value_batch.view(self._args.maml_steps, value_batch.shape[0] // self._args.maml_steps, *value_batch.shape[1:])[step]
@@ -681,7 +673,7 @@ class MAMLRAWR(object):
                     opt = O.SGD([{'params': p, 'lr': None} for p in self._adaptation_policy.adaptation_parameters()])
                     self._adaptation_policy.train()
                     with higher.innerloop_ctx(self._adaptation_policy, opt, override={'lr': [F.softplus(l) for l in self._policy_lrs]}, copy_initial_weights=False) as (f_adaptation_policy, diff_policy_opt):
-                        if self._inner_policy_lr > 0 and len(self._env.tasks) > 1:
+                        if len(self._env.tasks) > 1:
                             for step in range(self._maml_steps):
                                 DEBUG(f'################# POLICY STEP {step} ###################', self._args.debug)
                                 sub_batch = policy_batch.view(self._args.maml_steps, policy_batch.shape[0] // self._args.maml_steps, *policy_batch.shape[1:])[step]
