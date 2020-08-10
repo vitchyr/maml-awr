@@ -10,6 +10,7 @@ import os
 import json
 import pickle
 from torch.utils.tensorboard import SummaryWriter
+import random
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -79,12 +80,14 @@ class TD3Context(object):
                  context_hidden,
                  training_iterations=1000000,
                  context_layers=2,
-                 discount=0.9,
+                 discount=0.99,
                  tau=0.005,
                  policy_noise=0.,
                  noise_clip=0.5,
                  policy_freq=1,
-                 silent=False
+                 silent=False,
+                 mql_steps1=5,
+                 mql_steps2=100
     ):
         self._args = args
         self.task_config = task_config
@@ -154,13 +157,17 @@ class TD3Context(object):
         self._env_seeds = np.random.randint(1e10, size=(int(1e7),))
         self._rollout_counter = 0
         self._name = name
-
+        self._mql_steps1 = mql_steps1
+        self._mql_steps2 = mql_steps2
 
     def select_action(self, state):
         state = torch.FloatTensor(state.reshape(1, -1)).to(device)
         return self.actor(state).cpu().data.numpy().flatten()
 
-    def _rollout_policy(self, env, context):
+    def _rollout_policy(self, env, context, policy=None):
+        if policy is None:
+            policy = self.actor
+            
         env.seed(self._env_seeds[self._rollout_counter].item())
         self._rollout_counter += 1
         trajectory = []
@@ -170,11 +177,11 @@ class TD3Context(object):
         episode_t = 0
 
         success = False
-        self.actor.eval()
+        policy.eval()
         while not done:
             with torch.no_grad():
                 pyt_state = torch.tensor(state, device=self._args.device).unsqueeze(0).float()
-                action = self.actor(pyt_state, context).squeeze().detach().cpu().numpy()
+                action = policy(pyt_state, context).squeeze().detach().cpu().numpy()
 
             next_state, reward, done, info_dict = env.step(action)
             
@@ -187,13 +194,15 @@ class TD3Context(object):
             episode_t += 1
             if episode_t >= env._max_episode_steps or done:
                 break
-        self.actor.train()
+        policy.train()
         return trajectory, total_reward, success
 
     def eval(self, writer):
-        results = []
+        td3_results, mql_results = [], []
         for i, (test_task_idx, test_buffer) in enumerate(zip(self.task_config.test_tasks, self._test_buffers)):
             batch = test_buffer.sample(self._args.batch_size, return_dict=True)
+            other_batches = [buf.sample(self._args.batch_size, return_dict=True) for buf in self._inner_buffers]
+            
             self._env.set_task_idx(test_task_idx)
 
             state, action, next_state, reward = (batch['obs'],
@@ -201,16 +210,94 @@ class TD3Context(object):
                                                  batch['next_obs'],
                                                  batch['rewards'])
             
-            context_input = torch.tensor(np.concatenate((state, action, next_state, reward), -1)).to(self._args.device)
-            context_seq, h_n = self.context_encoder(context_input.unsqueeze(1), self.c0)
-            context = h_n[-1]
+            with torch.no_grad():
+                context_input = torch.tensor(np.concatenate((state, action, next_state, reward), -1)).to(self._args.device)
+                context_seq, h_n = self.context_encoder(context_input.unsqueeze(1), self.c0)
+                context = h_n[-1]
+                all_test_context = context_seq.squeeze(1)
+                all_other_context = []
+                for batch_ in other_batches:
+                    state_, action_, next_state_, reward_ = (batch_['obs'],
+                                                             batch_['actions'],
+                                                             batch_['next_obs'],
+                                                             batch_['rewards'])
+                    
+                    context_input_ = torch.tensor(np.concatenate((state_, action_, next_state_, reward_), -1)).to(self._args.device)
+                    other_context, _ = self.context_encoder(context_input.unsqueeze(1), self.c0)
+                    other_context = other_context.squeeze(1)
+                    all_other_context.append(other_context)
+                all_other_context = torch.cat(all_other_context)
+                all_other_context = all_other_context[torch.randperm(all_other_context.shape[0], device=self._args.device)[:self._args.batch_size]]
 
+                labels = np.concatenate((-np.ones((self._args.batch_size)),
+                                         np.ones((self._args.batch_size))))
+                X = torch.cat((all_test_context, all_other_context)).cpu().numpy()
+                w = cp.Variable((all_test_context.shape[-1]))
+
+                obj = cp.Minimize(cp.sum(cp.logistic(cp.neg(cp.multiply(labels, X @ w)))))
+                prob = cp.Problem(obj)
+                sol = prob.solve()
+
+                w_ = w.value
+                
             traj, reward, success = self._rollout_policy(self._env, context)
-            results.append({'reward': reward, 'success': success, 'task': test_task_idx})
-            writer.add_scalar(f'Eval_Reward/Task_{test_task_idx}', reward, self.total_it)
-            writer.add_scalar(f'Eval_Success/Task_{test_task_idx}', success, self.total_it)
+            td3_results.append({'reward': reward, 'success': success, 'task': test_task_idx})
+            writer.add_scalar(f'TD3_Reward/Task_{test_task_idx}', reward, self.total_it)
+            writer.add_scalar(f'TD3_Success/Task_{test_task_idx}', success, self.total_it)
 
-        return results
+            actor = copy.deepcopy(self.actor)
+            critic_target = copy.deepcopy(self.critic_target)
+            critic = copy.deepcopy(self.critic)
+            actor_optimizer = torch.optim.Adam(actor.parameters(), lr=3e-4)
+            critic_optimizer = torch.optim.Adam(critic.parameters(), lr=3e-4)
+
+            for step in range(self._mql_steps1 + self._mql_steps2):
+                if step >= self._mql_steps1:
+                    # re-assign state, action, next_state, reward to use data from train buffers
+                    # use w_ to assign weights
+                    # also add regularization to theta
+
+
+
+                    
+                with torch.no_grad():
+                    next_action = actor(next_state, target_context)
+                    # Compute the target Q value
+                    target_Q1, target_Q2 = critic_target(next_state, next_action, target_context)
+                    target_Q = torch.min(target_Q1, target_Q2)
+                    target_Q = reward + not_done * self.discount * target_Q
+
+                # Get current Q estimates
+                current_Q1, current_Q2 = critic(state, action, train_context)
+
+                # Compute critic loss
+                critic_loss = F.mse_loss(current_Q1, target_Q) + F.mse_loss(
+                    current_Q2, target_Q)
+
+                # Optimize the critic
+                critic_optimizer.zero_grad()
+                critic_loss.backward()
+                critic_optimizer.step()
+
+                # Compute actor losse
+                actor_loss = -critic.Q1(state, actor(state, train_context), train_context).mean()
+
+                # Optimize the actor
+                actor_optimizer.zero_grad()
+                actor_loss.backward()
+                actor_optimizer.step()
+
+                for param, target_param in zip(critic.parameters(),
+                                               critic_target.parameters()):
+                    target_param.data.copy_(self.tau * param.data +
+                                            (1 - self.tau) * target_param.data)
+
+            traj, reward, success = self._rollout_policy(self._env, context, policy=actor)
+            mql_results.append({'reward': reward, 'success': success, 'task': test_task_idx})
+            writer.add_scalar(f'MQL_Reward/Task_{test_task_idx}', reward, self.total_it)
+            writer.add_scalar(f'MQL_Success/Task_{test_task_idx}', success, self.total_it)
+
+        return td3_results, mql_results
     
     def train(self):
         batch_size = self._args.batch_size
@@ -284,13 +371,7 @@ class TD3Context(object):
 
                 if self.total_it % 2 == 0:
                     with torch.no_grad():
-                        # Select action according to policy and add clipped noise
-                        noise = (torch.randn_like(action) * self.policy_noise).clamp(
-                            -self.noise_clip, self.noise_clip)
-
-                        next_action = (self.actor(next_state, target_context) + noise).clamp(
-                            -self.max_action, self.max_action)
-
+                        next_action = self.actor(next_state, target_context)
                         # Compute the target Q value
                         target_Q1, target_Q2 = self.critic_target(next_state, next_action, target_context)
                         target_Q = torch.min(target_Q1, target_Q2)
@@ -325,14 +406,20 @@ class TD3Context(object):
             if len(train_results):
                 train_reward = sum([r['reward'] for r in train_results]) / len(train_results)
                 summary_writer.add_scalar(f'Train_Reward/Average', train_reward, self.total_it)
-                print('Avg Train Reward: {train_reward}')
+                print(f'Avg Train Reward: {train_reward}')
 
             if self.total_it % self._args.vis_interval == 0:
-                results = self.eval(summary_writer)
-                test_reward = sum([r['reward'] for r in test_results]) / len(test_results)
-                for r in results:
-                    print(f"Test Task {r['task']} Reward: {r['reward']}")
-                print('Avg Test Reward: {test_reward}')
+                td3_results, mql_results = self.eval(summary_writer)
+                td3_reward = sum([r['reward'] for r in td3_results]) / len(td3_results)
+                mql_reward = sum([r['reward'] for r in mql_results]) / len(mql_results)
+
+                summary_writer.add_scalar(f'TD3_Reward/Average', td3_reward, self.total_it)
+                summary_writer.add_scalar(f'MQL_Reward/Average', mql_reward, self.total_it)
+
+                for td3, mql in zip(td3_results, mql_results):
+                    print(f"Test Task {td3['task']} TD3: {td3['reward']} MQL: {mql['reward']}")
+                print(f'Avg TD3 Reward: {td3_reward}')
+                print(f'Avg MQL Reward: {mql_reward}')
 
             self.context_optimizer.step()
             self.context_optimizer.zero_grad()

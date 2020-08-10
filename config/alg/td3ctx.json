@@ -1,4 +1,6 @@
 {
+    "gradient_steps_per_iteration": 100,
+    "vis_interval": 500,
     "offline": true,
     "load_inner_buffer": true,
     "load_outer_buffer": true,
@@ -11,8 +13,8 @@
     "batch_size": 256,
     "inner_batch_size": 256,
     "eval_batch_size": 256,
-    "buffer_skip": 1,
-    "inner_buffer_skip": 1,
+    "buffer_skip": 7,
+    "inner_buffer_skip": 7,
     "net_depth": 3,
     "net_width": 100,
     "no_bootstrap": true,
