@@ -79,7 +79,7 @@ class TD3Context(object):
                  context_hidden,
                  training_iterations=1000000,
                  context_layers=2,
-                 discount=0.99,
+                 discount=0.9,
                  tau=0.005,
                  policy_noise=0.,
                  noise_clip=0.5,
@@ -160,7 +160,7 @@ class TD3Context(object):
         state = torch.FloatTensor(state.reshape(1, -1)).to(device)
         return self.actor(state).cpu().data.numpy().flatten()
 
-    def _rollout_policy(self, env):
+    def _rollout_policy(self, env, context):
         env.seed(self._env_seeds[self._rollout_counter].item())
         self._rollout_counter += 1
         trajectory = []
@@ -169,8 +169,6 @@ class TD3Context(object):
         total_reward = 0
         episode_t = 0
 
-        context = self.c0[-1]
-        hidden = self.c0
         success = False
         self.actor.eval()
         while not done:
@@ -179,16 +177,6 @@ class TD3Context(object):
                 action = self.actor(pyt_state, context).squeeze().detach().cpu().numpy()
 
             next_state, reward, done, info_dict = env.step(action)
-
-            with torch.no_grad():
-                context_input = torch.cat((
-                    torch.tensor(state),
-                    torch.tensor(action),
-                    torch.tensor(next_state),
-                    torch.tensor(reward).view(1).float()
-                )).to(self._args.device)
-                _, hidden = self.context_encoder(context_input.view(1,1,-1), hidden)
-                context = hidden[-1]
             
             if 'success' in info_dict and info_dict['success']:
                 success = True
@@ -202,11 +190,27 @@ class TD3Context(object):
         self.actor.train()
         return trajectory, total_reward, success
 
-    def eval(self):
+    def eval(self, writer):
+        results = []
         for i, (test_task_idx, test_buffer) in enumerate(zip(self.task_config.test_tasks, self._test_buffers)):
-            batch = test_buffer.sample(self._args.batch_size)
+            batch = test_buffer.sample(self._args.batch_size, return_dict=True)
+            self._env.set_task_idx(test_task_idx)
 
-        
+            state, action, next_state, reward = (batch['obs'],
+                                                 batch['actions'],
+                                                 batch['next_obs'],
+                                                 batch['rewards'])
+            
+            context_input = torch.tensor(np.concatenate((state, action, next_state, reward), -1)).to(self._args.device)
+            context_seq, h_n = self.context_encoder(context_input.unsqueeze(1), self.c0)
+            context = h_n[-1]
+
+            traj, reward, success = self._rollout_policy(self._env, context)
+            results.append({'reward': reward, 'success': success, 'task': test_task_idx})
+            writer.add_scalar(f'Eval_Reward/Task_{test_task_idx}', reward, self.total_it)
+            writer.add_scalar(f'Eval_Success/Task_{test_task_idx}', success, self.total_it)
+
+        return results
     
     def train(self):
         batch_size = self._args.batch_size
@@ -247,6 +251,7 @@ class TD3Context(object):
                 tasks = self.task_config.train_tasks
             
             self.total_it += 1
+            train_results = []
             for i, (train_task_idx, inner_buffer, outer_buffer) in enumerate(zip(self.task_config.train_tasks, self._inner_buffers, self._outer_buffers)):
                 # Only train on the randomly selected tasks for this iteration
                 if train_task_idx not in tasks:
@@ -264,11 +269,9 @@ class TD3Context(object):
 
                 context_input = torch.tensor(np.concatenate((state, action, next_state, reward), -1)).to(self._args.device)
                 context_seq, h_n = self.context_encoder(context_input.unsqueeze(1), self.c0)
-                context_seq = context_seq.squeeze(1)
-                context = torch.cat((self.c0[-1], context_seq))
-                train_context = context[:-1]
-                target_context = context[1:]
-
+                context = h_n[-1]
+                train_context = target_context = context.repeat(batch_size, 1)
+                
                 batch = outer_buffer.sample(batch_size, return_dict=True)
                 state, action, next_state, reward = (batch['obs'],
                                                      batch['actions'],
@@ -279,65 +282,81 @@ class TD3Context(object):
                 next_state = torch.tensor(next_state).to(self._args.device)
                 reward = torch.tensor(reward).to(self._args.device)
 
-                with torch.no_grad():
-                    # Select action according to policy and add clipped noise
-                    noise = (torch.randn_like(action) * self.policy_noise).clamp(
-                        -self.noise_clip, self.noise_clip)
+                if self.total_it % 2 == 0:
+                    with torch.no_grad():
+                        # Select action according to policy and add clipped noise
+                        noise = (torch.randn_like(action) * self.policy_noise).clamp(
+                            -self.noise_clip, self.noise_clip)
 
-                    next_action = (self.actor_target(next_state, target_context) + noise).clamp(
-                        -self.max_action, self.max_action)
+                        next_action = (self.actor(next_state, target_context) + noise).clamp(
+                            -self.max_action, self.max_action)
 
-                    # Compute the target Q value
-                    target_Q1, target_Q2 = self.critic_target(next_state, next_action, target_context)
-                    target_Q = torch.min(target_Q1, target_Q2)
-                    target_Q = reward + not_done * self.discount * target_Q
+                        # Compute the target Q value
+                        target_Q1, target_Q2 = self.critic_target(next_state, next_action, target_context)
+                        target_Q = torch.min(target_Q1, target_Q2)
+                        target_Q = reward + not_done * self.discount * target_Q
 
-                # Get current Q estimates
-                current_Q1, current_Q2 = self.critic(state, action, train_context)
-                summary_writer.add_scalar(f'Q1/Task_{train_task_idx}', current_Q1.mean(), self.total_it)
-                summary_writer.add_scalar(f'Q2/Task_{train_task_idx}', current_Q2.mean(), self.total_it)
-                
-                # Compute critic loss
-                critic_loss = F.mse_loss(current_Q1, target_Q) + F.mse_loss(
-                    current_Q2, target_Q)
-                summary_writer.add_scalar(f'Critic_Loss/Task_{train_task_idx}', critic_loss.item(), self.total_it)
+                    # Get current Q estimates
+                    current_Q1, current_Q2 = self.critic(state, action, train_context)
+                    summary_writer.add_scalar(f'Q1/Task_{train_task_idx}', current_Q1.mean(), self.total_it)
+                    summary_writer.add_scalar(f'Q2/Task_{train_task_idx}', current_Q2.mean(), self.total_it)
 
-                # Optimize the critic
-                critic_loss.backward(retain_graph=True)
+                    # Compute critic loss
+                    critic_loss = F.mse_loss(current_Q1, target_Q) + F.mse_loss(
+                        current_Q2, target_Q)
+                    summary_writer.add_scalar(f'Critic_Loss/Task_{train_task_idx}', critic_loss.item(), self.total_it)
 
-                # Delayed policy updates
-                if self.total_it % self.policy_freq == 0:
+                    # Optimize the critic
+                    critic_loss.backward(retain_graph=True)
+                else:
                     # Compute actor losse
                     actor_loss = -self.critic.Q1(state, self.actor(state, train_context), train_context).mean()
                     summary_writer.add_scalar(f'Actor_Loss/Task_{train_task_idx}', actor_loss.item(), self.total_it)
-
+                    
                     # Optimize the actor
                     actor_loss.backward()
 
-                    # Update the frozen target models
-                    for param, target_param in zip(self.critic.parameters(),
-                                                   self.critic_target.parameters()):
-                        target_param.data.copy_(self.tau * param.data +
-                                                (1 - self.tau) * target_param.data)
-
-                    for param, target_param in zip(self.actor.parameters(),
-                                                   self.actor_target.parameters()):
-                        target_param.data.copy_(self.tau * param.data +
-                                                (1 - self.tau) * target_param.data)
-                        
                 if self.total_it % self._args.gradient_steps_per_iteration == 0:
-                    trajectory, reward, success = self._rollout_policy(self._env)
+                    trajectory, reward, success = self._rollout_policy(self._env, context)
+                    train_results.append({'reward': reward, 'success': success, 'task': train_task_idx})
                     summary_writer.add_scalar(f'Train_Reward/Task_{train_task_idx}', reward, self.total_it)
                     print(f'Task {train_task_idx} Reward: {reward}')
 
-            self.critic_optimizer.step()
-            self.context_optimizer.step()
-            self.actor_optimizer.step()
+            if len(train_results):
+                train_reward = sum([r['reward'] for r in train_results]) / len(train_results)
+                summary_writer.add_scalar(f'Train_Reward/Average', train_reward, self.total_it)
+                print('Avg Train Reward: {train_reward}')
 
-            self.critic_optimizer.zero_grad()
+            if self.total_it % self._args.vis_interval == 0:
+                results = self.eval(summary_writer)
+                test_reward = sum([r['reward'] for r in test_results]) / len(test_results)
+                for r in results:
+                    print(f"Test Task {r['task']} Reward: {r['reward']}")
+                print('Avg Test Reward: {test_reward}')
+
+            self.context_optimizer.step()
             self.context_optimizer.zero_grad()
+
+            if self.total_it % 2 == 0:
+                self.critic_optimizer.step()
+            else:
+                self.actor_optimizer.step()
+
             self.actor_optimizer.zero_grad()
+            self.critic_optimizer.zero_grad()
+
+            # Update the frozen target models
+            for param, target_param in zip(self.critic.parameters(),
+                                           self.critic_target.parameters()):
+                target_param.data.copy_(self.tau * param.data +
+                                        (1 - self.tau) * target_param.data)
                 
+            for param, target_param in zip(self.actor.parameters(),
+                                           self.actor_target.parameters()):
+                target_param.data.copy_(self.tau * param.data +
+                                        (1 - self.tau) * target_param.data)
+                
+
     def save(self, filename):
         torch.save(self.critic.state_dict(), filename + "_critic")
         torch.save(self.critic_optimizer.state_dict(),
