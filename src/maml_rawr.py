@@ -454,7 +454,7 @@ class MAMLRAWR(object):
             trajectories.append(adapted_trajectory)
         for s in log_steps:
             writer.add_scalar(f'FT_Eval_Reward/Mean_Step{s}', np.mean(reward_dict[s]), train_step_idx)
-            writer.add_scalar(f'FT_Eval_Success/Mean_Step{s}', np.mean(reward_dict[s]), train_step_idx)
+            writer.add_scalar(f'FT_Eval_Success/Mean_Step{s}', np.mean(success_dict[s]), train_step_idx)
 
         if not self._args.eval:
             rewards = np.array(reward_dict[log_steps[-1]])[:,None]

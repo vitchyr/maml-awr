@@ -16,12 +16,12 @@
     "net_depth": 3,
     "net_width": 100,
     "no_bootstrap": true,
-    "instances": 4
+    "instances": 4,
     "task_batch_size": 5,
     "maml_steps": 1,
     "eval_maml_steps": 1,
     "lrlr": 1e-3,
     "wlinear": true,
     "contiguous": true,
-    "advantage_head_coef": 0.01,
+    "advantage_head_coef": 0.01
 }

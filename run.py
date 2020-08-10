@@ -12,6 +12,7 @@ import json
 
 from src.envs import HalfCheetahDirEnv, HalfCheetahVelEnv, AntDirEnv, AntGoalEnv, HumanoidDirEnv, WalkerRandParamsWrappedEnv, ML45Env
 from src.maml_rawr import MAMLRAWR
+from src.mql.td3 import TD3Context
 from src.args import get_args
 
 
@@ -134,12 +135,8 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
         env = HalfCheetahDirEnv(tasks, include_goal = args.include_goal or args.multitask)
     elif task_config.env == 'cheetah_vel':
         env = HalfCheetahVelEnv(tasks, include_goal = args.include_goal or args.multitask, one_hot_goal=args.one_hot_goal or args.multitask)
-    elif task_config.env == 'humanoid_dir':
-        env = HumanoidDirEnv(tasks, args.n_tasks, include_goal = args.include_goal)
     elif task_config.env == 'walker_params':
         env = WalkerRandParamsWrappedEnv(tasks, args.n_tasks, include_goal = args.include_goal or args.multitask)
-    elif task_config.env == 'ml10':
-        env = get_metaworld_tasks(task_config.env)
     elif task_config.env == 'ml45':
         env = ML45Env(include_goal=args.multitask or args.include_goal)
     else:
@@ -161,12 +158,15 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
 
-    maml_rawr = MAMLRAWR(args, task_config, env, args.log_dir, name, training_iterations=args.train_steps,
+    if not args.mql and not args.td3ctx:
+        model = MAMLRAWR(args, task_config, env, args.log_dir, name, training_iterations=args.train_steps,
                          visualization_interval=args.vis_interval, silent=instance_idx > 0,
                          gradient_steps_per_iteration=args.gradient_steps_per_iteration,
                          replay_buffer_length=args.replay_buffer_size, discount_factor=args.discount_factor)
+    elif args.td3ctx:
+        model = TD3Context(args, task_config, env, args.log_dir, name, 30, training_iterations=args.train_steps, silent=instance_idx > 0)
 
-    maml_rawr.train()
+    model.train()
 
 
 if __name__ == '__main__':
