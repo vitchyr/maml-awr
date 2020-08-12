@@ -197,6 +197,33 @@ class TD3Context(object):
         policy.train()
         return trajectory, total_reward, success
 
+    def get_context_from_batches(self, batches):
+        all_other_context = []
+        states = []
+        actions = []
+        next_states = []
+        rewards = []
+        for batch_ in other_batches:
+            state_, action_, next_state_, reward_ = (batch_['obs'],
+                                                     batch_['actions'],
+                                                     batch_['next_obs'],
+                                                     batch_['rewards'])
+            state_ = torch.tensor(state_, device=self._args.device)
+            action_ = torch.tensor(action_, device=self._args.device)
+            next_state_ = torch.tensor(next_state_, device=self._args.device)
+            reward_ = torch.tensor(reward_, device=self._args.device)
+            states.append(state_)
+            actions.append(action_)
+            next_states.append(next_state_)
+            rewards.append(reward_)
+            
+            context_input_ = torch.cat((state_, action_, next_state_, reward_), -1)
+            other_context, _ = self.context_encoder(context_input.unsqueeze(1), self.c0)
+            other_context = other_context.squeeze(1)
+            all_other_context.append(other_context)
+            
+        return torch.cat(all_other_context), (torch.cat(states), torch.cat(actions), torch.cat(next_states), torch.cat(rewards))
+    
     def eval(self, writer):
         td3_results, mql_results = [], []
         for i, (test_task_idx, test_buffer) in enumerate(zip(self.task_config.test_tasks, self._test_buffers)):
@@ -215,18 +242,7 @@ class TD3Context(object):
                 context_seq, h_n = self.context_encoder(context_input.unsqueeze(1), self.c0)
                 context = h_n[-1]
                 all_test_context = context_seq.squeeze(1)
-                all_other_context = []
-                for batch_ in other_batches:
-                    state_, action_, next_state_, reward_ = (batch_['obs'],
-                                                             batch_['actions'],
-                                                             batch_['next_obs'],
-                                                             batch_['rewards'])
-                    
-                    context_input_ = torch.tensor(np.concatenate((state_, action_, next_state_, reward_), -1)).to(self._args.device)
-                    other_context, _ = self.context_encoder(context_input.unsqueeze(1), self.c0)
-                    other_context = other_context.squeeze(1)
-                    all_other_context.append(other_context)
-                all_other_context = torch.cat(all_other_context)
+                all_other_context, (state_, action_, next_state_, reward_) = self.get_context_from_batches(other_batches)
                 all_other_context = all_other_context[torch.randperm(all_other_context.shape[0], device=self._args.device)[:self._args.batch_size]]
 
                 labels = np.concatenate((-np.ones((self._args.batch_size)),
@@ -238,7 +254,8 @@ class TD3Context(object):
                 prob = cp.Problem(obj)
                 sol = prob.solve()
 
-                w_ = w.value
+                w_ = torch.tensor(w.value, device=self._args.device)
+
                 
             traj, reward, success = self._rollout_policy(self._env, context)
             td3_results.append({'reward': reward, 'success': success, 'task': test_task_idx})
@@ -256,8 +273,8 @@ class TD3Context(object):
                     # re-assign state, action, next_state, reward to use data from train buffers
                     # use w_ to assign weights
                     # also add regularization to theta
-
-
+                    
+                    
 
                     
                 with torch.no_grad():

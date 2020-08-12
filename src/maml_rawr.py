@@ -65,7 +65,8 @@ class MAMLRAWR(object):
                  name: str = None,
                  training_iterations: int = 20000, 
                  visualization_interval: int = 100, 
-                 silent: bool = False, 
+                 silent: bool = False,
+                 instance_idx: int = 0,
                  replay_buffer_length: int = 1000,
                  gradient_steps_per_iteration: int = 1, 
                  discount_factor: float = 0.99):
@@ -75,6 +76,7 @@ class MAMLRAWR(object):
         self._args = args
         self._start_time = time.time()
         self.task_config = task_config
+        self._instance_idx = instance_idx
 
         check_config(task_config)
         goal_dim = task_config.total_tasks if args.multitask else 0
@@ -130,8 +132,12 @@ class MAMLRAWR(object):
             self._exploration_policy_optimizer = O.Adam(self._exploration_policy.parameters(), lr=args.exploration_lr)
 
         if args.archive is not None:
-            print_(f'Loading parameters from archive: {args.archive}', silent)
-            archive = torch.load(args.archive)
+            archive_path = args.archive
+            if self._instance_idx > 0:
+                idx = archive_path.rindex('/')
+                archive_path = archive_path[:idx] + f'_{self._instance_idx}' + archive_path[idx:]
+            print(f'Loading parameters from archive: {archive_path}')
+            archive = torch.load(archive_path)
             self._value_function.load_state_dict(archive['vf'])
             self._adaptation_policy.load_state_dict(archive['policy'])
             self._value_function_optimizer.load_state_dict(archive['vf_opt'])
