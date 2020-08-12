@@ -5,7 +5,6 @@ import json
 def get_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument('--td3ctx', action='store_true')
-    parser.add_argument('--mql', action='store_true')
     parser.add_argument('--buffer_mode', type=str, default='end')
     parser.add_argument('--value_reg', type=float, default=0)
     parser.add_argument('--contiguous', action='store_true')

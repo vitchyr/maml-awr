@@ -1,6 +1,6 @@
 {
-    "gradient_steps_per_iteration": 100,
-    "vis_interval": 500,
+    "gradient_steps_per_iteration": 250,
+    "vis_interval": 1000,
     "offline": true,
     "load_inner_buffer": true,
     "load_outer_buffer": true,

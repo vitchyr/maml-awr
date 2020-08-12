@@ -11,6 +11,7 @@ import json
 import pickle
 from torch.utils.tensorboard import SummaryWriter
 import random
+import cvxpy as cp
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -203,22 +204,22 @@ class TD3Context(object):
         actions = []
         next_states = []
         rewards = []
-        for batch_ in other_batches:
+        for batch_ in batches:
             state_, action_, next_state_, reward_ = (batch_['obs'],
                                                      batch_['actions'],
                                                      batch_['next_obs'],
                                                      batch_['rewards'])
-            state_ = torch.tensor(state_, device=self._args.device)
-            action_ = torch.tensor(action_, device=self._args.device)
-            next_state_ = torch.tensor(next_state_, device=self._args.device)
-            reward_ = torch.tensor(reward_, device=self._args.device)
+            state_ = torch.tensor(state_).to(self._args.device)
+            action_ = torch.tensor(action_).to(self._args.device)
+            next_state_ = torch.tensor(next_state_).to(self._args.device)
+            reward_ = torch.tensor(reward_).to(self._args.device)
             states.append(state_)
             actions.append(action_)
             next_states.append(next_state_)
             rewards.append(reward_)
             
             context_input_ = torch.cat((state_, action_, next_state_, reward_), -1)
-            other_context, _ = self.context_encoder(context_input.unsqueeze(1), self.c0)
+            other_context, _ = self.context_encoder(context_input_.unsqueeze(1), self.c0)
             other_context = other_context.squeeze(1)
             all_other_context.append(other_context)
             
@@ -232,13 +233,13 @@ class TD3Context(object):
             
             self._env.set_task_idx(test_task_idx)
 
-            state, action, next_state, reward = (batch['obs'],
-                                                 batch['actions'],
-                                                 batch['next_obs'],
-                                                 batch['rewards'])
+            state, action, next_state, reward = (torch.tensor(batch['obs']).to(self._args.device),
+                                                 torch.tensor(batch['actions']).to(self._args.device),
+                                                 torch.tensor(batch['next_obs']).to(self._args.device),
+                                                 torch.tensor(batch['rewards']).to(self._args.device))
             
             with torch.no_grad():
-                context_input = torch.tensor(np.concatenate((state, action, next_state, reward), -1)).to(self._args.device)
+                context_input = torch.cat((state, action, next_state, reward), -1)
                 context_seq, h_n = self.context_encoder(context_input.unsqueeze(1), self.c0)
                 context = h_n[-1]
                 all_test_context = context_seq.squeeze(1)
@@ -254,9 +255,11 @@ class TD3Context(object):
                 prob = cp.Problem(obj)
                 sol = prob.solve()
 
-                w_ = torch.tensor(w.value, device=self._args.device)
+                w_ = torch.tensor(w.value, device=self._args.device).float()
+                test_betas = (-all_test_context @ w_).exp()
+                test_ess = (1/test_betas.shape[0]) * test_betas.sum().pow(2) / test_betas.pow(2).sum()
+                context_betas = (-all_other_context @ w_).exp()
 
-                
             traj, reward, success = self._rollout_policy(self._env, context)
             td3_results.append({'reward': reward, 'success': success, 'task': test_task_idx})
             writer.add_scalar(f'TD3_Reward/Task_{test_task_idx}', reward, self.total_it)
@@ -268,36 +271,63 @@ class TD3Context(object):
             actor_optimizer = torch.optim.Adam(actor.parameters(), lr=3e-4)
             critic_optimizer = torch.optim.Adam(critic.parameters(), lr=3e-4)
 
+            start_actor_params = [p.clone() for p in actor.parameters()]
+            start_critic_params = [p.clone() for p in critic.parameters()]
+
+            lambda_ = 1 - test_ess
+            context_ = context
+            
             for step in range(self._mql_steps1 + self._mql_steps2):
+                if step == self._mql_steps1:
+                    traj, reward, success = self._rollout_policy(self._env, context, policy=actor)
+                    writer.add_scalar(f'MQL1_Reward/Task_{test_task_idx}', reward, self.total_it)
+                    writer.add_scalar(f'MQL1_Success/Task_{test_task_idx}', success, self.total_it)
+
+                critic_param_loss = sum([(p - p_.detach()).pow(2).sum() for p, p_ in zip(critic.parameters(), start_critic_params)])
+                actor_param_loss = sum([(p - p_.detach()).pow(2).sum() for p, p_ in zip(actor.parameters(), start_actor_params)])
                 if step >= self._mql_steps1:
                     # re-assign state, action, next_state, reward to use data from train buffers
                     # use w_ to assign weights
                     # also add regularization to theta
-                    
-                    
+                    other_batches = [buf.sample(self._args.batch_size, return_dict=True) for buf in self._inner_buffers]
+                    all_other_context, (state, action, next_state, reward) = self.get_context_from_batches(other_batches)
+                    context_betas = (-all_other_context @ w_).exp()
+                    context_ess = (1/context_betas.shape[0]) * context_betas.sum().pow(2) / context_betas.pow(2).sum()
+                    lambda_ = 1 - context_ess
+                    if step == self._mql_steps1 + self._mql_steps2 - 1:
+                        writer.add_scalar(f'Test_Beta/Task_{test_task_idx}', test_betas.mean(), self.total_it)
+                        writer.add_scalar(f'Context_Beta/Task_{test_task_idx}', context_betas.mean(), self.total_it)
+                        writer.add_scalar(f'Test_ESS/Task_{test_task_idx}', test_ess, self.total_it)
+                        writer.add_scalar(f'Context_ESS/Task_{test_task_idx}', context_ess, self.total_it)
+                else:
+                    lambda_ = 1 - test_ess
 
+                not_done = torch.ones((state.shape[0],1)).to(self._args.device)
+                
+                if context_.shape[0] != state.shape[0]:
+                    context_ = context.repeat(state.shape[0], 1)
                     
                 with torch.no_grad():
-                    next_action = actor(next_state, target_context)
+                    next_action = actor(next_state, context_)
                     # Compute the target Q value
-                    target_Q1, target_Q2 = critic_target(next_state, next_action, target_context)
+                    target_Q1, target_Q2 = critic_target(next_state, next_action, context_)
                     target_Q = torch.min(target_Q1, target_Q2)
                     target_Q = reward + not_done * self.discount * target_Q
 
                 # Get current Q estimates
-                current_Q1, current_Q2 = critic(state, action, train_context)
+                current_Q1, current_Q2 = critic(state, action, context_)
 
                 # Compute critic loss
                 critic_loss = F.mse_loss(current_Q1, target_Q) + F.mse_loss(
-                    current_Q2, target_Q)
+                    current_Q2, target_Q) + (lambda_ / 2) * critic_param_loss
 
                 # Optimize the critic
                 critic_optimizer.zero_grad()
-                critic_loss.backward()
+                critic_loss.backward(retain_graph=True)
                 critic_optimizer.step()
 
                 # Compute actor losse
-                actor_loss = -critic.Q1(state, actor(state, train_context), train_context).mean()
+                actor_loss = -critic.Q1(state, actor(state, context_), context_).mean() + (lambda_ / 2) * actor_param_loss
 
                 # Optimize the actor
                 actor_optimizer.zero_grad()
