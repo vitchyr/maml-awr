@@ -1,6 +1,8 @@
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+import warnings
+warnings.filterwarnings('ignore',category=FutureWarning)
 from tensorflow.python.summary.summary_iterator import summary_iterator
 import pickle
 import numpy as np
@@ -62,7 +64,7 @@ def running_mean(x, N):
     cumsum = np.cumsum(np.insert(x, 0, 0))
     return (cumsum[N:] - cumsum[:-N]) / float(N)
 
-def extract(path, tag_: str, terminate: int = None, xscale=1, smooth=1):
+def extract(path, tag_: str, terminate: int = None, xscale=1, smooth=1, n_vals=1000):
     paths = glob.glob(path)
 
     xs, ys = [], []
@@ -110,10 +112,18 @@ def extract(path, tag_: str, terminate: int = None, xscale=1, smooth=1):
     ymean = np.mean(ys,0)
     ystd = np.std(ys, 0)
     x = xs[0]
-    #print(x)
     x = x[:ymean.shape[0]]
     print(x.shape, ymean.shape, ystd.shape)
-    return x, ymean, ystd
+    logx = np.exp((np.linspace(0,np.log(x.max())*np.log(10), n_vals)[:,None]))
+    logx = logx/(logx.max() / x.max())
+    idxs = np.argmin(np.abs(x[None,:] - logx), 1)
+    idxs = np.unique(idxs)
+    newx = x[idxs]
+    #print(newx)
+    newymean = ymean[idxs]
+    newystd = ystd[idxs]
+    #import pdb; pdb.set_trace()
+    return newx, newymean, newystd
 
 def trim(x, y, val):
     v = np.where(np.squeeze(x) >= val)[0]
@@ -125,25 +135,25 @@ def trim(x, y, val):
 
 def run(args: argparse.Namespace):
 
-    walker_mt_x, walker_mt_y, walker_mt_std = extract(args.mt_walker_path, 'FT_Eval_Reward/Mean_Step20', args.terminate, smooth=5)
-    dir_mt_x, dir_mt_y, dir_mt_std = extract(args.mt_dir_path, 'FT_Eval_Reward/Mean_Step20', args.terminate, smooth=5)
-    vel_mt_x, vel_mt_y, vel_mt_std = extract(args.mt_vel_path, 'FT_Eval_Reward/Mean_Step20', args.terminate, smooth=5)
-    ant_mt_x, ant_mt_y, ant_mt_std = extract(args.mt_ant_path, 'FT_Eval_Reward/Mean_Step20', args.terminate, smooth=5)
+    walker_mt_x, walker_mt_y, walker_mt_std = extract(args.mt_walker_path, 'FT_Eval_Reward/Mean_Step20', args.terminate, smooth=20)
+    dir_mt_x, dir_mt_y, dir_mt_std = extract(args.mt_dir_path, 'FT_Eval_Reward/Mean_Step20', args.terminate, smooth=20)
+    vel_mt_x, vel_mt_y, vel_mt_std = extract(args.mt_vel_path, 'FT_Eval_Reward/Mean_Step20', args.terminate, smooth=20)
+    ant_mt_x, ant_mt_y, ant_mt_std = extract(args.mt_ant_path, 'FT_Eval_Reward/Mean_Step20', args.terminate, smooth=20)
 
-    dir_td3_x, dir_td3_y, dir_td3_std = extract(args.td3_dir_path, 'Eval_Reward/Average', args.terminate, smooth=20)
-    vel_td3_x, vel_td3_y, vel_td3_std = extract(args.td3_vel_path, 'Eval_Reward/Average', args.terminate, smooth=20)
-    walker_td3_x, walker_td3_y, walker_td3_std = extract(args.td3_walker_path, 'Eval_Reward/Average', args.terminate, smooth=20)
-    ant_td3_x, ant_td3_y, ant_td3_std = extract(args.td3_ant_path, 'Eval_Reward/Average', args.terminate, smooth=20)
+    #dir_td3_x, dir_td3_y, dir_td3_std = extract(args.td3_dir_path, 'Eval_Reward/Average', args.terminate, smooth=20)
+    #vel_td3_x, vel_td3_y, vel_td3_std = extract(args.td3_vel_path, 'Eval_Reward/Average', args.terminate, smooth=20)
+    #walker_td3_x, walker_td3_y, walker_td3_std = extract(args.td3_walker_path, 'Eval_Reward/Average', args.terminate, smooth=20)
+    #ant_td3_x, ant_td3_y, ant_td3_std = extract(args.td3_ant_path, 'Eval_Reward/Average', args.terminate, smooth=20)
     
     dir_macaw_x, dir_macaw_y, dir_macaw_std = extract(args.macaw_dir_path, 'Eval_Reward/Mean', args.terminate, smooth=20)
     vel_macaw_x, vel_macaw_y, vel_macaw_std = extract(args.macaw_vel_path, 'Eval_Reward/Mean', args.terminate, smooth=20)
     walker_macaw_x, walker_macaw_y, walker_macaw_std = extract(args.macaw_walker_path, 'Eval_Reward/Mean', args.terminate, smooth=20)
     ant_macaw_x, ant_macaw_y, ant_macaw_std = extract(args.macaw_ant_path, 'Eval_Reward/Mean', args.terminate, smooth=20)
 
-    dir_pearl_x, dir_pearl_y, dir_pearl_std = extract(args.pearl_dir_path, 'test_tasks_mean_reward/mean_return', args.terminate, 2000, 3)
-    vel_pearl_x, vel_pearl_y, vel_pearl_std = extract(args.pearl_vel_path, 'test_tasks_mean_reward/mean_return', args.terminate, 2000, 3)
-    walker_pearl_x, walker_pearl_y, walker_pearl_std = extract(args.pearl_walker_path, 'test_tasks_mean_reward/mean_return', args.terminate, 4000, 3)
-    ant_pearl_x, ant_pearl_y, ant_pearl_std = extract(args.pearl_ant_path, 'test_tasks_mean_reward/mean_return', args.terminate, 4000, 3)
+    dir_pearl_x, dir_pearl_y, dir_pearl_std = extract(args.pearl_dir_path, 'test_tasks_mean_reward/mean_return', args.terminate, 2000, 5)
+    vel_pearl_x, vel_pearl_y, vel_pearl_std = extract(args.pearl_vel_path, 'test_tasks_mean_reward/mean_return', args.terminate, 2000, 5)
+    walker_pearl_x, walker_pearl_y, walker_pearl_std = extract(args.pearl_walker_path, 'test_tasks_mean_reward/mean_return', args.terminate, 4000, 5)
+    ant_pearl_x, ant_pearl_y, ant_pearl_std = extract(args.pearl_ant_path, 'test_tasks_mean_reward/mean_return', args.terminate, 4000, 5)
 
     
     w = 5.4*3
@@ -164,8 +174,8 @@ def run(args: argparse.Namespace):
     #axes[0,0].plot([dir_mt_x[-1], dir_pearl_x[-1]], [dir_mt_y[-1]] * 2, color=color2, linewidth=2)
     axes[0,0].plot(dir_pearl_x, dir_pearl_y, linewidth=2, color=color3)
     axes[0,0].fill_between(dir_pearl_x, dir_pearl_y-dir_pearl_std, dir_pearl_y + dir_pearl_std, color=color3, alpha = 0.5)
-    axes[0,0].plot(dir_td3_x, dir_td3_y, linewidth=2, color=color4)
-    axes[0,0].fill_between(dir_td3_x, dir_td3_y-dir_td3_std, dir_td3_y + dir_td3_std, color=color4, alpha = 0.5)
+    #axes[0,0].plot(dir_td3_x, dir_td3_y, linewidth=2, color=color4)
+    #axes[0,0].fill_between(dir_td3_x, dir_td3_y-dir_td3_std, dir_td3_y + dir_td3_std, color=color4, alpha = 0.5)
     axes[0,0].set_title('Cheetah-Direction')
     axes[0,0].set_xlabel('Training Steps')
     axes[0,0].set_ylabel('Reward')
@@ -178,8 +188,8 @@ def run(args: argparse.Namespace):
     #axes[0,1].plot([vel_mt_x[-1], vel_pearl_x[-1]], [vel_mt_y[-1]] * 2, color=color2, linewidth=2)
     axes[0,1].plot(vel_pearl_x, vel_pearl_y, linewidth=2, color=color3)
     axes[0,1].fill_between(vel_pearl_x, vel_pearl_y-vel_pearl_std, vel_pearl_y + vel_pearl_std, color=color3, alpha = 0.5)
-    axes[0,1].plot(vel_td3_x, vel_td3_y, linewidth=2, color=color4)
-    axes[0,1].fill_between(vel_td3_x, vel_td3_y-vel_td3_std, vel_td3_y + vel_td3_std, color=color4, alpha = 0.5)
+    #axes[0,1].plot(vel_td3_x, vel_td3_y, linewidth=2, color=color4)
+    #axes[0,1].fill_between(vel_td3_x, vel_td3_y-vel_td3_std, vel_td3_y + vel_td3_std, color=color4, alpha = 0.5)
     axes[0,1].set_title('Cheetah-Velocity')
     axes[0,1].set_xlabel('Training Steps')
     axes[0,1].set_ylabel('Reward')
@@ -187,13 +197,13 @@ def run(args: argparse.Namespace):
     axes[1,0].plot(walker_macaw_x, walker_macaw_y, linewidth=2, label='MACAW', color=color1)
     axes[1,0].fill_between(walker_macaw_x, walker_macaw_y-walker_macaw_std, walker_macaw_y + walker_macaw_std, color=color1, alpha = 0.5)
     #axes[1,0].plot([walker_macaw_x[-1], walker_pearl_x[-1]], [walker_macaw_y[-1]] * 2, linewidth=2, color=color1)
-    axes[1,0].plot(walker_mt_x, walker_mt_y, linewidth=2, label='MT + fine tune', color=color2)
+    axes[1,0].plot(walker_mt_x, walker_mt_y, linewidth=2, label='Offline-MT', color=color2)
     axes[1,0].fill_between(walker_mt_x, walker_mt_y-walker_mt_std, walker_mt_y + walker_mt_std, color=color2, alpha = 0.5)
     #axes[1,0].plot([walker_mt_x[-1], walker_pearl_x[-1]], [walker_mt_y[-1]] * 2, linewidth=2, color=color2)
-    axes[1,0].plot(walker_pearl_x, walker_pearl_y, linewidth=2, label='PEARL', color=color3)
+    axes[1,0].plot(walker_pearl_x, walker_pearl_y, linewidth=2, label='Offline-PEARL', color=color3)
     axes[1,0].fill_between(walker_pearl_x, walker_pearl_y-walker_pearl_std, walker_pearl_y + walker_pearl_std, color=color3, alpha = 0.5)
-    axes[1,0].plot(walker_td3_x, walker_td3_y, linewidth=2, color=color4)
-    axes[1,0].fill_between(walker_td3_x, walker_td3_y-walker_td3_std, walker_td3_y + walker_td3_std, color=color4, alpha = 0.5)
+    #axes[1,0].plot(walker_td3_x, walker_td3_y, linewidth=2, color=color4)
+    #axes[1,0].fill_between(walker_td3_x, walker_td3_y-walker_td3_std, walker_td3_y + walker_td3_std, color=color4, alpha = 0.5)
     axes[1,0].set_title('Walker-Params')
     axes[1,0].set_xlabel('Training Steps')
     axes[1,0].set_ylabel('Reward')
@@ -202,22 +212,23 @@ def run(args: argparse.Namespace):
     axes[1,1].plot(ant_macaw_x, ant_macaw_y, linewidth=2, label='MACAW', color=color1)
     axes[1,1].fill_between(ant_macaw_x, ant_macaw_y-ant_macaw_std, ant_macaw_y + ant_macaw_std, color=color1, alpha = 0.5)
     #axes[1,1].plot([ant_macaw_x[-1], ant_pearl_x[-1]], [ant_macaw_y[-1]] * 2, linewidth=2, color=color1)
-    axes[1,1].plot(ant_mt_x, ant_mt_y, linewidth=2, label='MT + fine tune', color=color2)
+    axes[1,1].plot(ant_mt_x, ant_mt_y, linewidth=2, label='Offline MT+FT', color=color2)
     axes[1,1].fill_between(ant_mt_x, ant_mt_y-ant_mt_std, ant_mt_y + ant_mt_std, color=color2, alpha = 0.5)
     #axes[1,1].plot([ant_mt_x[-1], ant_pearl_x[-1]], [ant_mt_y[-1]] * 2, linewidth=2, color=color2)
-    axes[1,1].plot(ant_pearl_x, ant_pearl_y, linewidth=2, label='PEARL', color=color3)
+    axes[1,1].plot(ant_pearl_x, ant_pearl_y, linewidth=2, label='Offline PEARL', color=color3)
     axes[1,1].fill_between(ant_pearl_x, ant_pearl_y-ant_pearl_std, ant_pearl_y + ant_pearl_std, color=color3, alpha = 0.5)
-    axes[1,1].plot(ant_td3_x, ant_td3_y, linewidth=2, label='TD3 + Context', color=color4)
-    axes[1,1].fill_between(ant_td3_x, ant_td3_y-ant_td3_std, ant_td3_y + ant_td3_std, color=color4, alpha = 0.5)
+    #axes[1,1].plot(ant_td3_x, ant_td3_y, linewidth=2, label='TD3 + Context', color=color4)
+    #axes[1,1].fill_between(ant_td3_x, ant_td3_y-ant_td3_std, ant_td3_y + ant_td3_std, color=color4, alpha = 0.5)
     axes[1,1].set_title('Ant-Direction')
     axes[1,1].set_xlabel('Training Steps')
     axes[1,1].set_ylabel('Reward')
-    axes[1,1].legend(loc='lower left', bbox_to_anchor=(0,0.13))
+    axes[1,1].legend(loc='center left')#, bbox_to_anchor=(0,0.13))
     for ax in axes:
         for a in ax:
+            a.set_xlim(900,None)
             a.set_xscale('log')
             a.tick_params(axis=u'both', which=u'both',length=0)
-            a.grid(linestyle='--', linewidth=0.75)
+            a.grid(linestyle='--', linewidth=1)
             a.spines['top'].set_visible(False)
             a.spines['right'].set_visible(False)
             a.spines['bottom'].set_visible(False)
@@ -225,7 +236,7 @@ def run(args: argparse.Namespace):
 
     #plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     plt.tight_layout()
-    fig.savefig('rebuttal_figs/' + args.name)
+    fig.savefig('rebuttal_figs/' + args.name, bbox_inches='tight')
 
 
 if __name__ == '__main__':

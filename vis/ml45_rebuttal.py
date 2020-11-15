@@ -51,7 +51,7 @@ def get_vals(path: str):
     return means, medians, stds, lowerq, upperq, mins, maxs
 
 
-def extract_macaw(path, terminate: int = None, prefix: str = None, suffix: str = None, xscale = None, smooth=1):
+def extract_macaw(path, terminate: int = None, prefix: str = None, suffix: str = None, xscale = None, smooth=1, n_vals=250):
     paths = glob.glob(path)
 
     xs, ys = [], []
@@ -115,8 +115,16 @@ def extract_macaw(path, terminate: int = None, prefix: str = None, suffix: str =
     #xs = np.array(xs)
     x = x[:ymean.shape[0]]
     ystd = ystd[:ymean.shape[0]]
+    logx = np.exp((np.linspace(0,np.log(x.max())*np.log(10), n_vals)[:,None]))
+    logx = logx/(logx.max() / x.max())
+    idxs = np.argmin(np.abs(x[None,:] - logx), 1)
+    idxs = np.unique(idxs)
+    newx = x[idxs]
+    #print(newx)
+    newymean = ymean[idxs]
+    newystd = ystd[idxs]
     print(x.shape, ymean.shape, ystd.shape)
-    return x, ymean, ystd * 0.1
+    return newx, newymean, newystd * 0.1
 
 
 def running_mean(x, N):
@@ -195,13 +203,13 @@ def cumavg(array):
     return array.cumsum() / (1 + np.arange(array.shape[0]))
 
 def run(args: argparse.Namespace):
-    mt_x, mt_success, mt_std = extract_macaw(args.mt_path, args.terminate, prefix='FT_Eval_Success', suffix='Step4', smooth=5)
-    mt2_x, mt2_success, mt2_std = extract_macaw(args.mt_path, args.terminate, prefix='FT_Eval_Success', suffix='Step19', smooth=5)
+    #mt_x, mt_success, mt_std = extract_macaw(args.mt_path, args.terminate, prefix='FT_Eval_Success', suffix='Step4', smooth=10)
+    mt2_x, mt2_success, mt2_std = extract_macaw(args.mt_path, args.terminate, prefix='FT_Eval_Success', suffix='Step19', smooth=10)
 
-    macaw_x, macaw_success, macaw_std = extract_macaw(args.macaw_path, args.terminate, prefix='Eval_Success')
+    macaw_x, macaw_success, macaw_std = extract_macaw(args.macaw_path, args.terminate, smooth=10, prefix='Eval_Success')
     #macaw_success = cumavg(macaw_success)
 
-    pearl_x, pearl_success, pearl_std = extract_macaw(args.pearl_path, args.terminate, prefix='test_tasks_mean_succes/mean_succes', xscale=200)
+    pearl_x, pearl_success, pearl_std = extract_macaw(args.pearl_path, args.terminate, prefix='test_tasks_mean_succes/mean_succes', smooth=1, xscale=200)
     #pearl_success = cumavg(pearl_success)
 
     fig, axes = plt.subplots(nrows=1, ncols=1, figsize=(9,6))
@@ -218,32 +226,34 @@ def run(args: argparse.Namespace):
     #axes2.spines['bottom'].set_visible(False)
     #axes2.spines['left'].set_visible(False)
     print(macaw_success.shape, macaw_std.shape)
-    color = next(axes._get_lines.prop_cycler)['color']
-    l1, = axes.plot(macaw_x, macaw_success, linewidth=3, color=color, label='MACAW')
-    l1, = axes.plot([macaw_x[-1], pearl_x[-1]], [macaw_success[-1]] * 2, linewidth=3, color=color)
-    axes.fill_between(macaw_x, macaw_success-macaw_std, macaw_success + macaw_std, color=color, alpha = 0.5)
+    color1 = next(axes._get_lines.prop_cycler)['color']
+    color2 = next(axes._get_lines.prop_cycler)['color']
+    color3 = next(axes._get_lines.prop_cycler)['color']
+    color3 = next(axes._get_lines.prop_cycler)['color']
+
+    l1, = axes.plot(macaw_x, macaw_success, linewidth=3, color=color1, label='MACAW')
+    #l1, = axes.plot([macaw_x[-1], pearl_x[-1]], [macaw_success[-1]] * 2, linewidth=3, color=color1)
+    axes.fill_between(macaw_x, macaw_success-macaw_std, macaw_success + macaw_std, color=color1, alpha = 0.5)
     #l2, = axes.plot(macaw_train_x, macaw_success_train, '--', linewidth=3, color=color)
-    color = next(axes._get_lines.prop_cycler)['color']
-    color = next(axes._get_lines.prop_cycler)['color']
-    axes.plot(pearl_x, pearl_success, linewidth=3, color=color, label='PEARL')
-    axes.fill_between(pearl_x, pearl_success-pearl_std, pearl_success + pearl_std, color=color, alpha = 0.5)
+
+    axes.plot(pearl_x, pearl_success, linewidth=3, color=color3, label='PEARL')
+    axes.fill_between(pearl_x, pearl_success-pearl_std, pearl_success + pearl_std, color=color3, alpha = 0.5)
     #axes.plot(pearl_train_x, pearl_success_train,  '--', linewidth=3, color=color)
-    color = next(axes._get_lines.prop_cycler)['color']
-    axes.plot(mt2_x, mt2_success, linewidth=3, color=color, label='MT + fine tune (5)')
-    axes.plot([mt2_x[-1], pearl_x[-1]], [mt2_success[-1]] * 2, linewidth=3, color=color)
-    axes.fill_between(mt2_x, mt2_success-mt2_std, mt2_success + mt2_std, color=color, alpha = 0.5)
-    color = next(axes._get_lines.prop_cycler)['color']
-    color = next(axes._get_lines.prop_cycler)['color']
-    color = next(axes._get_lines.prop_cycler)['color']
-    axes.plot(mt_x, mt_success, linewidth=3, color=color, label='MT + fine tune (20)')
-    axes.plot([mt_x[-1], pearl_x[-1]], [mt_success[-1]] * 2, linewidth=3, color=color)
-    axes.fill_between(mt_x, mt_success-mt_std, mt_success + mt_std, color=color, alpha = 0.5)
+
+    axes.plot(mt2_x, mt2_success, linewidth=3, color=color2, label='MT + fine tune')
+    #axes.plot([mt2_x[-1], pearl_x[-1]], [mt2_success[-1]] * 2, linewidth=3, color=color2)
+    axes.fill_between(mt2_x, mt2_success-mt2_std, mt2_success + mt2_std, color=color2, alpha = 0.5)
+
+    #axes.plot(mt_x, mt_success, linewidth=3, color=color, label='MT + fine tune (5)')
+    #axes.plot([mt_x[-1], pearl_x[-1]], [mt_success[-1]] * 2, linewidth=3, color=color2)
+    #axes.fill_between(mt_x, mt_success-mt_std, mt_success + mt_std, color=color, alpha = 0.5)
     #axes.plot(mt_train_x, mt_success_train,  '--', linewidth=3, color=color)
     axes.set_xscale('log')
     axes.set_title('Meta-World ML45 Benchmark')
     axes.set_xlabel('Training Steps')
     #axes.set_ylabel('Reward')
-    axes.set_ylabel('Cumulative Success Rate')
+    axes.set_xlim(900,None)
+    axes.set_ylabel('Average Test Success Rate')
     leg = axes.legend(loc='center left', bbox_to_anchor=(0,0.63))
 
     plt.tight_layout()

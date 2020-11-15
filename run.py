@@ -3,7 +3,7 @@ import argparse
 import gym
 import pickle
 import numpy as np
-from multiprocessing import Process
+from torch.multiprocessing import Process, set_start_method
 import random
 import torch
 import metaworld
@@ -170,6 +170,7 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
 
 
 if __name__ == '__main__':
+    set_start_method('spawn')
     args = get_args()
     
     if args.instances == 1:

@@ -38,6 +38,7 @@ plt.rc('legend', fontsize=SMALL_SIZE)    # legend fontsize
 plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
 '''
 
+
 def get_vals(path: str):
     vals = np.empty((27,21))
     vals.fill(np.float('nan'))
@@ -66,6 +67,7 @@ def get_vals(path: str):
 def extract_macaw(path, terminate: int = None):
     files = [f for f in os.listdir(path) if 'events' in f]
     path = f'{path}/{files[0]}'
+    print(path)
     y = []
     x = []
     try:
@@ -100,55 +102,62 @@ def trim(x, y, val):
         return x, y
 
 def run(args: argparse.Namespace):
-    macaw_start_x, macaw_start_y = extract_macaw(args.start_path, args.terminate)
-    macaw_middle_x, macaw_middle_y = extract_macaw(args.middle_path, args.terminate)
-    macaw_end_x, macaw_end_y = extract_macaw(args.end_path, args.terminate)
+    #macaw_dir_x, macaw_dir_y = extract_macaw(args.dir_path, args.terminate)
+    macaw_vel_x, macaw_vel_y = extract_macaw(args.vel_path, args.terminate)
+    #macaw_walker_x, macaw_walker_y = extract_macaw(args.walker_path, args.terminate)
+    #macaw_ant_x, macaw_ant_y = extract_macaw(args.ant_path, args.terminate)
 
-    maml_start_x, maml_start_y = extract_macaw(args.maml_start_path, args.terminate)
-    maml_middle_x, maml_middle_y = extract_macaw(args.maml_middle_path, args.terminate)
-    maml_end_x, maml_end_y = extract_macaw(args.maml_end_path, args.terminate)
-    
+    #maml_dir_x, maml_dir_y = extract_macaw(args.maml_dir_path, args.terminate)
+    #maml_vel_x, maml_vel_y = extract_macaw(args.maml_vel_path, args.terminate)
+    #maml_walker_x, maml_walker_y = extract_macaw(args.maml_walker_path, args.terminate)
+    #maml_ant_x, maml_ant_y = extract_macaw(args.maml_ant_path, args.terminate)
+
+    #wlinear_dir_x, wlinear_dir_y = extract_macaw(args.wlinear_dir_path, args.terminate)
+    wlinear_vel_x, wlinear_vel_y = extract_macaw(args.wlinear_vel_path, args.terminate)
+    #wlinear_walker_x, wlinear_walker_y = extract_macaw(args.wlinear_walker_path, args.terminate)
+    #wlinear_ant_x, wlinear_ant_y = extract_macaw(args.wlinear_ant_path, args.terminate)
+
+    #w = 5.4*3
+    #h = w/2
     fig, axes = plt.subplots(nrows=1, ncols=1, figsize=(9,6))
-    axes.tick_params(axis=u'both', which=u'both',length=0)
-    axes.grid(linestyle='--', linewidth=1.25)
-    axes.spines['top'].set_visible(False)
-    axes.spines['right'].set_visible(False)
-    axes.spines['bottom'].set_visible(False)
-    axes.spines['left'].set_visible(False)
-    
-    color = next(axes._get_lines.prop_cycler)['color']
-    color = next(axes._get_lines.prop_cycler)['color']
-    l1, = axes.plot(macaw_end_x, macaw_end_y, color=color, linewidth=4, label='Good Data')
-    l2, = axes.plot(maml_end_x, maml_end_y, '--', color=color, linewidth=4)
-    color = next(axes._get_lines.prop_cycler)['color']
-    color = next(axes._get_lines.prop_cycler)['color']
-    color = next(axes._get_lines.prop_cycler)['color']
-    axes.plot(macaw_middle_x, macaw_middle_y, color=color, linewidth=4, label='Medium Data')
-    axes.plot(maml_middle_x, maml_middle_y,  '--', color=color, linewidth=4)
-    color = next(axes._get_lines.prop_cycler)['color']
-    axes.plot(macaw_start_x, macaw_start_y, color=color, linewidth=4, label='Bad Data')
-    axes.plot(maml_start_x, maml_start_y,  '--', color=color, linewidth=4)
-    axes.set_title('Ablating MACAW\'s Enriched Policy Update')
-    axes.set_xlabel('Training Steps (thousands)')
-    axes.set_ylabel('Reward')
-    leg1 = axes.legend(loc=4, bbox_to_anchor=(0,-0.02,1.05,1.0))
-    leg2 = axes.legend([l1, l2], ['MACAW', 'MAML+AWR'], loc='lower center', bbox_to_anchor=(0,-0.02,0.78,1))
-    leg2.legendHandles[0].set_color('black')
-    leg2.legendHandles[1].set_color('black')
-    plt.gca().add_artist(leg1)
-    plt.ylim([-270, -24])
-    plt.tight_layout()
-    fig.savefig(args.name, bbox_inches = "tight")
+    a= axes
+    a.tick_params(axis=u'both', which=u'both',length=0)
+    a.grid(linestyle='--', linewidth=1.25)
+    a.spines['top'].set_visible(False)
+    a.spines['right'].set_visible(False)
+    a.spines['bottom'].set_visible(False)
+    a.spines['left'].set_visible(False)
+
+    color1 = next(axes._get_lines.prop_cycler)['color']
+    color2 = next(axes._get_lines.prop_cycler)['color']
+    color2 = next(axes._get_lines.prop_cycler)['color']
+    color3 = next(axes._get_lines.prop_cycler)['color']
+
+    axes.plot(macaw_vel_x, macaw_vel_y, color=color1, linewidth=5, label='MACAW')
+    axes.plot(wlinear_vel_x, wlinear_vel_y, '--', color=color1, linewidth=5, label='No Weight Transf.')
+
+    a.set_xlabel('Training Steps (thousands)')
+    a.set_ylabel('Reward')
+    axes.legend(loc=4)
+    plt.suptitle('Ablating MACAW\'s Weight Transform')
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    fig.savefig(args.name, bbox_inches='tight')
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--start_path', type=str, default="log/NeurIPS3/macaw_vel_start.3/tb")
-    parser.add_argument('--middle_path', type=str, default="log/NeurIPS3/macaw_vel_middle.3/tb")
-    parser.add_argument('--end_path', type=str, default="log/NeurIPS3/macaw_vel_end.3/tb")
-    parser.add_argument('--maml_start_path', type=str, default="log/NeurIPS3/mamlawr_vel_start/tb")
-    parser.add_argument('--maml_middle_path', type=str, default="log/NeurIPS3/mamlawr_vel_middle/tb")
-    parser.add_argument('--maml_end_path', type=str, default="log/NeurIPS3/mamlawr_vel_end/tb")
+    parser.add_argument('--dir_path', type=str)
+    parser.add_argument('--vel_path', type=str, default='log/NeurIPS_multiseed/macaw_vel/tb')
+    parser.add_argument('--walker_path', type=str)
+    parser.add_argument('--ant_path', type=str)
+    parser.add_argument('--maml_dir_path', type=str)
+    parser.add_argument('--maml_vel_path', type=str)
+    parser.add_argument('--maml_walker_path', type=str)
+    parser.add_argument('--maml_ant_path', type=str)
+    parser.add_argument('--wlinear_dir_path', type=str)
+    parser.add_argument('--wlinear_vel_path', type=str, default='log/NeurIPS3/macaw_vel_nowlinear/tb')
+    parser.add_argument('--wlinear_walker_path', type=str)
+    parser.add_argument('--wlinear_ant_path', type=str)
     parser.add_argument('--terminate', type=int, default=None)
-    parser.add_argument('--name', type=str, default='adv_regression_ablation')
+    parser.add_argument('--name', type=str, default='arch')
     run(parser.parse_args())

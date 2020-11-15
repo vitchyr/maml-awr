@@ -98,6 +98,7 @@ def get_args() -> argparse.Namespace:
 
     if args.macaw_params is not None:
         with open(args.macaw_params, 'r') as f:
+            print(f'Loading params from {args.macaw_params}')
             params = json.load(f)
 
         for k, v in params.items():
@@ -105,6 +106,7 @@ def get_args() -> argparse.Namespace:
 
     if args.macaw_override_params is not None:
         with open(args.macaw_override_params, 'r') as f:
+            print(f'Loading OVERRIDE params from {args.macaw_override_params}')
             params = json.load(f)
 
         for k, v in params.items():
