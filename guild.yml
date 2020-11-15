@@ -1,0 +1,11 @@
+weight_transform:
+  default: yes
+  main: src.weight_transform
+  flags-import: all
+  flags-import-skip: [device]
+  sourcecode: [
+    src/weight_transform.py,
+    src/nn.py
+  ]
+  output-scalars:
+    '^(\key) := (\value)'
