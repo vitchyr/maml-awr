@@ -9,3 +9,11 @@ weight_transform:
   ]
   output-scalars:
     '^(\key) := (\value)'
+
+macaw:
+  main: run
+  flags-import: all
+  sourcecode: [
+    run.py,
+    src/*
+  ]
