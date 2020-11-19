@@ -4,6 +4,7 @@ import json
 
 def get_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
+    parser.add_argument('--online_ft', action='store_true')
     parser.add_argument('--imitation', action='store_true')
     parser.add_argument('--td3ctx', action='store_true')
     parser.add_argument('--buffer_mode', type=str, default='end')

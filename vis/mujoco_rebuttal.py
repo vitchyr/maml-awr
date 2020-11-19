@@ -103,7 +103,6 @@ def extract(path, tag_: str, terminate: int = None, xscale=1, smooth=1, n_vals=1
         xs.append(x)
         ys.append(running_mean(y, smooth))
     ylens = [len(z) for z in ys]
-
     ys = [y_[:min(ylens)] for y_ in ys]
     xs = [x_[:min(ylens)] for x_ in xs]
     
@@ -134,7 +133,6 @@ def trim(x, y, val):
         return x, y
 
 def run(args: argparse.Namespace):
-
     walker_mt_x, walker_mt_y, walker_mt_std = extract(args.mt_walker_path, 'FT_Eval_Reward/Mean_Step20', args.terminate, smooth=20)
     dir_mt_x, dir_mt_y, dir_mt_std = extract(args.mt_dir_path, 'FT_Eval_Reward/Mean_Step20', args.terminate, smooth=20)
     vel_mt_x, vel_mt_y, vel_mt_std = extract(args.mt_vel_path, 'FT_Eval_Reward/Mean_Step20', args.terminate, smooth=20)
@@ -155,6 +153,10 @@ def run(args: argparse.Namespace):
     walker_pearl_x, walker_pearl_y, walker_pearl_std = extract(args.pearl_walker_path, 'test_tasks_mean_reward/mean_return', args.terminate, 4000, 5)
     ant_pearl_x, ant_pearl_y, ant_pearl_std = extract(args.pearl_ant_path, 'test_tasks_mean_reward/mean_return', args.terminate, 4000, 5)
 
+    walker_imitation = 282.6
+    ant_imitation = 313.6
+    vel_imitation = -194.1
+    dir_imitation = 868.6
     
     w = 5.4*3
     h = w/2
@@ -166,59 +168,65 @@ def run(args: argparse.Namespace):
     color3 = next(axes[0,0]._get_lines.prop_cycler)['color']
     color4 = next(axes[0,0]._get_lines.prop_cycler)['color']
 
+    alpha = 0.65
+
     axes[0,0].plot(dir_macaw_x, dir_macaw_y, color=color1, linewidth=2)
-    axes[0,0].fill_between(dir_macaw_x, dir_macaw_y-dir_macaw_std, dir_macaw_y + dir_macaw_std, color=color1, alpha = 0.5)
+    axes[0,0].fill_between(dir_macaw_x, dir_macaw_y-dir_macaw_std, dir_macaw_y + dir_macaw_std, color=color1, alpha=alpha, zorder=2)
     #axes[0,0].plot([dir_macaw_x[-1], dir_pearl_x[-1]], [dir_macaw_y[-1]] * 2, color=color1, linewidth=2)
     axes[0,0].plot(dir_mt_x, dir_mt_y, linewidth=2, color=color2)
-    axes[0,0].fill_between(dir_mt_x, dir_mt_y-dir_mt_std, dir_mt_y + dir_mt_std, color=color2, alpha = 0.5)
+    axes[0,0].fill_between(dir_mt_x, dir_mt_y-dir_mt_std, dir_mt_y + dir_mt_std, color=color2, alpha=alpha, zorder=2)
     #axes[0,0].plot([dir_mt_x[-1], dir_pearl_x[-1]], [dir_mt_y[-1]] * 2, color=color2, linewidth=2)
     axes[0,0].plot(dir_pearl_x, dir_pearl_y, linewidth=2, color=color3)
-    axes[0,0].fill_between(dir_pearl_x, dir_pearl_y-dir_pearl_std, dir_pearl_y + dir_pearl_std, color=color3, alpha = 0.5)
+    axes[0,0].fill_between(dir_pearl_x, dir_pearl_y-dir_pearl_std, dir_pearl_y + dir_pearl_std, color=color3, alpha=alpha, zorder=2)
     #axes[0,0].plot(dir_td3_x, dir_td3_y, linewidth=2, color=color4)
-    #axes[0,0].fill_between(dir_td3_x, dir_td3_y-dir_td3_std, dir_td3_y + dir_td3_std, color=color4, alpha = 0.5)
+    #axes[0,0].fill_between(dir_td3_x, dir_td3_y-dir_td3_std, dir_td3_y + dir_td3_std, color=color4, alpha=alpha)
+    axes[0,0].plot([0, max(dir_macaw_x)], [dir_imitation]*2, color='black', label='Meta-BC', linestyle='--', linewidth=2, zorder=1)
     axes[0,0].set_title('Cheetah-Direction')
     axes[0,0].set_xlabel('Training Steps')
     axes[0,0].set_ylabel('Reward')
     
     axes[0,1].plot(vel_macaw_x, vel_macaw_y, linewidth=2, color=color1)
-    axes[0,1].fill_between(vel_macaw_x, vel_macaw_y-vel_macaw_std, vel_macaw_y + vel_macaw_std, color=color1, alpha = 0.5)
+    axes[0,1].fill_between(vel_macaw_x, vel_macaw_y-vel_macaw_std, vel_macaw_y + vel_macaw_std, color=color1, alpha=alpha, zorder=2)
     #axes[0,1].plot([vel_macaw_x[-1], vel_pearl_x[-1]], [vel_macaw_y[-1]] * 2, color=color1, linewidth=2)
     axes[0,1].plot(vel_mt_x, vel_mt_y, linewidth=2, color=color2)
-    axes[0,1].fill_between(vel_mt_x, vel_mt_y-vel_mt_std, vel_mt_y + vel_mt_std, color=color2, alpha = 0.5)
+    axes[0,1].fill_between(vel_mt_x, vel_mt_y-vel_mt_std, vel_mt_y + vel_mt_std, color=color2, alpha=alpha, zorder=2)
     #axes[0,1].plot([vel_mt_x[-1], vel_pearl_x[-1]], [vel_mt_y[-1]] * 2, color=color2, linewidth=2)
     axes[0,1].plot(vel_pearl_x, vel_pearl_y, linewidth=2, color=color3)
-    axes[0,1].fill_between(vel_pearl_x, vel_pearl_y-vel_pearl_std, vel_pearl_y + vel_pearl_std, color=color3, alpha = 0.5)
+    axes[0,1].fill_between(vel_pearl_x, vel_pearl_y-vel_pearl_std, vel_pearl_y + vel_pearl_std, color=color3, alpha=alpha, zorder=2)
     #axes[0,1].plot(vel_td3_x, vel_td3_y, linewidth=2, color=color4)
-    #axes[0,1].fill_between(vel_td3_x, vel_td3_y-vel_td3_std, vel_td3_y + vel_td3_std, color=color4, alpha = 0.5)
+    #axes[0,1].fill_between(vel_td3_x, vel_td3_y-vel_td3_std, vel_td3_y + vel_td3_std, color=color4, alpha=alpha)
+    axes[0,1].plot([0, max(vel_macaw_x)], [vel_imitation]*2, color='black', linestyle='--', label='Meta-BC', linewidth=2, zorder=1)
     axes[0,1].set_title('Cheetah-Velocity')
     axes[0,1].set_xlabel('Training Steps')
     axes[0,1].set_ylabel('Reward')
 
     axes[1,0].plot(walker_macaw_x, walker_macaw_y, linewidth=2, label='MACAW', color=color1)
-    axes[1,0].fill_between(walker_macaw_x, walker_macaw_y-walker_macaw_std, walker_macaw_y + walker_macaw_std, color=color1, alpha = 0.5)
+    axes[1,0].fill_between(walker_macaw_x, walker_macaw_y-walker_macaw_std, walker_macaw_y + walker_macaw_std, color=color1, alpha=alpha, zorder=2)
     #axes[1,0].plot([walker_macaw_x[-1], walker_pearl_x[-1]], [walker_macaw_y[-1]] * 2, linewidth=2, color=color1)
     axes[1,0].plot(walker_mt_x, walker_mt_y, linewidth=2, label='Offline-MT', color=color2)
-    axes[1,0].fill_between(walker_mt_x, walker_mt_y-walker_mt_std, walker_mt_y + walker_mt_std, color=color2, alpha = 0.5)
+    axes[1,0].fill_between(walker_mt_x, walker_mt_y-walker_mt_std, walker_mt_y + walker_mt_std, color=color2, alpha=alpha, zorder=2)
     #axes[1,0].plot([walker_mt_x[-1], walker_pearl_x[-1]], [walker_mt_y[-1]] * 2, linewidth=2, color=color2)
     axes[1,0].plot(walker_pearl_x, walker_pearl_y, linewidth=2, label='Offline-PEARL', color=color3)
-    axes[1,0].fill_between(walker_pearl_x, walker_pearl_y-walker_pearl_std, walker_pearl_y + walker_pearl_std, color=color3, alpha = 0.5)
+    axes[1,0].fill_between(walker_pearl_x, walker_pearl_y-walker_pearl_std, walker_pearl_y + walker_pearl_std, color=color3, alpha=alpha, zorder=2)
+    axes[1,0].plot([0, max(walker_macaw_x)], [walker_imitation]*2, color='black', label='Meta-BC', linestyle='--', linewidth=2, zorder=1)
     #axes[1,0].plot(walker_td3_x, walker_td3_y, linewidth=2, color=color4)
-    #axes[1,0].fill_between(walker_td3_x, walker_td3_y-walker_td3_std, walker_td3_y + walker_td3_std, color=color4, alpha = 0.5)
+    #axes[1,0].fill_between(walker_td3_x, walker_td3_y-walker_td3_std, walker_td3_y + walker_td3_std, color=color4, alpha=alpha)
     axes[1,0].set_title('Walker-Params')
     axes[1,0].set_xlabel('Training Steps')
     axes[1,0].set_ylabel('Reward')
     #axes[1,0].legend(loc=2)
     
     axes[1,1].plot(ant_macaw_x, ant_macaw_y, linewidth=2, label='MACAW', color=color1)
-    axes[1,1].fill_between(ant_macaw_x, ant_macaw_y-ant_macaw_std, ant_macaw_y + ant_macaw_std, color=color1, alpha = 0.5)
+    axes[1,1].fill_between(ant_macaw_x, ant_macaw_y-ant_macaw_std, ant_macaw_y + ant_macaw_std, color=color1, alpha=alpha, zorder=2)
     #axes[1,1].plot([ant_macaw_x[-1], ant_pearl_x[-1]], [ant_macaw_y[-1]] * 2, linewidth=2, color=color1)
     axes[1,1].plot(ant_mt_x, ant_mt_y, linewidth=2, label='Offline MT+FT', color=color2)
-    axes[1,1].fill_between(ant_mt_x, ant_mt_y-ant_mt_std, ant_mt_y + ant_mt_std, color=color2, alpha = 0.5)
+    axes[1,1].fill_between(ant_mt_x, ant_mt_y-ant_mt_std, ant_mt_y + ant_mt_std, color=color2, alpha=alpha, zorder=2)
     #axes[1,1].plot([ant_mt_x[-1], ant_pearl_x[-1]], [ant_mt_y[-1]] * 2, linewidth=2, color=color2)
     axes[1,1].plot(ant_pearl_x, ant_pearl_y, linewidth=2, label='Offline PEARL', color=color3)
-    axes[1,1].fill_between(ant_pearl_x, ant_pearl_y-ant_pearl_std, ant_pearl_y + ant_pearl_std, color=color3, alpha = 0.5)
+    axes[1,1].fill_between(ant_pearl_x, ant_pearl_y-ant_pearl_std, ant_pearl_y + ant_pearl_std, color=color3, alpha=alpha, zorder=2)
     #axes[1,1].plot(ant_td3_x, ant_td3_y, linewidth=2, label='TD3 + Context', color=color4)
-    #axes[1,1].fill_between(ant_td3_x, ant_td3_y-ant_td3_std, ant_td3_y + ant_td3_std, color=color4, alpha = 0.5)
+    #axes[1,1].fill_between(ant_td3_x, ant_td3_y-ant_td3_std, ant_td3_y + ant_td3_std, color=color4, alpha=alpha)
+    axes[1,1].plot([0, max(ant_macaw_x)], [ant_imitation]*2, color='black', label='Meta-BC', linestyle='--', linewidth=2, zorder=1)
     axes[1,1].set_title('Ant-Direction')
     axes[1,1].set_xlabel('Training Steps')
     axes[1,1].set_ylabel('Reward')

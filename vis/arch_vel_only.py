@@ -89,7 +89,7 @@ def extract_macaw(path, terminate: int = None):
     except Exception as e:
         print(e)
 
-    y = gaussian_filter1d(y, sigma=5)        
+    y = gaussian_filter1d(y, sigma=4)
     return np.array(x).astype(np.float32) / 1000, np.array(y)
 
 
@@ -102,23 +102,10 @@ def trim(x, y, val):
         return x, y
 
 def run(args: argparse.Namespace):
-    #macaw_dir_x, macaw_dir_y = extract_macaw(args.dir_path, args.terminate)
     macaw_vel_x, macaw_vel_y = extract_macaw(args.vel_path, args.terminate)
-    #macaw_walker_x, macaw_walker_y = extract_macaw(args.walker_path, args.terminate)
-    #macaw_ant_x, macaw_ant_y = extract_macaw(args.ant_path, args.terminate)
-
-    #maml_dir_x, maml_dir_y = extract_macaw(args.maml_dir_path, args.terminate)
-    #maml_vel_x, maml_vel_y = extract_macaw(args.maml_vel_path, args.terminate)
-    #maml_walker_x, maml_walker_y = extract_macaw(args.maml_walker_path, args.terminate)
-    #maml_ant_x, maml_ant_y = extract_macaw(args.maml_ant_path, args.terminate)
-
-    #wlinear_dir_x, wlinear_dir_y = extract_macaw(args.wlinear_dir_path, args.terminate)
     wlinear_vel_x, wlinear_vel_y = extract_macaw(args.wlinear_vel_path, args.terminate)
-    #wlinear_walker_x, wlinear_walker_y = extract_macaw(args.wlinear_walker_path, args.terminate)
-    #wlinear_ant_x, wlinear_ant_y = extract_macaw(args.wlinear_ant_path, args.terminate)
+    wlinear_params_vel_x, wlinear_params_vel_y = extract_macaw(args.wlinear_params_vel_path, args.terminate)
 
-    #w = 5.4*3
-    #h = w/2
     fig, axes = plt.subplots(nrows=1, ncols=1, figsize=(9,6))
     a= axes
     a.tick_params(axis=u'both', which=u'both',length=0)
@@ -128,13 +115,16 @@ def run(args: argparse.Namespace):
     a.spines['bottom'].set_visible(False)
     a.spines['left'].set_visible(False)
 
+    _ = next(axes._get_lines.prop_cycler)['color']
     color1 = next(axes._get_lines.prop_cycler)['color']
-    color2 = next(axes._get_lines.prop_cycler)['color']
+    _ = next(axes._get_lines.prop_cycler)['color']
+    _ = next(axes._get_lines.prop_cycler)['color']
     color2 = next(axes._get_lines.prop_cycler)['color']
     color3 = next(axes._get_lines.prop_cycler)['color']
 
     axes.plot(macaw_vel_x, macaw_vel_y, color=color1, linewidth=5, label='MACAW')
-    axes.plot(wlinear_vel_x, wlinear_vel_y, '--', color=color1, linewidth=5, label='No Weight Transf.')
+    axes.plot(wlinear_vel_x, wlinear_vel_y, color=color2, linewidth=5, label='No WT-Equal Width')
+    axes.plot(wlinear_params_vel_x, wlinear_params_vel_y, color=color3, linewidth=5, label='No WT-Equal Params')
 
     a.set_xlabel('Training Steps (thousands)')
     a.set_ylabel('Reward')
@@ -146,18 +136,9 @@ def run(args: argparse.Namespace):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dir_path', type=str)
     parser.add_argument('--vel_path', type=str, default='log/NeurIPS_multiseed/macaw_vel/tb')
-    parser.add_argument('--walker_path', type=str)
-    parser.add_argument('--ant_path', type=str)
-    parser.add_argument('--maml_dir_path', type=str)
-    parser.add_argument('--maml_vel_path', type=str)
-    parser.add_argument('--maml_walker_path', type=str)
-    parser.add_argument('--maml_ant_path', type=str)
-    parser.add_argument('--wlinear_dir_path', type=str)
     parser.add_argument('--wlinear_vel_path', type=str, default='log/NeurIPS3/macaw_vel_nowlinear/tb')
-    parser.add_argument('--wlinear_walker_path', type=str)
-    parser.add_argument('--wlinear_ant_path', type=str)
+    parser.add_argument('--wlinear_params_vel_path', type=str, default='log/iclr_rebuttal/macaw_vel_nowlinear_wide_gooddata/tb')
     parser.add_argument('--terminate', type=int, default=None)
     parser.add_argument('--name', type=str, default='arch')
     run(parser.parse_args())

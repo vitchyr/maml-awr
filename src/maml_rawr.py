@@ -175,20 +175,21 @@ class MAMLRAWR(object):
                                               stream_to_disk=args.from_disk, mode=args.buffer_mode)
                                for i, task in enumerate(task_config.test_tasks)]
 
-        self._inner_buffers = [NewReplayBuffer(args.inner_buffer_size, self._observation_dim, env_action_dim(self._env),
-                                               discount_factor=discount_factor,
-                                               immutable=args.offline or args.offline_inner, load_from=inner_buffers[i], silent=silent, skip=args.inner_buffer_skip,
-                                               stream_to_disk=args.from_disk, mode=args.buffer_mode)
-                               for i, task in enumerate(task_config.train_tasks)]
-        
-        if args.offline and args.load_inner_buffer and args.load_outer_buffer and (args.replay_buffer_size == args.inner_buffer_size) and (args.buffer_skip == args.inner_buffer_skip) and args.buffer_mode == 'end':
-            self._outer_buffers = self._inner_buffers
-        else:
-            self._outer_buffers = [NewReplayBuffer(args.replay_buffer_size, self._observation_dim, env_action_dim(self._env),
-                                                   discount_factor=discount_factor, immutable=args.offline or args.offline_outer,
-                                                   load_from=outer_buffers[i], silent=silent, skip=args.buffer_skip,
-                                                   stream_to_disk=args.from_disk)
+        if not self._args.online_ft:
+            self._inner_buffers = [NewReplayBuffer(args.inner_buffer_size, self._observation_dim, env_action_dim(self._env),
+                                                   discount_factor=discount_factor,
+                                                   immutable=args.offline or args.offline_inner, load_from=inner_buffers[i], silent=silent, skip=args.inner_buffer_skip,
+                                                   stream_to_disk=args.from_disk, mode=args.buffer_mode)
                                    for i, task in enumerate(task_config.train_tasks)]
+
+            if args.offline and args.load_inner_buffer and args.load_outer_buffer and (args.replay_buffer_size == args.inner_buffer_size) and (args.buffer_skip == args.inner_buffer_skip) and args.buffer_mode == 'end':
+                self._outer_buffers = self._inner_buffers
+            else:
+                self._outer_buffers = [NewReplayBuffer(args.replay_buffer_size, self._observation_dim, env_action_dim(self._env),
+                                                       discount_factor=discount_factor, immutable=args.offline or args.offline_outer,
+                                                       load_from=outer_buffers[i], silent=silent, skip=args.buffer_skip,
+                                                       stream_to_disk=args.from_disk)
+                                       for i, task in enumerate(task_config.train_tasks)]
 
         self._training_iterations = training_iterations
         if self._policy_lrs is None:
@@ -464,20 +465,23 @@ class MAMLRAWR(object):
         return trajectories, rewards[:,-1], np.array(successes)
 
 
-    def eval_macaw(self, train_step_idx: int, writer: SummaryWriter):
+    def eval_macaw(self, train_step_idx: int, writer: SummaryWriter, ft: str = 'offline', ft_steps: int = 19, steps_per_rollout: int = 1):
         trajectories, successes = [], []
-        rewards = np.full((len(self.task_config.test_tasks), 3), float('nan'))
-        successes = np.full((len(self.task_config.test_tasks), 3), float('nan'))
-        for i, (test_task_idx, test_buffer) in enumerate(zip(self.task_config.test_tasks, self._test_buffers)):
+        rewards = np.full((len(self.task_config.test_tasks), 2 + ft_steps // steps_per_rollout), float('nan'))
+        successes = np.full((len(self.task_config.test_tasks), 2 + ft_steps // steps_per_rollout), float('nan'))
+        for i, (test_task_idx, test_buffer) in enumerate(zip(self.task_config.test_tasks[::-1], self._test_buffers[::-1])):
             self._env.set_task_idx(test_task_idx)
+            if ft == 'online':
+                print(f'Beginning fine-tuning on task {test_task_idx}')
 
             adapted_trajectory, adapted_reward, success = self._rollout_policy(self._adaptation_policy, self._env, sample_mode=True, render=self._args.render)
             trajectories.append(adapted_trajectory)
             rewards[i,0] = adapted_reward
             successes[i,0] = success
 
-            value_batch = torch.tensor(test_buffer.sample(self._args.eval_batch_size), requires_grad=False).to(self._device)
-            policy_batch = value_batch
+            value_batch, value_batch_dict = test_buffer.sample(self._args.eval_batch_size, return_both=True)
+            value_batch = torch.tensor(value_batch, requires_grad=False).to(self._device)
+            policy_batch, policy_batch_dict = value_batch, value_batch_dict
 
             value_function = deepcopy(self._value_function)
             vf_target = deepcopy(value_function)
@@ -505,6 +509,7 @@ class MAMLRAWR(object):
                     rewards[i,1] = adapted_reward
                     successes[i,1] = success
 
+                # After one offline adaptation step, either do some more offline adaptation, or run online adaptation
                 adapted_vf = deepcopy(self._value_function)
                 for targ, src in zip(adapted_vf.parameters(), f_value_function.parameters()):
                     targ.data[:] = src.data[:]
@@ -516,37 +521,54 @@ class MAMLRAWR(object):
                 del f_value_function, diff_value_opt
 
                 vf_target = deepcopy(adapted_vf)
-                opt = O.Adam(adapted_vf.parameters(), lr=1e-4)
-                policy_opt = O.Adam(policy.parameters(), lr=1e-3)
+                ft_v_opt = O.Adam(adapted_vf.parameters(), lr=1e-4)
+                ft_p_opt = O.Adam(adapted_policy.parameters(), lr=1e-4)
+                buf_size = self._env._max_episode_steps * (ft_steps // steps_per_rollout)
+                replay_buffer = NewReplayBuffer.from_dict(buf_size, value_batch_dict, self._silent)
                 if not self._args.imitation:
-                    for eval_step in range(19):
-                        loss, _, _, _ = self.value_function_loss_on_batch(adapted_vf, value_batch, task_idx=test_task_idx, inner=True, target=vf_target)
+                    for eval_step in range(ft_steps):
+                        if eval_step % steps_per_rollout == 0:
+                            if ft == 'online':
+                                writer.add_scalar(f'Eval_Buf_Size/Task_{test_task_idx}', len(replay_buffer), eval_step // steps_per_rollout)
+                            noise_trajectory, _, _ = self._rollout_policy(adapted_policy, self._env, sample_mode=False, render=self._args.render)
+                            _, adapted_reward, success = self._rollout_policy(adapted_policy, self._env, sample_mode=True, render=self._args.render)
+                            trajectories.append(adapted_trajectory)
+                            rewards[i,2 + eval_step // steps_per_rollout] = adapted_reward
+                            successes[i,2 + eval_step // steps_per_rollout] = success
+                            if ft == 'online':
+                                replay_buffer.add_trajectory(noise_trajectory)
+                                writer.add_scalar(f'Eval_Reward_FTStep/Task_{test_task_idx}', adapted_reward, eval_step // steps_per_rollout)
+                                writer.add_scalar(f'Eval_Success_FTStep/Task_{test_task_idx}', success, eval_step // steps_per_rollout)
+                        ft_value_batch = torch.tensor(replay_buffer.sample(self._args.eval_batch_size), requires_grad=False).to(self._device)
+                        ft_policy_batch = torch.tensor(replay_buffer.sample(self._args.eval_batch_size), requires_grad=False).to(self._device)
+
+                        loss, _, _, _ = self.value_function_loss_on_batch(adapted_vf, ft_value_batch, task_idx=test_task_idx, inner=True, target=None)
                         loss.backward()
-                        opt.step()
-                        opt.zero_grad()
+                        ft_v_opt.step()
+                        ft_v_opt.zero_grad()
                         
+                        #if len(replay_buffer) < buf_size // 4:
+                        #    continue
                         # Soft update target value function parameters
-                        self.soft_update(adapted_vf, vf_target)
+                        #self.soft_update(adapted_vf, vf_target)
 
-                for eval_step in range(19):
-                    if self._args.imitation:
-                        loss = self.imitation_loss_on_batch(adapted_policy, policy_batch, None, inner=True)
-                    else:
-                        loss, _, _, _ = self.adaptation_policy_loss_on_batch(adapted_policy, None, adapted_vf, policy_batch, test_task_idx, inner=True)
-                    loss.backward()
-                    policy_opt.step()
-                    policy_opt.zero_grad()
+                        if self._args.imitation:
+                            policy_loss = self.imitation_loss_on_batch(adapted_policy, ft_policy_batch, None, inner=True)
+                        else:
+                            policy_loss, _, _, _ = self.adaptation_policy_loss_on_batch(adapted_policy, None, adapted_vf, ft_policy_batch, test_task_idx)
+                        policy_loss.backward()
+                        ft_p_opt.step()
+                        ft_p_opt.zero_grad()
 
-                adapted_trajectory, adapted_reward, success = self._rollout_policy(adapted_policy, self._env, sample_mode=True, render=self._args.render)
-                trajectories.append(adapted_trajectory)
-                rewards[i,2] = adapted_reward
-                successes[i,2] = success
+                        if eval_step % steps_per_rollout == 0 and ft == 'online':
+                            writer.add_scalar(f'FTStep_Value_Loss/Task_{test_task_idx}', loss.item(), eval_step // steps_per_rollout)
+                            writer.add_scalar(f'FTStep_Policy_Loss/Task_{test_task_idx}', policy_loss.item(), eval_step // steps_per_rollout)
 
                 writer.add_scalar(f'Eval_Reward/Task_{test_task_idx}', rewards[i,1], train_step_idx)
-                writer.add_scalar(f'Eval_Reward_FT/Task_{test_task_idx}', rewards[i,2], train_step_idx)
+                writer.add_scalar(f'Eval_Reward_FT/Task_{test_task_idx}', rewards[i,-1], train_step_idx)
 
                 writer.add_scalar(f'Eval_Success/Task_{test_task_idx}', successes[i,1], train_step_idx)
-                writer.add_scalar(f'Eval_Success_FT/Task_{test_task_idx}', successes[i,2], train_step_idx)
+                writer.add_scalar(f'Eval_Success_FT/Task_{test_task_idx}', successes[i,-1], train_step_idx)
 
         writer.add_scalar(f'Eval_Reward/Mean', rewards.mean(0)[1], train_step_idx)
         writer.add_scalar(f'Eval_Success/Mean', successes.mean(0)[1], train_step_idx)
@@ -836,7 +858,12 @@ class MAMLRAWR(object):
         if not os.path.exists(tensorboard_log_path):
             os.makedirs(tensorboard_log_path)
         summary_writer = SummaryWriter(tensorboard_log_path)
-
+        if self._args.online_ft:
+            print('Running ONLINE FINE-TUNING')
+            self.eval_macaw(0, summary_writer, 'online', ft_steps=100000, steps_per_rollout=100)
+            print(f'Saved fine-tuning results to {tensorboard_log_path}')
+            return
+        
         # Gather initial trajectory rollouts
         if not self._args.load_inner_buffer or not self._args.load_outer_buffer:
             behavior_policy = self._exploration_policy if self._args.sample_exploration_inner else self._adaptation_policy

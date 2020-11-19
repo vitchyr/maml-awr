@@ -78,6 +78,27 @@ class Experience(NamedTuple):
 
 
 class NewReplayBuffer(object):
+    @classmethod
+    def from_dict(self, size: int, d: dict, silent: bool):
+        print(f'Building replay buffer of size {size}')
+        obs_dim = d['obs'].shape[-1]
+        action_dim = d['actions'].shape[-1]
+        buf = NewReplayBuffer(size, obs_dim, action_dim, silent=silent)
+        buf._obs[:d['obs'].shape[0]] = d['obs']
+        buf._actions[:d['obs'].shape[0]] = d['actions']
+        buf._rewards[:d['obs'].shape[0]] = d['rewards']
+        buf._mc_rewards[:d['obs'].shape[0]] = d['mc_rewards']
+        buf._terminals[:d['obs'].shape[0]] = d['dones']
+        buf._terminal_obs[:d['obs'].shape[0]] = d['terminal_obs']
+        buf._terminal_discounts[:d['obs'].shape[0]] = d['terminal_discounts']
+        buf._next_obs[:d['obs'].shape[0]] = d['next_obs']
+
+        buf._write_location = d['obs'].shape[0]
+        buf._stored_steps = d['obs'].shape[0]
+
+        print(buf._stored_steps, buf._write_location, buf._size)
+        return buf
+    
     def __init__(self, size: int, obs_dim: int, action_dim: int, discount_factor: float = 0.99,
                  immutable: bool = False, load_from: str = None, silent: bool = False, skip: int = 1,
                  stream_to_disk: bool = False, mode: str = 'end'):
@@ -252,7 +273,8 @@ class NewReplayBuffer(object):
         for trajectory in trajectories:
             self.add_trajectory(trajectory, force)
 
-    def sample(self, batch_size, return_dict: bool = False, noise: bool = False, contiguous: bool = False):
+    def sample(self, batch_size, return_dict: bool = False, return_both: bool = False,
+               noise: bool = False, contiguous: bool = False):
         if contiguous:
             idx = np.random.randint(0, self._stored_steps - batch_size)
             idxs = slice(idx, idx + batch_size)
@@ -269,25 +291,28 @@ class NewReplayBuffer(object):
         rewards = self._rewards[idxs]
         mc_rewards = self._mc_rewards[idxs]
         
-        if not return_dict:
-            batch = np.concatenate((obs, actions, next_obs, terminal_obs, terminal_discounts, dones, rewards, mc_rewards), 1)
-            if noise:
-                std = batch.std(0) * np.sqrt(batch_size)
-                mu = np.zeros(std.shape)
-                noise = np.random.normal(mu, std, batch.shape).astype(np.float32)
-                batch = batch + noise
+        batch = np.concatenate((obs, actions, next_obs, terminal_obs, terminal_discounts, dones, rewards, mc_rewards), 1)
+        if noise:
+            std = batch.std(0) * np.sqrt(batch_size)
+            mu = np.zeros(std.shape)
+            noise = np.random.normal(mu, std, batch.shape).astype(np.float32)
+            batch = batch + noise
+        batch_dict =  {
+            'obs': obs,
+            'actions': actions,
+            'next_obs': next_obs,
+            'terminal_obs': terminal_obs,
+            'terminal_discounts': terminal_discounts,
+            'dones': dones,
+            'rewards': rewards,
+            'mc_rewards': mc_rewards
+        }
+        if return_both:
+            return batch, batch_dict
+        elif not return_dict:
             return batch
         else:
-            return {
-                'obs': obs,
-                'actions': actions,
-                'next_obs': next_obs,
-                'terminal_obs': terminal_obs,
-                'terminal_discounts': terminal_discounts,
-                'dones': dones,
-                'rewards': rewards,
-                'mc_rewards': mc_rewards
-            }
+            return batch_dict
 
 
 class ReplayBuffer(object):
