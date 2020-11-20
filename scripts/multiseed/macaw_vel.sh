@@ -13,7 +13,7 @@ conda activate macaw
 which python
 
 NAME="macaw_vel"
-LOG_DIR="log/NeurIPS_multiseed"
+LOG_DIR="log/iclr_rebuttal/multiseed"
 TASK_CONFIG="config/cheetah_vel/40tasks_offline.json"
 MACAW_PARAMS="config/alg/standard.json"
 

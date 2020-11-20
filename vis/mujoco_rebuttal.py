@@ -122,7 +122,8 @@ def extract(path, tag_: str, terminate: int = None, xscale=1, smooth=1, n_vals=1
     newymean = ymean[idxs]
     newystd = ystd[idxs]
     #import pdb; pdb.set_trace()
-    return newx, newymean, newystd
+    return x, ymean, ystd
+    #return newx, newymean, newystd
 
 def trim(x, y, val):
     v = np.where(np.squeeze(x) >= val)[0]
@@ -234,7 +235,7 @@ def run(args: argparse.Namespace):
     for ax in axes:
         for a in ax:
             a.set_xlim(900,None)
-            a.set_xscale('log')
+            #a.set_xscale('log')
             a.tick_params(axis=u'both', which=u'both',length=0)
             a.grid(linestyle='--', linewidth=1)
             a.spines['top'].set_visible(False)
