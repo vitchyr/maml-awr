@@ -162,7 +162,7 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
         model = MAMLRAWR(args, task_config, env, args.log_dir, name, training_iterations=args.train_steps,
                          visualization_interval=args.vis_interval, silent=instance_idx > 0, instance_idx=instance_idx,
                          gradient_steps_per_iteration=args.gradient_steps_per_iteration,
-                         replay_buffer_length=args.replay_buffer_size, discount_factor=args.discount_factor)
+                         replay_buffer_length=args.replay_buffer_size, discount_factor=args.discount_factor, seed=seed)
     else:
         model = TD3Context(args, task_config, env, args.log_dir, name, 30, training_iterations=args.train_steps, silent=instance_idx > 0)
 

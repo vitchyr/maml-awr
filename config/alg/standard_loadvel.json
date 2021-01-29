@@ -1,4 +1,5 @@
 {
+    "archive": "log/iclr_rebuttal/multiseed/macaw_vel/archive_LATEST.pt",
     "offline": true,
     "load_inner_buffer": true,
     "load_outer_buffer": true,
@@ -7,7 +8,7 @@
     "outer_value_lr": 0.00001,
     "outer_policy_lr": 0.0001,
     "inner_policy_lr": 0.001,
-    "inner_value_lr": 0.00001,
+    "inner_value_lr": 0.001,
     "batch_size": 256,
     "inner_batch_size": 256,
     "eval_batch_size": 256,
@@ -18,6 +19,10 @@
     "no_bootstrap": true,
     "instances": 4,
     "task_batch_size": 5,
-    "vis_interval": 1000,
-    "multitask": true
+    "maml_steps": 1,
+    "eval_maml_steps": 1,
+    "lrlr": 1e-3,
+    "wlinear": true,
+    "contiguous": true,
+    "advantage_head_coef": 0.01
 }

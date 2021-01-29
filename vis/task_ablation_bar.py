@@ -90,16 +90,34 @@ def trim(x, y, val):
         return x, y
 
 def run(args: argparse.Namespace):
-    macaw_half = -65
-    macaw_quarter = -66
-    macaw_eighth = -80
-    macaw_sixteenth = -85
+    '''
+    macaw_half = -185.4 # @386k steps
+    macaw_quarter = -201.5 # @352k steps
+    macaw_eighth = -125.2 # @184k steps
+    macaw_sixteenth = -126.4 # @268k steps
+    '''
 
+    macaw_all = -128
+    macaw_half = -169.7 # @104k
+    macaw_quarter = -200.6 # @92k
+    macaw_eighth = -130 # @94k
+    macaw_sixteenth = -103.1 # @132k
+
+    '''
+    # 7x data
     pearl_half = -42
     pearl_quarter = -70
     pearl_eighth = -150
     pearl_sixteenth = -320
+    '''
 
+    pearl_all = -306
+    pearl_half = -137.5
+    pearl_quarter = -76.035
+    pearl_eighth = -116.5
+    pearl_sixteenth = -313.1
+
+    mt_all = -171
     mt_half = -200
     mt_quarter = -249
     mt_eighth = -270
@@ -123,23 +141,24 @@ def run(args: argparse.Namespace):
     bw = 0.2
 
 
-    x = np.arange(4)
-    tasks = ['20 tasks', '10 tasks', '5 tasks', '3 tasks']
-    macaw = [macaw_half, macaw_quarter, macaw_eighth, macaw_sixteenth]
-    pearl = [pearl_half, pearl_quarter, pearl_eighth, pearl_sixteenth]
-    mt = [mt_half, mt_quarter, mt_eighth, mt_sixteenth]
-    lp, = axes.plot(x, pearl, marker='s', color=color3, linewidth=5, markersize=10,label='Offline PEARL')
+    x = np.arange(5)
+    #tasks = ['35 tasks', '20 tasks', '10 tasks', '5 tasks', '3 tasks']
+    tasks = ['35', '20', '10', '5', '3']
+    macaw = [macaw_all, macaw_half, macaw_quarter, macaw_eighth, macaw_sixteenth]
+    pearl = [pearl_all, pearl_half, pearl_quarter, pearl_eighth, pearl_sixteenth]
+    mt = [mt_all, mt_half, mt_quarter, mt_eighth, mt_sixteenth]
+    lp, = axes.plot(x, pearl, marker='s', color=color3, linewidth=5, markersize=10,label='Off. PEARL')
     lmac, = axes.plot(x, macaw, marker='s', color=color1, linewidth=7, markersize=12, label='MACAW')
-    lmt, = axes.plot(x, mt, marker='s', color=color2, linewidth=5, markersize=10, label='Offline MT+FT')
+    lmt, = axes.plot(x, mt, marker='s', color=color2, linewidth=5, markersize=10, label='Off. MT+FT')
     axes.set_xticks(x)
     axes.set_xticklabels(tasks)
     axes.set_title('Test Performance with Sparse Task Sampling')
-
+    axes.set_ylim([-350,-0.01])
     axes.set_xlabel('Number of Training Tasks')
     axes.set_ylabel('Asmyptotic Reward')
     handles, labels = axes.get_legend_handles_labels()
     order = [1,2,0]
-    axes.legend([handles[idx] for idx in order],[labels[idx] for idx in order], bbox_to_anchor=(0.475,0.433))
+    axes.legend([handles[idx] for idx in order],[labels[idx] for idx in order], loc='upper left', prop={'size': 17})#, bbox_to_anchor=(0.475,0.423))
     plt.tight_layout()
     fig.savefig(args.name, bbox_inches = "tight")
 

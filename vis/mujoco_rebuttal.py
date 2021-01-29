@@ -83,23 +83,19 @@ def extract(path, tag_: str, terminate: int = None, xscale=1, smooth=1, n_vals=1
                     fn = os.path.join(root, name)
         print(f'Got TB: {fn}')
         x,y = [], []
-        try:
-            for entry in summary_iterator(fn):
-                try:
-                    if len(entry.summary.value):
-                        v = entry.summary.value[0]
-                        step, tag, value = entry.step, v.tag, v.simple_value
-                        if terminate and step > terminate:
-                            break
-                        if tag == tag_:
-                            y.append(value)
-                            x.append(step * xscale)
-                except Exception as e:
-                    print(e, entry)
-                    pass
-        except Exception as e:
-            print(e)
-            pass
+        for entry in summary_iterator(fn):
+            try:
+                if len(entry.summary.value):
+                    v = entry.summary.value[0]
+                    step, tag, value = entry.step, v.tag, v.simple_value
+                    if terminate and step > terminate:
+                        break
+                    if tag == tag_:
+                        y.append(value)
+                        x.append(step * xscale)
+            except Exception as e:
+                print(e, entry)
+                pass
         xs.append(x)
         ys.append(running_mean(y, smooth))
     ylens = [len(z) for z in ys]
@@ -122,8 +118,8 @@ def extract(path, tag_: str, terminate: int = None, xscale=1, smooth=1, n_vals=1
     newymean = ymean[idxs]
     newystd = ystd[idxs]
     #import pdb; pdb.set_trace()
-    return x, ymean, ystd
-    #return newx, newymean, newystd
+    #return x, ymean, ystd
+    return newx, newymean, newystd / 2
 
 def trim(x, y, val):
     v = np.where(np.squeeze(x) >= val)[0]
@@ -181,7 +177,7 @@ def run(args: argparse.Namespace):
     axes[0,0].fill_between(dir_pearl_x, dir_pearl_y-dir_pearl_std, dir_pearl_y + dir_pearl_std, color=color3, alpha=alpha, zorder=2)
     #axes[0,0].plot(dir_td3_x, dir_td3_y, linewidth=2, color=color4)
     #axes[0,0].fill_between(dir_td3_x, dir_td3_y-dir_td3_std, dir_td3_y + dir_td3_std, color=color4, alpha=alpha)
-    axes[0,0].plot([0, max(dir_macaw_x)], [dir_imitation]*2, color='black', label='Meta-BC', linestyle='--', linewidth=2, zorder=1)
+    axes[0,0].plot([0, max(dir_pearl_x)], [dir_imitation]*2, color='black', label='Meta-BC', linestyle='--', linewidth=2, zorder=1)
     axes[0,0].set_title('Cheetah-Direction')
     axes[0,0].set_xlabel('Training Steps')
     axes[0,0].set_ylabel('Reward')
@@ -196,7 +192,7 @@ def run(args: argparse.Namespace):
     axes[0,1].fill_between(vel_pearl_x, vel_pearl_y-vel_pearl_std, vel_pearl_y + vel_pearl_std, color=color3, alpha=alpha, zorder=2)
     #axes[0,1].plot(vel_td3_x, vel_td3_y, linewidth=2, color=color4)
     #axes[0,1].fill_between(vel_td3_x, vel_td3_y-vel_td3_std, vel_td3_y + vel_td3_std, color=color4, alpha=alpha)
-    axes[0,1].plot([0, max(vel_macaw_x)], [vel_imitation]*2, color='black', linestyle='--', label='Meta-BC', linewidth=2, zorder=1)
+    axes[0,1].plot([0, max(vel_pearl_x)], [vel_imitation]*2, color='black', linestyle='--', label='Meta-BC', linewidth=2, zorder=1)
     axes[0,1].set_title('Cheetah-Velocity')
     axes[0,1].set_xlabel('Training Steps')
     axes[0,1].set_ylabel('Reward')
@@ -209,7 +205,7 @@ def run(args: argparse.Namespace):
     #axes[1,0].plot([walker_mt_x[-1], walker_pearl_x[-1]], [walker_mt_y[-1]] * 2, linewidth=2, color=color2)
     axes[1,0].plot(walker_pearl_x, walker_pearl_y, linewidth=2, label='Offline-PEARL', color=color3)
     axes[1,0].fill_between(walker_pearl_x, walker_pearl_y-walker_pearl_std, walker_pearl_y + walker_pearl_std, color=color3, alpha=alpha, zorder=2)
-    axes[1,0].plot([0, max(walker_macaw_x)], [walker_imitation]*2, color='black', label='Meta-BC', linestyle='--', linewidth=2, zorder=1)
+    axes[1,0].plot([0, max(walker_pearl_x)], [walker_imitation]*2, color='black', label='Meta-BC', linestyle='--', linewidth=2, zorder=1)
     #axes[1,0].plot(walker_td3_x, walker_td3_y, linewidth=2, color=color4)
     #axes[1,0].fill_between(walker_td3_x, walker_td3_y-walker_td3_std, walker_td3_y + walker_td3_std, color=color4, alpha=alpha)
     axes[1,0].set_title('Walker-Params')
@@ -227,7 +223,7 @@ def run(args: argparse.Namespace):
     axes[1,1].fill_between(ant_pearl_x, ant_pearl_y-ant_pearl_std, ant_pearl_y + ant_pearl_std, color=color3, alpha=alpha, zorder=2)
     #axes[1,1].plot(ant_td3_x, ant_td3_y, linewidth=2, label='TD3 + Context', color=color4)
     #axes[1,1].fill_between(ant_td3_x, ant_td3_y-ant_td3_std, ant_td3_y + ant_td3_std, color=color4, alpha=alpha)
-    axes[1,1].plot([0, max(ant_macaw_x)], [ant_imitation]*2, color='black', label='Meta-BC', linestyle='--', linewidth=2, zorder=1)
+    axes[1,1].plot([0, max(ant_pearl_x)], [ant_imitation]*2, color='black', label='Meta-BC', linestyle='--', linewidth=2, zorder=1)
     axes[1,1].set_title('Ant-Direction')
     axes[1,1].set_xlabel('Training Steps')
     axes[1,1].set_ylabel('Reward')
@@ -235,7 +231,7 @@ def run(args: argparse.Namespace):
     for ax in axes:
         for a in ax:
             a.set_xlim(900,None)
-            #a.set_xscale('log')
+            a.set_xscale('log')
             a.tick_params(axis=u'both', which=u'both',length=0)
             a.grid(linestyle='--', linewidth=1)
             a.spines['top'].set_visible(False)

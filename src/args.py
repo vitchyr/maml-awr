@@ -27,6 +27,7 @@ def get_args() -> argparse.Namespace:
     parser.add_argument('--pad_buffers', action='store_true')
     parser.add_argument('--task_batch_size', type=int, default=None)
     parser.add_argument('--action_sigma', type=float, default=0.2)
+    parser.add_argument('--log_targets', action='store_true')
     parser.add_argument('--traj_hold_out_test', dest='traj_hold_out_train', action='store_false')
     parser.add_argument('--traj_hold_out_train', action='store_true', default=None)
     parser.add_argument('--trim_obs', type=int, default=None)

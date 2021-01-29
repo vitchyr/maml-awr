@@ -8,13 +8,13 @@
     "outer_policy_lr": 0.0001,
     "inner_policy_lr": 0.01,
     "inner_value_lr": 0.0001,
-    "batch_size": 256,
+    "batch_size": 750,
     "inner_batch_size": 750,
     "eval_batch_size": 750,
     "buffer_skip": 7,
     "inner_buffer_skip": 7,
     "net_depth": 3,
-    "net_width": 300,
+    "net_width": 100,
     "no_bootstrap": true,
     "instances": 4,
     "task_batch_size": 10,
@@ -22,5 +22,6 @@
     "eval_maml_steps": 1,
     "lrlr": 1e-3,
     "wlinear": true,
-    "advantage_head_coef": 0.001
+    "advantage_head_coef": 0.001,
+    "log_targets": true
 }

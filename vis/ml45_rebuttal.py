@@ -51,12 +51,21 @@ def get_vals(path: str):
     return means, medians, stds, lowerq, upperq, mins, maxs
 
 
-def extract_macaw(path, terminate: int = None, prefix: str = None, suffix: str = None, xscale = None, smooth=1, n_vals=250):
+def extract_dict(d, smooth=51):
+    x = np.sort(list(d.keys()))
+    ymean = np.array([np.mean(d[x_]) for x_ in x])
+    if smooth > 1:
+        ymean = running_mean(ymean, smooth)
+        x = x[smooth//2:-smooth//2+1]
+    return x, ymean
+
+
+def extract_macaw(path, terminate: int = None, prefix: str = None, suffix: str = None, xscale = None, smooth=1, n_vals=500):
     paths = glob.glob(path)
 
     xs, ys = [], []
-    d = None
-    for path in paths:
+    ds = [defaultdict(list) for _ in range(len(paths))]
+    for d, path in zip(ds, paths):
         if 'tfevents' in path:
             fn = path
         else:
@@ -70,118 +79,58 @@ def extract_macaw(path, terminate: int = None, prefix: str = None, suffix: str =
                 if "tfevents" in name:
                     fn = os.path.join(root, name)
         print(f'Got TB: {fn}')
-        y = []
-        x = []
-        try:
-            for entry in summary_iterator(fn):
-                try:
-                    if len(entry.summary.value):
-                        v = entry.summary.value[0]
-                        step, tag, value = entry.step, v.tag, v.simple_value
-                        if terminate and step > terminate:
-                            break
-                        if prefix is None:
-                            if tag != 'Eval_Reward/Mean' and tag != 'test_tasks_mean_reward/mean_return':
-                                continue
-                            if xscale is not None:
-                                step *= xscale
-                            y.append(value)
-                            x.append(step)
-                        else:
-                            if not tag.startswith(prefix) or (suffix is not None and not tag.endswith(suffix)):
-                                continue
-                            if d is None:
-                                d = defaultdict(list)
-                            if xscale is not None:
-                                step *= xscale
-                            d[step].append(value)
-                except Exception as e:
-                    print(entry)
-                    raise e
-        except Exception as e:
-            print('exception', e)
-        #xs.append(x)
-        #ys.append(running_mean(y, smooth))
+        for entry in summary_iterator(fn):
+            if len(entry.summary.value):
+                v = entry.summary.value[0]
+                step, tag, value = entry.step, v.tag, v.simple_value
+                if terminate and step > terminate:
+                    break
+                if not tag.startswith(prefix) or (suffix is not None and not tag.endswith(suffix)):
+                    continue
+                if xscale is not None:
+                    step *= xscale
+                d[step].append(value)
 
-    x = np.sort(list(d.keys()))
-    y = np.array([np.mean(d[x_]) for x_ in x])
-    ystd = np.array([np.std(d[x_]) for x_ in x])
-    #ylens = [len(z) for z in ys]
+    ys = []
+    min_len = 1e9
+    for d in ds:
+        x, ys_ = extract_dict(d)
+        ys.append(ys_)
+        if min_len > ys_.shape[0]:
+            min_len = ys_.shape[0]
+    x = x[:min_len]
+    ys = [ys_[:min_len] for ys_ in ys]
+    ys = np.stack(ys)
+    ystd = ys.std(0)
+    ymean = ys.mean(0)
+    #x = np.sort(list(d.keys()))
+    #y = np.array([np.mean(d[x_]) for x_ in x])
+    #ymean = running_mean(y, smooth)
+    #ystd = np.array([np.std(d[x_]) for x_ in x])
 
-    #ys = [y_[:min(ylens)] for y_ in ys]
-    #xs = [x_[:min(ylens)] for x_ in xs]
-    ymean = running_mean(y, smooth)
-    #ys = np.array(ys)
-    #xs = np.array(xs)
-    x = x[:ymean.shape[0]]
+    #x = x[:ymean.shape[0]]
     ystd = ystd[:ymean.shape[0]]
     logx = np.exp((np.linspace(0,np.log(x.max())*np.log(10), n_vals)[:,None]))
     logx = logx/(logx.max() / x.max())
     idxs = np.argmin(np.abs(x[None,:] - logx), 1)
     idxs = np.unique(idxs)
     newx = x[idxs]
-    #print(newx)
     newymean = ymean[idxs]
     newystd = ystd[idxs]
+    
+    std_factor = 1
+    if 'mean_succes' in prefix:
+        std_factor = 3**0.5
     print(x.shape, ymean.shape, ystd.shape)
-    return newx, newymean, newystd * 0.1
+    return newx, newymean, newystd / std_factor
+    #return x, ymean, ystd * std_factor
 
 
 def running_mean(x, N):
-    cumsum = np.cumsum(np.insert(x, 0, 0))
-    return (cumsum[N:] - cumsum[:-N]) / float(N)
-
-
-def extract(path, tag_: str, terminate: int = None, xscale=1, smooth=1):
-    paths = glob.glob(path)
-
-    xs, ys = [], []
-    print(paths)
-    for path in paths:
-        fn = None
-        for root, dirs, files in os.walk(path, topdown=False):
-            if fn is not None:
-                break
-            for name in files:
-                if fn is not None:
-                    break
-                if "tfevents" in name:
-                    fn = os.path.join(root, name)
-        print(f'Got TB: {fn}')
-        x,y = [], []
-        try:
-            for entry in summary_iterator(fn):
-                try:
-                    if len(entry.summary.value):
-                        v = entry.summary.value[0]
-                        step, tag, value = entry.step, v.tag, v.simple_value
-                        if terminate and step > terminate:
-                            break
-                        if tag == tag_:
-                            y.append(value)
-                            x.append(step * xscale)
-                except Exception as e:
-                    print(e, entry)
-                    pass
-        except Exception as e:
-            print(e)
-            pass
-        xs.append(x)
-        ys.append(running_mean(y, smooth))
-    ylens = [len(z) for z in ys]
-
-    ys = [y_[:min(ylens)] for y_ in ys]
-    xs = [x_[:min(ylens)] for x_ in xs]
-    
-    ys = np.array(ys)
-    xs = np.array(xs)
-    ymean = np.mean(ys,0)
-    ystd = np.std(ys, 0)
-    x = xs[0]
-
-    x = x[:ymean.shape[0]]
-    print(x.shape, ymean.shape, ystd.shape)
-    return x, ymean, ystd
+    ones = np.ones(N)/N
+    return np.convolve(x,ones,mode='valid')
+    #cumsum = np.cumsum(np.insert(x, 0, 0))
+    #return (cumsum[N:] - cumsum[:-N]) / float(N)
 
 
 def trim(x, y, val):
@@ -206,10 +155,11 @@ def run(args: argparse.Namespace):
     #mt_x, mt_success, mt_std = extract_macaw(args.mt_path, args.terminate, prefix='FT_Eval_Success', suffix='Step4', smooth=10)
     mt2_x, mt2_success, mt2_std = extract_macaw(args.mt_path, args.terminate, prefix='FT_Eval_Success', suffix='Step19', smooth=10)
 
-    macaw_x, macaw_success, macaw_std = extract_macaw(args.macaw_path, args.terminate, smooth=10, prefix='Eval_Success')
+    #macaw_x, macaw_success, macaw_std = extract_macaw(args.macaw_path, args.terminate, smooth=10, prefix='Eval_Success')
+    macaw_ft_x, macaw_ft_success, macaw_ft_std = extract_macaw(args.macaw_ft_path, args.terminate, smooth=10, prefix='Eval_Success_FT')
     #macaw_success = cumavg(macaw_success)
 
-    pearl_x, pearl_success, pearl_std = extract_macaw(args.pearl_path, args.terminate, prefix='test_tasks_mean_succes/mean_succes', smooth=1, xscale=200)
+    pearl_x, pearl_success, pearl_std = extract_macaw(args.pearl_path, args.terminate, prefix='test_tasks_mean_succes/mean_succes', smooth=3, xscale=200)
     #pearl_success = cumavg(pearl_success)
 
     fig, axes = plt.subplots(nrows=1, ncols=1, figsize=(9,6))
@@ -225,36 +175,35 @@ def run(args: argparse.Namespace):
     #axes2.spines['right'].set_visible(False)
     #axes2.spines['bottom'].set_visible(False)
     #axes2.spines['left'].set_visible(False)
-    print(macaw_success.shape, macaw_std.shape)
+    print(macaw_ft_success.shape, macaw_ft_std.shape)
     color1 = next(axes._get_lines.prop_cycler)['color']
     color2 = next(axes._get_lines.prop_cycler)['color']
     color3 = next(axes._get_lines.prop_cycler)['color']
     color3 = next(axes._get_lines.prop_cycler)['color']
 
-    l1, = axes.plot(macaw_x, macaw_success, linewidth=3, color=color1, label='MACAW')
-    #l1, = axes.plot([macaw_x[-1], pearl_x[-1]], [macaw_success[-1]] * 2, linewidth=3, color=color1)
-    axes.fill_between(macaw_x, macaw_success-macaw_std, macaw_success + macaw_std, color=color1, alpha = 0.5)
-    #l2, = axes.plot(macaw_train_x, macaw_success_train, '--', linewidth=3, color=color)
+    alpha=0.3
 
+    pearl_final = 0.21
+    
     axes.plot(pearl_x, pearl_success, linewidth=3, color=color3, label='PEARL')
-    axes.fill_between(pearl_x, pearl_success-pearl_std, pearl_success + pearl_std, color=color3, alpha = 0.5)
-    #axes.plot(pearl_train_x, pearl_success_train,  '--', linewidth=3, color=color)
+    axes.fill_between(pearl_x, pearl_success-pearl_std, pearl_success + pearl_std, color=color3, alpha = alpha)
 
+    axes.plot([0, max(pearl_x)], [pearl_final]*2, color=color3, linestyle='--', linewidth=3)
+    
     axes.plot(mt2_x, mt2_success, linewidth=3, color=color2, label='MT + fine tune')
-    #axes.plot([mt2_x[-1], pearl_x[-1]], [mt2_success[-1]] * 2, linewidth=3, color=color2)
-    axes.fill_between(mt2_x, mt2_success-mt2_std, mt2_success + mt2_std, color=color2, alpha = 0.5)
+    axes.fill_between(mt2_x, mt2_success-mt2_std, mt2_success + mt2_std, color=color2, alpha = alpha)
 
-    #axes.plot(mt_x, mt_success, linewidth=3, color=color, label='MT + fine tune (5)')
-    #axes.plot([mt_x[-1], pearl_x[-1]], [mt_success[-1]] * 2, linewidth=3, color=color2)
-    #axes.fill_between(mt_x, mt_success-mt_std, mt_success + mt_std, color=color, alpha = 0.5)
-    #axes.plot(mt_train_x, mt_success_train,  '--', linewidth=3, color=color)
+    l2, = axes.plot(macaw_ft_x, macaw_ft_success, linewidth=3, color=color1, label='MACAW')
+    axes.fill_between(macaw_ft_x, macaw_ft_success-macaw_ft_std, macaw_ft_success + macaw_ft_std, color=color1, alpha = alpha)
+
     axes.set_xscale('log')
     axes.set_title('Meta-World ML45 Benchmark')
     axes.set_xlabel('Training Steps')
     #axes.set_ylabel('Reward')
-    axes.set_xlim(900,None)
+    axes.set_xlim(min(macaw_ft_x),None)
     axes.set_ylabel('Average Test Success Rate')
-    leg = axes.legend(loc='center left', bbox_to_anchor=(0,0.63))
+    #leg = axes.legend(loc='center left', bbox_to_anchor=(0,0.63))
+    leg = axes.legend(loc='center left')
 
     plt.tight_layout()
     fig.savefig('rebuttal_figs/' + args.name)
@@ -262,9 +211,10 @@ def run(args: argparse.Namespace):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--macaw_path', type=str)
-    parser.add_argument('--pearl_path', type=str)
-    parser.add_argument('--mt_path', type=str)
+    parser.add_argument('--macaw_path', type=str, default='log/NeurIPS_multiseed/macaw_ml45*')
+    parser.add_argument('--macaw_ft_path', type=str, default='log/iclr_rebuttal/multiseed/macaw_ml45*')
+    parser.add_argument('--pearl_path', type=str, default='log/NeurIPS_multiseed_pearl/V*')
+    parser.add_argument('--mt_path', type=str, default='log/NeurIPS_multiseed_multitask/multitask_ml45*')
     parser.add_argument('--terminate', type=int, default=None)
     parser.add_argument('--name', type=str, default='ML45')
     run(parser.parse_args())

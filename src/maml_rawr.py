@@ -69,7 +69,8 @@ class MAMLRAWR(object):
                  instance_idx: int = 0,
                  replay_buffer_length: int = 1000,
                  gradient_steps_per_iteration: int = 1, 
-                 discount_factor: float = 0.99):
+                 discount_factor: float = 0.99,
+                 seed: int = 0):
         self._env = env
         self._log_dir = log_dir
         self._name = name if name is not None else 'throwaway_test_run'
@@ -326,8 +327,13 @@ class MAMLRAWR(object):
                 target = value_function
             mc_value_estimates = self.mc_value_estimates_on_batch(target, batch, task_idx, self._args.no_bootstrap and (inner or self._args.multitask))
 
-        targets = mc_value_estimates
-        
+            targets = mc_value_estimates
+            if self._args.log_targets:
+                targets[torch.logical_and(targets > -1, targets < 1)] = 0
+                targets[targets > 1] = targets[targets>1].log()
+                targets[targets < -1] = -targets[targets<-1].abs().log()
+                targets = targets.clone()
+
         DEBUG(f'({task_idx}) VALUE: {value_estimates.abs().mean()}, {targets.abs().mean()}', self._args.debug)
         if self._args.huber and not inner:
             losses = F.smooth_l1_loss(value_estimates, targets, reduction='none')
@@ -408,7 +414,7 @@ class MAMLRAWR(object):
             assert param_source[0] == param_target[0]
             param_target[1].data = self._args.target_vf_alpha * param_target[1].data + (1 - self._args.target_vf_alpha) * param_source[1].data
 
-    def eval_multitask(self, train_step_idx: int):
+    def eval_multitask(self, train_step_idx: int, writer: SummaryWriter):
         rewards = np.full((len(self.task_config.test_tasks), self._args.eval_maml_steps+1), float('nan'))
         trajectories, successes = [], []
 
@@ -530,12 +536,12 @@ class MAMLRAWR(object):
                         if eval_step % steps_per_rollout == 0:
                             if ft == 'online':
                                 writer.add_scalar(f'Eval_Buf_Size/Task_{test_task_idx}', len(replay_buffer), eval_step // steps_per_rollout)
-                            noise_trajectory, _, _ = self._rollout_policy(adapted_policy, self._env, sample_mode=False, render=self._args.render)
                             _, adapted_reward, success = self._rollout_policy(adapted_policy, self._env, sample_mode=True, render=self._args.render)
                             trajectories.append(adapted_trajectory)
                             rewards[i,2 + eval_step // steps_per_rollout] = adapted_reward
                             successes[i,2 + eval_step // steps_per_rollout] = success
                             if ft == 'online':
+                                noise_trajectory, _, _ = self._rollout_policy(adapted_policy, self._env, sample_mode=False, render=self._args.render)
                                 replay_buffer.add_trajectory(noise_trajectory)
                                 writer.add_scalar(f'Eval_Reward_FTStep/Task_{test_task_idx}', adapted_reward, eval_step // steps_per_rollout)
                                 writer.add_scalar(f'Eval_Success_FTStep/Task_{test_task_idx}', success, eval_step // steps_per_rollout)
@@ -572,8 +578,8 @@ class MAMLRAWR(object):
 
         writer.add_scalar(f'Eval_Reward/Mean', rewards.mean(0)[1], train_step_idx)
         writer.add_scalar(f'Eval_Success/Mean', successes.mean(0)[1], train_step_idx)
-        writer.add_scalar(f'Eval_Reward_FT/Mean', rewards.mean(0)[2], train_step_idx)
-        writer.add_scalar(f'Eval_Success_FT/Mean', successes.mean(0)[2], train_step_idx)
+        writer.add_scalar(f'Eval_Reward_FT/Mean', rewards.mean(0)[-1], train_step_idx)
+        writer.add_scalar(f'Eval_Success_FT/Mean', successes.mean(0)[-1], train_step_idx)
         return trajectories, rewards[:,-1], successes
 
     def eval(self, train_step_idx: int, writer: SummaryWriter):
