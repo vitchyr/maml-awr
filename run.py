@@ -172,7 +172,7 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
 if __name__ == '__main__':
     set_start_method('spawn')
     args = get_args()
-    
+
     if args.instances == 1:
         if args.profile:
             import cProfile

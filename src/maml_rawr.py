@@ -355,7 +355,8 @@ class MAMLRAWR(object):
         return losses.mean()
 
     #@profile
-    def adaptation_policy_loss_on_batch(self, policy, q_function, value_function, batch, task_idx: int, inner: bool = False, iweights: torch.tensor = None):
+    def adaptation_policy_loss_on_batch(self, policy, q_function, value_function, batch, task_idx: int, inner: bool = False,
+                                        iweights: torch.tensor = None, online: bool = False):
         with torch.no_grad():
             value_estimates = value_function(self.add_task_description(batch[:,:self._observation_dim], task_idx))
             if q_function is not None:
@@ -529,7 +530,7 @@ class MAMLRAWR(object):
                 vf_target = deepcopy(adapted_vf)
                 ft_v_opt = O.Adam(adapted_vf.parameters(), lr=1e-4)
                 ft_p_opt = O.Adam(adapted_policy.parameters(), lr=1e-4)
-                buf_size = self._env._max_episode_steps * (ft_steps // steps_per_rollout)
+                buf_size = 50000 #self._env._max_episode_steps * (ft_steps // steps_per_rollout)
                 replay_buffer = NewReplayBuffer.from_dict(buf_size, value_batch_dict, self._silent)
                 if not self._args.imitation:
                     for eval_step in range(ft_steps):
@@ -548,27 +549,28 @@ class MAMLRAWR(object):
                         ft_value_batch = torch.tensor(replay_buffer.sample(self._args.eval_batch_size), requires_grad=False).to(self._device)
                         ft_policy_batch = torch.tensor(replay_buffer.sample(self._args.eval_batch_size), requires_grad=False).to(self._device)
 
-                        loss, _, _, _ = self.value_function_loss_on_batch(adapted_vf, ft_value_batch, task_idx=test_task_idx, inner=True, target=None)
-                        loss.backward()
-                        ft_v_opt.step()
-                        ft_v_opt.zero_grad()
-                        
-                        #if len(replay_buffer) < buf_size // 4:
-                        #    continue
-                        # Soft update target value function parameters
-                        #self.soft_update(adapted_vf, vf_target)
+                        if eval_step > steps_per_rollout * 5:
+                            loss, _, _, _ = self.value_function_loss_on_batch(adapted_vf, ft_value_batch, task_idx=test_task_idx, inner=True, target=None)
+                            loss.backward()
+                            ft_v_opt.step()
+                            ft_v_opt.zero_grad()
 
-                        if self._args.imitation:
-                            policy_loss = self.imitation_loss_on_batch(adapted_policy, ft_policy_batch, None, inner=True)
-                        else:
-                            policy_loss, _, _, _ = self.adaptation_policy_loss_on_batch(adapted_policy, None, adapted_vf, ft_policy_batch, test_task_idx)
-                        policy_loss.backward()
-                        ft_p_opt.step()
-                        ft_p_opt.zero_grad()
+                            #if len(replay_buffer) < buf_size // 4:
+                            #    continue
+                            # Soft update target value function parameters
+                            #self.soft_update(adapted_vf, vf_target)
 
-                        if eval_step % steps_per_rollout == 0 and ft == 'online':
-                            writer.add_scalar(f'FTStep_Value_Loss/Task_{test_task_idx}', loss.item(), eval_step // steps_per_rollout)
-                            writer.add_scalar(f'FTStep_Policy_Loss/Task_{test_task_idx}', policy_loss.item(), eval_step // steps_per_rollout)
+                            if self._args.imitation:
+                                policy_loss = self.imitation_loss_on_batch(adapted_policy, ft_policy_batch, None, inner=True)
+                            else:
+                                policy_loss, _, _, _ = self.adaptation_policy_loss_on_batch(adapted_policy, None, adapted_vf, ft_policy_batch, test_task_idx)
+                            policy_loss.backward()
+                            ft_p_opt.step()
+                            ft_p_opt.zero_grad()
+
+                            if eval_step % steps_per_rollout == 0 and ft == 'online':
+                                writer.add_scalar(f'FTStep_Value_Loss/Task_{test_task_idx}', loss.item(), eval_step // steps_per_rollout)
+                                writer.add_scalar(f'FTStep_Policy_Loss/Task_{test_task_idx}', policy_loss.item(), eval_step // steps_per_rollout)
 
                 writer.add_scalar(f'Eval_Reward/Task_{test_task_idx}', rewards[i,1], train_step_idx)
                 writer.add_scalar(f'Eval_Reward_FT/Task_{test_task_idx}', rewards[i,-1], train_step_idx)
@@ -580,6 +582,12 @@ class MAMLRAWR(object):
         writer.add_scalar(f'Eval_Success/Mean', successes.mean(0)[1], train_step_idx)
         writer.add_scalar(f'Eval_Reward_FT/Mean', rewards.mean(0)[-1], train_step_idx)
         writer.add_scalar(f'Eval_Success_FT/Mean', successes.mean(0)[-1], train_step_idx)
+        mean_rewards = rewards.mean(0)
+        mean_successes = successes.mean(0)
+        for rollout_idx in range(ft_steps // steps_per_rollout):
+            writer.add_scalar(f'Eval_Reward_FTStep/Mean', mean_rewards[rollout_idx], rollout_idx)
+            writer.add_scalar(f'Eval_Success_FTStep/Mean', mean_successes[rollout_idx], rollout_idx)
+
         return trajectories, rewards[:,-1], successes
 
     def eval(self, train_step_idx: int, writer: SummaryWriter):
