@@ -138,8 +138,13 @@ class MAMLRAWR(object):
         if args.archive is not None:
             archive_path = args.archive
             if self._instance_idx > 0:
-                idx = archive_path.rindex('/')
-                archive_path = archive_path[:idx] + f'_{self._instance_idx}' + archive_path[idx:]
+                comps = args.archive.split('/')
+                comps[-2] += f'_{instance_idx}'
+                print('Remapping archive for new seed:')
+                print(f'From:\t{args.archive}')
+                archive_path = '/'.join(comps)
+                print(f'To:\t{args.archive}')
+                
             print(f'Loading parameters from archive: {archive_path}')
             archive = torch.load(archive_path)
             self._value_function.load_state_dict(archive['vf'])
@@ -472,7 +477,8 @@ class MAMLRAWR(object):
         return trajectories, rewards[:,-1], np.array(successes)
 
 
-    def eval_macaw(self, train_step_idx: int, writer: SummaryWriter, ft: str = 'offline', ft_steps: int = 19, steps_per_rollout: int = 1):
+    def eval_macaw(self, train_step_idx: int, writer: SummaryWriter, ft: str = 'offline',
+                   ft_steps: int = 19, steps_per_rollout: int = 1, log_path: str = None):
         trajectories, successes = [], []
         rewards = np.full((len(self.task_config.test_tasks), 2 + ft_steps // steps_per_rollout), float('nan'))
         successes = np.full((len(self.task_config.test_tasks), 2 + ft_steps // steps_per_rollout), float('nan'))
@@ -480,6 +486,9 @@ class MAMLRAWR(object):
             self._env.set_task_idx(test_task_idx)
             if ft == 'online':
                 print(f'Beginning fine-tuning on task {test_task_idx}')
+                filepath = log_path + '/rewards'
+                if log_path is not None:
+                    print(f'Saving results to {filepath}')
 
             adapted_trajectory, adapted_reward, success = self._rollout_policy(self._adaptation_policy, self._env, sample_mode=True, render=self._args.render)
             trajectories.append(adapted_trajectory)
@@ -537,8 +546,14 @@ class MAMLRAWR(object):
                         if eval_step % steps_per_rollout == 0:
                             if ft == 'online':
                                 writer.add_scalar(f'Eval_Buf_Size/Task_{test_task_idx}', len(replay_buffer), eval_step // steps_per_rollout)
-                            _, adapted_reward, success = self._rollout_policy(adapted_policy, self._env, sample_mode=True, render=self._args.render)
+                            eval_rewards, eval_successes = [], []
+                            for traj_idx in range(5):
+                                _, adapted_reward, success = self._rollout_policy(adapted_policy, self._env, sample_mode=True, render=self._args.render)
+                                eval_rewards.append(adapted_reward)
+                                eval_successes.append(success)
                             trajectories.append(adapted_trajectory)
+                            adapted_reward = sum(eval_rewards)/len(eval_rewards)
+                            adapted_success = sum(eval_successes)/len(eval_successes)
                             rewards[i,2 + eval_step // steps_per_rollout] = adapted_reward
                             successes[i,2 + eval_step // steps_per_rollout] = success
                             if ft == 'online':
@@ -577,6 +592,9 @@ class MAMLRAWR(object):
 
                 writer.add_scalar(f'Eval_Success/Task_{test_task_idx}', successes[i,1], train_step_idx)
                 writer.add_scalar(f'Eval_Success_FT/Task_{test_task_idx}', successes[i,-1], train_step_idx)
+
+        if log_path is not None:
+            np.save(filepath, rewards)
 
         writer.add_scalar(f'Eval_Reward/Mean', rewards.mean(0)[1], train_step_idx)
         writer.add_scalar(f'Eval_Success/Mean', successes.mean(0)[1], train_step_idx)
@@ -874,7 +892,7 @@ class MAMLRAWR(object):
         summary_writer = SummaryWriter(tensorboard_log_path)
         if self._args.online_ft:
             print('Running ONLINE FINE-TUNING')
-            self.eval_macaw(0, summary_writer, 'online', ft_steps=100000, steps_per_rollout=100)
+            self.eval_macaw(0, summary_writer, 'online', ft_steps=100000, steps_per_rollout=100, log_path=log_path)
             print(f'Saved fine-tuning results to {tensorboard_log_path}')
             return
         
@@ -883,15 +901,15 @@ class MAMLRAWR(object):
             behavior_policy = self._exploration_policy if self._args.sample_exploration_inner else self._adaptation_policy
             exploration_rewards = np.zeros((self._args.initial_rollouts, len(self._env.tasks)))
             print('Gathering training task trajectories...')
-            for j in range(self._args.initial_rollouts):
-                for i, (inner_buffer, outer_buffer) in enumerate(zip(self._inner_buffers, self._outer_buffers)):
+            for j in tqdm(range(self._args.initial_rollouts), unit='traj'):
+                for i,(inner_buffer,outer_buffer) in tqdm(enumerate(zip(self._inner_buffers, self._outer_buffers)), leave=False, unit='task'):
                     #print_(f'{j+1,i+1}/{self._args.initial_rollouts,len(self._inner_buffers)}\r', self._silent, end='')
                     task_idx = self.task_config.train_tasks[i]
                     print_(f'Task {task_idx} ({i+1}/{len(self._inner_buffers)}): {j+1}/{self._args.initial_rollouts} rollouts\r', self._silent, end='')
                     self._env.set_task_idx(self.task_config.train_tasks[i])
                     if self._args.render_exploration:
                         print_(f'Task {task_idx}, trajectory {j}', self._silent)
-                    trajectory, reward, success = self._rollout_policy(behavior_policy, self._env, random=self._args.random, render=self._args.render_exploration, sample_mode=self._args.render_exploration)
+                    trajectory, reward, success = self._rollout_policy(behavior_policy, self._env, random=self._args.random)
                     exploration_rewards[j,i] = reward
                     if self._args.render_exploration:
                         print_(f'Reward: {reward} {success}', self._silent)
@@ -899,12 +917,11 @@ class MAMLRAWR(object):
                         inner_buffer.add_trajectory(trajectory, force=True)
                     if not self._args.load_outer_buffer:
                         outer_buffer.add_trajectory(trajectory, force=True)
-                        #full_buffer.add_trajectory(trajectory, force=True)
 
             print('\nGathering test task trajectories...')
-            for j in range(self._args.initial_rollouts):
-                if not self._args.load_inner_buffer:
-                    for i, test_buffer in enumerate(self._test_buffers):
+            if not self._args.load_inner_buffer:
+                for j in tqdm(range(self._args.initial_test_rollouts), unit='traj'):
+                    for i, test_buffer in tqdm(enumerate(self._test_buffers), leave=False, unit='task'):
                         task_idx = self.task_config.test_tasks[i]
                         self._env.set_task_idx(task_idx)
                         print_(f'Task {task_idx} ({i+1}/{len(self._inner_buffers)}): {j+1}/{self._args.initial_rollouts} rollouts\r', self._silent, end='')
