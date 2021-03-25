@@ -6,7 +6,7 @@
 #SBATCH --mem=64G
 #SBATCH --gres=gpu:1
 #SBATCH --job-name="ant"
-#SBATCH --exclude=iris4
+#SBATCH --exclude=iris3,iris4
 
 eval "$(conda shell.bash hook)"
 conda activate macaw

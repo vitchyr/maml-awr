@@ -1,11 +1,11 @@
 {
     "offline": true,
-    "initial_rollouts": 100,
-    "initial_test_rollouts": 5,
+    "initial_interacts": 20000,
+    "initial_test_interacts": 512,
     "load_inner_buffer": false,
     "load_outer_buffer": true,
     "replay_buffer_size": -1,
-    "inner_buffer_size": -1,
+    "inner_buffer_size": 20000,
     "outer_value_lr": 0.00001,
     "outer_policy_lr": 0.0001,
     "inner_policy_lr": 0.001,
@@ -23,6 +23,6 @@
     "eval_maml_steps": 1,
     "lrlr": 1e-3,
     "wlinear": true,
-    "contiguous": true,
+    "contiguous": false,
     "advantage_head_coef": 0.01
 }

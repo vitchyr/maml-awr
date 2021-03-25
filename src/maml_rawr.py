@@ -10,6 +10,7 @@ import json
 import pickle
 from collections import defaultdict
 import warnings
+from tqdm import tqdm
 
 import higher
 import numpy as np
@@ -537,8 +538,8 @@ class MAMLRAWR(object):
                 del f_value_function, diff_value_opt
 
                 vf_target = deepcopy(adapted_vf)
-                ft_v_opt = O.Adam(adapted_vf.parameters(), lr=1e-4)
-                ft_p_opt = O.Adam(adapted_policy.parameters(), lr=1e-4)
+                ft_v_opt = O.Adam(adapted_vf.parameters(), lr=1e-5)
+                ft_p_opt = O.Adam(adapted_policy.parameters(), lr=1e-5)
                 buf_size = 50000 #self._env._max_episode_steps * (ft_steps // steps_per_rollout)
                 replay_buffer = NewReplayBuffer.from_dict(buf_size, value_batch_dict, self._silent)
                 if not self._args.imitation:
@@ -899,37 +900,33 @@ class MAMLRAWR(object):
         # Gather initial trajectory rollouts
         if not self._args.load_inner_buffer or not self._args.load_outer_buffer:
             behavior_policy = self._exploration_policy if self._args.sample_exploration_inner else self._adaptation_policy
-            exploration_rewards = np.zeros((self._args.initial_rollouts, len(self._env.tasks)))
             print('Gathering training task trajectories...')
-            for j in tqdm(range(self._args.initial_rollouts), unit='traj'):
-                for i,(inner_buffer,outer_buffer) in tqdm(enumerate(zip(self._inner_buffers, self._outer_buffers)), leave=False, unit='task'):
-                    #print_(f'{j+1,i+1}/{self._args.initial_rollouts,len(self._inner_buffers)}\r', self._silent, end='')
+            for i,(inner_buffer,outer_buffer) in tqdm(enumerate(zip(self._inner_buffers, self._outer_buffers)), leave=False, unit='task'):
+                tq = tqdm(total=self._args.initial_interacts, leave=False)
+                while tq.n < self._args.initial_interacts:
                     task_idx = self.task_config.train_tasks[i]
-                    print_(f'Task {task_idx} ({i+1}/{len(self._inner_buffers)}): {j+1}/{self._args.initial_rollouts} rollouts\r', self._silent, end='')
                     self._env.set_task_idx(self.task_config.train_tasks[i])
                     if self._args.render_exploration:
                         print_(f'Task {task_idx}, trajectory {j}', self._silent)
                     trajectory, reward, success = self._rollout_policy(behavior_policy, self._env, random=self._args.random)
-                    exploration_rewards[j,i] = reward
                     if self._args.render_exploration:
                         print_(f'Reward: {reward} {success}', self._silent)
                     if not self._args.load_inner_buffer:
                         inner_buffer.add_trajectory(trajectory, force=True)
                     if not self._args.load_outer_buffer:
                         outer_buffer.add_trajectory(trajectory, force=True)
+                    tq.update(len(trajectory))
 
             print('\nGathering test task trajectories...')
             if not self._args.load_inner_buffer:
-                for j in tqdm(range(self._args.initial_test_rollouts), unit='traj'):
-                    for i, test_buffer in tqdm(enumerate(self._test_buffers), leave=False, unit='task'):
+                for i, test_buffer in tqdm(enumerate(self._test_buffers)):
+                    tq = tqdm(total=self._args.initial_test_interacts, leave=False)
+                    while test_buffer._stored_steps < self._args.initial_test_interacts:
                         task_idx = self.task_config.test_tasks[i]
                         self._env.set_task_idx(task_idx)
-                        print_(f'Task {task_idx} ({i+1}/{len(self._inner_buffers)}): {j+1}/{self._args.initial_rollouts} rollouts\r', self._silent, end='')
                         random_trajectory, _, _ = self._rollout_policy(behavior_policy, self._env, random=self._args.random)
                         test_buffer.add_trajectory(random_trajectory, force=True)
-
-            DEBUG(f'Mean exploration rewards: {exploration_rewards.mean(0)}', self._args.debug and not self._silent)
-            DEBUG(f'Positive exploration rewards: {(exploration_rewards>0).mean(0)}', self._args.debug and not self._silent)
+                        tq.update(len(random_trajectory))
 
         rewards = []
         successes = []
