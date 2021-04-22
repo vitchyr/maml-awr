@@ -10,10 +10,9 @@ import metaworld
 from collections import namedtuple
 import json
 
-from src.envs import HalfCheetahDirEnv, HalfCheetahVelEnv, AntDirEnv, AntGoalEnv, HumanoidDirEnv, WalkerRandParamsWrappedEnv, ML45Env
-from src.maml_rawr import MAMLRAWR
-from src.mql.td3 import TD3Context
 from src.args import get_args
+
+args = None
 
 
 def get_metaworld_tasks(env_id: str = 'ml10'):
@@ -158,6 +157,8 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
 
+    from src.maml_rawr import MAMLRAWR
+    from src.mql.td3 import TD3Context
     if not args.td3ctx:
         model = MAMLRAWR(args, task_config, env, args.log_dir, name, training_iterations=args.train_steps,
                          visualization_interval=args.vis_interval, silent=instance_idx > 0, instance_idx=instance_idx,
@@ -168,11 +169,12 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
 
     model.train()
 
-
-if __name__ == '__main__':
+def run_doodad_experiment(doodad_config, params):
+    global args
     set_start_method('spawn')
     args = get_args()
 
+    print(params)
     print(args)
     print(args.env)
     import ipdb; ipdb.set_trace()
