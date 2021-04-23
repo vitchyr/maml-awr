@@ -20,7 +20,7 @@ class RunningEstimator(object):
 
     def var(self):
         return self._mu2 - self._mu ** 2
-    
+
     def std(self):
         return (self.var() + 1e-8) ** 0.5
 
@@ -67,7 +67,7 @@ def kld(p, q):
     dq = torch.distributions.Normal(q_mu, q_std)
 
     return torch.distributions.kl_divergence(dp, dq).sum(-1)
-    
+
 
 class Experience(NamedTuple):
     state: np.ndarray
@@ -98,73 +98,121 @@ class NewReplayBuffer(object):
 
         print(buf._stored_steps, buf._write_location, buf._size)
         return buf
-    
+
     def __init__(self, size: int, obs_dim: int, action_dim: int, discount_factor: float = 0.99,
                  immutable: bool = False, load_from: str = None, silent: bool = False, skip: int = 1,
-                 stream_to_disk: bool = False, mode: str = 'end'):
+                 stream_to_disk: bool = False, mode: str = 'end', is_rlkit_data=True):
         if size == -1 and load_from is None:
             print("Can't have size == -1 and no offline buffer - defaulting to 1M steps")
             size = 1000000
 
-        self.immutable = immutable
-        self.stream_to_disk = stream_to_disk
-        
-        if load_from is not None:
-            f = h5py.File(load_from, 'r')
-            if size == -1:
-                size = f['obs'].shape[0]
-        
         needs_to_load = True
         size //= skip
-        if stream_to_disk:
-            name = os.path.splitext(os.path.basename(os.path.normpath(load_from)))[0]
-            if os.path.exists('/scr-ssd'):
-                path = f'/scr-ssd/em7/{name}'
-            else:
-                path = f'/scr/em7/{name}'
-            if os.path.exists(path):
-                if not silent:
-                    print(f'Using existing replay buffer memmap at {path}')
-                needs_to_load = False
-                self._obs = np.memmap(f'{path}/obs.array', mode='r', shape=(size, obs_dim), dtype=np.float32)
-                self._actions = np.memmap(f'{path}/actions.array', mode='r', shape=(size, action_dim), dtype=np.float32)
-                self._rewards = np.memmap(f'{path}/rewards.array', mode='r', shape=(size, 1), dtype=np.float32)
-                self._mc_rewards = np.memmap(f'{path}/mc_rewards.array', mode='r', shape=(size, 1), dtype=np.float32)
-                self._terminals = np.memmap(f'{path}/terminals.array', mode='r', shape=(size, 1), dtype=np.bool)
-                self._terminal_obs = np.memmap(f'{path}/terminal_obs.array', mode='r', shape=(size, obs_dim), dtype=np.float32)
-                self._terminal_discounts = np.memmap(f'{path}/terminal_discounts.array', mode='r', shape=(size, 1), dtype=np.float32)
-                self._next_obs = np.memmap(f'{path}/next_obs.array', mode='r', shape=(size, obs_dim), dtype=np.float32)
-            else:
-                if not silent:
-                    print(f'Creating replay buffer memmap at {path}')
-                os.makedirs(path)
-                self._obs = np.memmap(f'{path}/obs.array', mode='w+', shape=(size, obs_dim), dtype=np.float32)
-                self._actions = np.memmap(f'{path}/actions.array', mode='w+', shape=(size, action_dim), dtype=np.float32)
-                self._rewards = np.memmap(f'{path}/rewards.array', mode='w+', shape=(size, 1), dtype=np.float32)
-                self._mc_rewards = np.memmap(f'{path}/mc_rewards.array', mode='w+', shape=(size, 1), dtype=np.float32)
-                self._terminals = np.memmap(f'{path}/terminals.array', mode='w+', shape=(size, 1), dtype=np.bool)
-                self._terminal_obs = np.memmap(f'{path}/terminal_obs.array', mode='w+', shape=(size, obs_dim), dtype=np.float32)
-                self._terminal_discounts = np.memmap(f'{path}/terminal_discounts.array', mode='w+', shape=(size, 1), dtype=np.float32)
-                self._next_obs = np.memmap(f'{path}/next_obs.array', mode='w+', shape=(size, obs_dim), dtype=np.float32)
-                self._obs.fill(float('nan'))
-                self._actions.fill(float('nan'))
-                self._rewards.fill(float('nan'))
-                self._mc_rewards.fill(float('nan'))
-                self._terminals.fill(float('nan'))
-                self._terminal_obs.fill(float('nan'))
-                self._terminal_discounts.fill(float('nan'))
-                self._next_obs.fill(float('nan'))
-        else:
-            self._obs = np.full((size, obs_dim), float('nan'), dtype=np.float32)
-            self._actions = np.full((size, action_dim), float('nan'), dtype=np.float32)
-            self._rewards = np.full((size, 1), float('nan'), dtype=np.float32)
-            self._mc_rewards = np.full((size, 1), float('nan'), dtype=np.float32)
-            self._terminals = np.full((size, 1), False, dtype=np.bool)
-            self._terminal_obs = np.full((size, obs_dim), float('nan'), dtype=np.float32)
-            self._terminal_discounts = np.full((size, 1), float('nan'), dtype=np.float32)
-            self._next_obs = np.full((size, obs_dim), float('nan'), dtype=np.float32)
-
         self._size = size
+
+        self.immutable = immutable
+        self.stream_to_disk = stream_to_disk
+
+        if is_rlkit_data:
+            rlkit_data = np.load(load_from, allow_pickle=True).item()
+            f = dict(
+                obs=rlkit_data['observations'],
+                actions=rlkit_data['actions'],
+                rewards=rlkit_data['rewards'],
+                mc_rewards=rlkit_data['mc_rewards'],
+                terminals=rlkit_data['terminals'],
+                terminal_obs=rlkit_data['terminal_observations'],
+                terminal_discounts=rlkit_data['terminal_discounts'],
+                next_obs=rlkit_data['next_observations'],
+                discount_factor=0.99,
+            )
+            # self._obs = rlkit_data['observations']
+            # self._actions = rlkit_data['actions']
+            # self._rewards = rlkit_data['rewards']
+            # self._mc_rewards = rlkit_data['mc_rewards']
+            # self._terminals = rlkit_data['terminals']
+            # self._terminal_obs = rlkit_data['terminal_observations']
+            # self._terminal_discounts = rlkit_data['terminal_discounts']
+            # self._next_obs = rlkit_data['next_observations']
+            # size = self._next_obs.shape[0]
+            # self._write_location = self._size
+            #
+            # self._obs = np.full((size, obs_dim), float('nan'), dtype=np.float32)
+            # self._actions = np.full((size, action_dim), float('nan'),
+            #                         dtype=np.float32)
+            # self._rewards = np.full((size, 1), float('nan'), dtype=np.float32)
+            # self._mc_rewards = np.full((size, 1), float('nan'),
+            #                            dtype=np.float32)
+            # self._terminals = np.full((size, 1), False, dtype=np.bool)
+            # self._terminal_obs = np.full((size, obs_dim), float('nan'),
+            #                              dtype=np.float32)
+            # self._terminal_discounts = np.full((size, 1), float('nan'),
+            #                                    dtype=np.float32)
+            # self._next_obs = np.full((size, obs_dim), float('nan'),
+            #                          dtype=np.float32)
+            #
+            # self._obs[:size, ...] = rlkit_data['observations']
+            # self._actions[:size, ...] = rlkit_data['actions']
+            # self._rewards[:size, ...] = rlkit_data['rewards']
+            # self._mc_rewards[:size, ...] = rlkit_data['mc_rewards']
+            # self._terminals[:size, ...] = rlkit_data['terminals']
+            # self._terminal_obs[:size, ...] = rlkit_data['terminal_observations']
+            # self._terminal_discounts[:size, ...] = rlkit_data['terminal_discounts']
+            # self._next_obs[:size, ...] = rlkit_data['next_observations']
+        else:
+            if load_from is not None:
+                f = h5py.File(load_from, 'r')
+                if size == -1:
+                    size = f['obs'].shape[0]
+
+            if stream_to_disk:
+                name = os.path.splitext(os.path.basename(os.path.normpath(load_from)))[0]
+                if os.path.exists('/scr-ssd'):
+                    path = f'/scr-ssd/em7/{name}'
+                else:
+                    path = f'/scr/em7/{name}'
+                if os.path.exists(path):
+                    if not silent:
+                        print(f'Using existing replay buffer memmap at {path}')
+                    needs_to_load = False
+                    self._obs = np.memmap(f'{path}/obs.array', mode='r', shape=(size, obs_dim), dtype=np.float32)
+                    self._actions = np.memmap(f'{path}/actions.array', mode='r', shape=(size, action_dim), dtype=np.float32)
+                    self._rewards = np.memmap(f'{path}/rewards.array', mode='r', shape=(size, 1), dtype=np.float32)
+                    self._mc_rewards = np.memmap(f'{path}/mc_rewards.array', mode='r', shape=(size, 1), dtype=np.float32)
+                    self._terminals = np.memmap(f'{path}/terminals.array', mode='r', shape=(size, 1), dtype=np.bool)
+                    self._terminal_obs = np.memmap(f'{path}/terminal_obs.array', mode='r', shape=(size, obs_dim), dtype=np.float32)
+                    self._terminal_discounts = np.memmap(f'{path}/terminal_discounts.array', mode='r', shape=(size, 1), dtype=np.float32)
+                    self._next_obs = np.memmap(f'{path}/next_obs.array', mode='r', shape=(size, obs_dim), dtype=np.float32)
+                else:
+                    if not silent:
+                        print(f'Creating replay buffer memmap at {path}')
+                    os.makedirs(path)
+                    self._obs = np.memmap(f'{path}/obs.array', mode='w+', shape=(size, obs_dim), dtype=np.float32)
+                    self._actions = np.memmap(f'{path}/actions.array', mode='w+', shape=(size, action_dim), dtype=np.float32)
+                    self._rewards = np.memmap(f'{path}/rewards.array', mode='w+', shape=(size, 1), dtype=np.float32)
+                    self._mc_rewards = np.memmap(f'{path}/mc_rewards.array', mode='w+', shape=(size, 1), dtype=np.float32)
+                    self._terminals = np.memmap(f'{path}/terminals.array', mode='w+', shape=(size, 1), dtype=np.bool)
+                    self._terminal_obs = np.memmap(f'{path}/terminal_obs.array', mode='w+', shape=(size, obs_dim), dtype=np.float32)
+                    self._terminal_discounts = np.memmap(f'{path}/terminal_discounts.array', mode='w+', shape=(size, 1), dtype=np.float32)
+                    self._next_obs = np.memmap(f'{path}/next_obs.array', mode='w+', shape=(size, obs_dim), dtype=np.float32)
+                    self._obs.fill(float('nan'))
+                    self._actions.fill(float('nan'))
+                    self._rewards.fill(float('nan'))
+                    self._mc_rewards.fill(float('nan'))
+                    self._terminals.fill(float('nan'))
+                    self._terminal_obs.fill(float('nan'))
+                    self._terminal_discounts.fill(float('nan'))
+                    self._next_obs.fill(float('nan'))
+            # else:
+        self._obs = np.full((size, obs_dim), float('nan'), dtype=np.float32)
+        self._actions = np.full((size, action_dim), float('nan'), dtype=np.float32)
+        self._rewards = np.full((size, 1), float('nan'), dtype=np.float32)
+        self._mc_rewards = np.full((size, 1), float('nan'), dtype=np.float32)
+        self._terminals = np.full((size, 1), False, dtype=np.bool)
+        self._terminal_obs = np.full((size, obs_dim), float('nan'), dtype=np.float32)
+        self._terminal_discounts = np.full((size, 1), float('nan'), dtype=np.float32)
+        self._next_obs = np.full((size, obs_dim), float('nan'), dtype=np.float32)
+
         if load_from is None:
             self._stored_steps = 0
             self._discount_factor = discount_factor
@@ -188,7 +236,8 @@ class NewReplayBuffer(object):
 
                 chunk_size = n_seed# + int(skip > 1)
 
-                self._discount_factor = f['discount_factor'][()]
+                # self._discount_factor = f['discount_factor'][()]
+                self._discount_factor = f['discount_factor']
                 if mode == 'end':
                     h5slice = slice(-chunk_size, stored)
                 elif mode == 'middle':
@@ -208,9 +257,10 @@ class NewReplayBuffer(object):
                 self._terminal_discounts[:self._stored_steps] = f['terminal_discounts'][h5slice][::skip]
                 self._next_obs[:self._stored_steps] = f['next_obs'][h5slice][::skip]
 
-            f.close()
+                if not is_rlkit_data:
+                    f.close()
+            self._write_location = self._stored_steps % self._size
 
-        self._write_location = self._stored_steps % self._size
         #self._valid = np.where(np.logical_and(~np.isnan(self._terminal_discounts[:,0]), self._terminal_discounts[:,0] < 0.35))[0]
 
     @property
@@ -236,7 +286,7 @@ class NewReplayBuffer(object):
         f.create_dataset('next_obs', data=self._next_obs[:self._stored_steps], compression='lzf')
         f.create_dataset('discount_factor', data=self._discount_factor)
         f.close()
-    
+
     def add_trajectory(self, trajectory: List[Experience], force: bool = False):
         if self.immutable and not force:
             raise ValueError('Cannot add trajectory to immutable replay buffer')
@@ -263,7 +313,7 @@ class NewReplayBuffer(object):
 
             self._write_location += 1
             self._write_location = self._write_location % self._size
-            
+
             if self._stored_steps < self._size:
                 self._stored_steps += 1
 
@@ -290,7 +340,7 @@ class NewReplayBuffer(object):
         dones = self._terminals[idxs]
         rewards = self._rewards[idxs]
         mc_rewards = self._mc_rewards[idxs]
-        
+
         batch = np.concatenate((obs, actions, next_obs, terminal_obs, terminal_discounts, dones, rewards, mc_rewards), 1)
         if noise:
             std = batch.std(0) * np.sqrt(batch_size)
@@ -373,7 +423,7 @@ class ReplayBuffer(object):
 
     def save(self, location: str):
         np.save(location, self._trajectories[:self._stored_trajectories])
-    
+
     def add_trajectory(self, trajectory: List[Experience], force: bool = False):
         if self._immutable and not force:
             raise ValueError('Cannot add trajectory to immutable replay buffer')
@@ -401,7 +451,7 @@ class ReplayBuffer(object):
 
             self._trajectories[self._new_trajectory_idx, -(idx + 1), slice_idx:slice_idx + self._state_dim] = experience.next_state
             slice_idx += self._state_dim
-            
+
             self._trajectories[self._new_trajectory_idx, -(idx + 1), slice_idx:slice_idx + self._state_dim] = terminal_state
             slice_idx += self._state_dim
 
@@ -414,11 +464,11 @@ class ReplayBuffer(object):
 
             #self._trajectories[self._new_trajectory_idx, -(idx + 1), slice_idx:slice_idx + 1] = 0experience.log_prob
             #slice_idx += 1
-            
+
             terminal_factor *= self._discount_factor
             self._trajectories[self._new_trajectory_idx, -(idx + 1), slice_idx:slice_idx + 1] = terminal_factor
             slice_idx += 1
-            
+
             self._trajectories[self._new_trajectory_idx, -(idx + 1), slice_idx:slice_idx + 1] = experience.done
             slice_idx += 1
 
@@ -431,7 +481,7 @@ class ReplayBuffer(object):
 
         self._new_trajectory_idx += 1
         self._new_trajectory_idx %= self._max_trajectories
-            
+
         if self._stored_trajectories < self._max_trajectories:
             self._stored_trajectories += 1
 
@@ -454,7 +504,7 @@ class ReplayBuffer(object):
             trajectory_idxs = idxs // (self._trajectory_length - self._trim_suffix)
             time_steps = idxs % (self._trajectory_length - self._trim_suffix)
 
-        if train is not None:    
+        if train is not None:
             if train:
                 odd = trajectory_idxs % 2 == 1
                 trajectory_idxs[odd] = trajectory_idxs[odd] - 1
@@ -530,7 +580,7 @@ def test_new_buffer():
     buf.save('test_buf.h5')
     #buf2 = NewReplayBuffer(size, state, action, load_from='test_buf.h5')
     import pdb; pdb.set_trace()
-    
+
 
 if __name__ == '__main__':
     test_new_buffer()

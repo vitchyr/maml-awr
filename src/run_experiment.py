@@ -10,7 +10,8 @@ import metaworld
 from collections import namedtuple
 import json
 
-from src.args import get_args
+from src.args import get_default_args
+from src.envs import HalfCheetahDirEnv, HalfCheetahVelEnv, AntDirEnv, AntGoalEnv, HumanoidDirEnv, WalkerRandParamsWrappedEnv, ML45Env
 
 args = None
 
@@ -105,19 +106,19 @@ def get_gym_env(env: str):
 
 
 def run(args: argparse.Namespace, instance_idx: int = 0):
-    with open(args.task_config, 'r') as f:
-        task_config = json.load(f, object_hook=lambda d: namedtuple('X', d.keys())(*d.values()))
+    # with open(args.task_config, 'r') as f:
+    #     task_config = json.load(f, object_hook=lambda d: namedtuple('X', d.keys())(*d.values()))
 
     if args.advantage_head_coef == 0:
         args.advantage_head_coef = None
 
-    if task_config.env != 'ml45':
-        tasks = []
-        for task_idx in (range(task_config.total_tasks if args.task_idx is None else [args.task_idx])):
-            with open(task_config.task_paths.format(task_idx), 'rb') as f:
-                task_info = pickle.load(f)
-                assert len(task_info) == 1, f'Unexpected task info: {task_info}'
-                tasks.append(task_info[0])
+    # if task_config.env != 'ml45':
+    #     tasks = []
+    #     for task_idx in (range(task_config.total_tasks if args.task_idx is None else [args.task_idx])):
+    #         with open(task_config.task_paths.format(task_idx), 'rb') as f:
+    #             task_info = pickle.load(f)
+    #             assert len(task_info) == 1, f'Unexpected task info: {task_info}'
+    #             tasks.append(task_info[0])
 
     #if args.task_idx is not None:
     #    tasks = [tasks[args.task_idx]]
@@ -128,21 +129,18 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
 
-    if task_config.env == 'ant_dir':
-        env = AntDirEnv(tasks, args.n_tasks, include_goal = args.include_goal or args.multitask)
-    elif task_config.env == 'cheetah_dir':
-        env = HalfCheetahDirEnv(tasks, include_goal = args.include_goal or args.multitask)
-    elif task_config.env == 'cheetah_vel':
-        env = HalfCheetahVelEnv(tasks, include_goal = args.include_goal or args.multitask, one_hot_goal=args.one_hot_goal or args.multitask)
-    elif task_config.env == 'walker_params':
-        env = WalkerRandParamsWrappedEnv(tasks, args.n_tasks, include_goal = args.include_goal or args.multitask)
-    elif task_config.env == 'ml45':
-        env = ML45Env(include_goal=args.multitask or args.include_goal)
-    else:
-        raise RuntimeError(f'Invalid env name {task_config.env}')
-
-    if args.episode_length is not None:
-        env._max_episode_steps = args.episode_length
+    # if task_config.env == 'ant_dir':
+    #     env = AntDirEnv(tasks, args.n_tasks, include_goal = args.include_goal or args.multitask)
+    # elif task_config.env == 'cheetah_dir':
+    #     env = HalfCheetahDirEnv(tasks, include_goal = args.include_goal or args.multitask)
+    # elif task_config.env == 'cheetah_vel':
+    #     env = HalfCheetahVelEnv(tasks, include_goal = args.include_goal or args.multitask, one_hot_goal=args.one_hot_goal or args.multitask)
+    # elif task_config.env == 'walker_params':
+    #     env = WalkerRandParamsWrappedEnv(tasks, args.n_tasks, include_goal = args.include_goal or args.multitask)
+    # elif task_config.env == 'ml45':
+    #     env = ML45Env(include_goal=args.multitask or args.include_goal)
+    # else:
+    #     raise RuntimeError(f'Invalid env name {task_config.env}')
 
     if args.name is None:
         args.name = 'throwaway_test_run'
@@ -157,27 +155,53 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
 
+    saved_tasks_path = '/data/tasks.pkl'
+    import joblib
+    task_data = joblib.load(saved_tasks_path)
+    tasks = task_data['tasks']
+    train_task_idxs = task_data['train_task_indices']
+    test_task_idxs = task_data['eval_task_indices']
+    buffer_path_template = '/data/converted_task_{}.npy'
+    inner_buffers = [buffer_path_template.format(idx) for idx in train_task_idxs]
+    outer_buffers = [buffer_path_template.format(idx) for idx in train_task_idxs]
+    # test_buffers = [buffer_path_template.format(idx) for idx in test_task_idxs]
+    # TODO: return to test_task_idx
+    test_buffers = [buffer_path_template.format(idx) for idx in train_task_idxs]
+
+    env = AntDirEnv(tasks, args.n_tasks, include_goal = args.include_goal or args.multitask)
+
+    if args.episode_length is not None:
+        env._max_episode_steps = args.episode_length
+
     from src.maml_rawr import MAMLRAWR
     from src.mql.td3 import TD3Context
     if not args.td3ctx:
-        model = MAMLRAWR(args, task_config, env, args.log_dir, name, training_iterations=args.train_steps,
+        model = MAMLRAWR(args,
+                         # task_config,
+                         env, args.log_dir,
+                         inner_buffers=inner_buffers,
+                         outer_buffers=outer_buffers,
+                         test_buffers=test_buffers,
+                         test_tasks=test_task_idxs,
+                         train_tasks=train_task_idxs,
+                         name=name, training_iterations=args.train_steps,
                          visualization_interval=args.vis_interval, silent=instance_idx > 0, instance_idx=instance_idx,
                          gradient_steps_per_iteration=args.gradient_steps_per_iteration,
                          replay_buffer_length=args.replay_buffer_size, discount_factor=args.discount_factor, seed=seed)
     else:
-        model = TD3Context(args, task_config, env, args.log_dir, name, 30, training_iterations=args.train_steps, silent=instance_idx > 0)
+        # model = TD3Context(args, task_config, env, args.log_dir, name, 30, training_iterations=args.train_steps, silent=instance_idx > 0)
+        pass
 
     model.train()
 
+
 def run_doodad_experiment(doodad_config, params):
+    # print(params)
+    # import ipdb; ipdb.set_trace()
     global args
     set_start_method('spawn')
-    args = get_args()
+    args = get_default_args()
 
-    print(params)
-    print(args)
-    print(args.env)
-    import ipdb; ipdb.set_trace()
     if args.instances == 1:
         if args.profile:
             import cProfile

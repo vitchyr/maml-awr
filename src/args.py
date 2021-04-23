@@ -2,7 +2,7 @@ import argparse
 import json
 
 
-def get_args() -> argparse.Namespace:
+def get_parser() -> argparse.ArgumentParser():
     parser = argparse.ArgumentParser()
     parser.add_argument('--online_ft', action='store_true')
     parser.add_argument('--imitation', action='store_true')
@@ -68,7 +68,7 @@ def get_args() -> argparse.Namespace:
     parser.add_argument('--vis_interval', type=int, default=250)
     parser.add_argument('--log_dir', type=str, default='log')
     parser.add_argument('--include_goal', action='store_true')
-    parser.add_argument('--single_task', action='store_true')  
+    parser.add_argument('--single_task', action='store_true')
     parser.add_argument('--one_hot_goal', action='store_true')
     parser.add_argument('--task_idx', type=int, default=None)
     parser.add_argument('--instances', type=int, default=1)
@@ -98,8 +98,17 @@ def get_args() -> argparse.Namespace:
     parser.add_argument('--task_config', type=str, default=None)
     parser.add_argument('--load_inner_buffer', action='store_true')
     parser.add_argument('--load_outer_buffer', action='store_true')
-    args = parser.parse_args()
+    return parser
 
+
+def get_default_args() -> dict:
+    parser = get_parser()
+    return parser.parse_args(args=[])
+
+
+def get_args() -> argparse.Namespace:
+    parser = get_parser()
+    args = parser.parse_args()
     if args.macaw_params is not None:
         with open(args.macaw_params, 'r') as f:
             print(f'Loading params from {args.macaw_params}')
@@ -115,5 +124,5 @@ def get_args() -> argparse.Namespace:
 
         for k, v in params.items():
             setattr(args, k, v)
-            
+
     return args

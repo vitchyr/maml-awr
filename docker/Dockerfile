@@ -135,11 +135,9 @@ RUN pip install stable_baselines
 RUN pip install git+https://github.com/dennisl88/rand_param_envs.git@4d1529d61ca0d65ed4bd9207b108d4a4662a4da0#egg=rand_param_envs
 RUN conda install -n railrl mpi4py
 RUN pip install cvxpy
+RUN pip install tqdm
+RUN pip install tensorboard==1.15
 
 ##########################################################
 ### Cleanup
 ##########################################################
-
-# Technically this shouldn't be necessary since we put this in the bashrc
-# but for some reason, bashrc isn't being run on AWS.
-ENTRYPOINT source activate railrl

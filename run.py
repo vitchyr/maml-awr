@@ -173,9 +173,6 @@ if __name__ == '__main__':
     set_start_method('spawn')
     args = get_args()
 
-    print(args)
-    print(args.env)
-    import ipdb; ipdb.set_trace()
     if args.instances == 1:
         if args.profile:
             import cProfile
