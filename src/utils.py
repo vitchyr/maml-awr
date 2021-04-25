@@ -101,7 +101,7 @@ class NewReplayBuffer(object):
 
     def __init__(self, size: int, obs_dim: int, action_dim: int, discount_factor: float = 0.99,
                  immutable: bool = False, load_from: str = None, silent: bool = False, skip: int = 1,
-                 stream_to_disk: bool = False, mode: str = 'end', is_rlkit_data=True):
+                 stream_to_disk: bool = False, mode: str = 'end', is_rlkit_data=False):
         if size == -1 and load_from is None:
             print("Can't have size == -1 and no offline buffer - defaulting to 1M steps")
             size = 1000000
@@ -113,19 +113,19 @@ class NewReplayBuffer(object):
         self.immutable = immutable
         self.stream_to_disk = stream_to_disk
 
-        if is_rlkit_data:
-            rlkit_data = np.load(load_from, allow_pickle=True).item()
-            f = dict(
-                obs=rlkit_data['observations'],
-                actions=rlkit_data['actions'],
-                rewards=rlkit_data['rewards'],
-                mc_rewards=rlkit_data['mc_rewards'],
-                terminals=rlkit_data['terminals'],
-                terminal_obs=rlkit_data['terminal_observations'],
-                terminal_discounts=rlkit_data['terminal_discounts'],
-                next_obs=rlkit_data['next_observations'],
-                discount_factor=0.99,
-            )
+        if load_from and is_rlkit_data:
+            f = np.load(load_from, allow_pickle=True).item()
+            # f = dict(
+            #     obs=rlkit_data['observations'],
+            #     actions=rlkit_data['actions'],
+            #     rewards=rlkit_data['rewards'],
+            #     mc_rewards=rlkit_data['mc_rewards'],
+            #     terminals=rlkit_data['terminals'],
+            #     terminal_obs=rlkit_data['terminal_observations'],
+            #     terminal_discounts=rlkit_data['terminal_discounts'],
+            #     next_obs=rlkit_data['next_observations'],
+            #     discount_factor=0.99,
+            # )
             # self._obs = rlkit_data['observations']
             # self._actions = rlkit_data['actions']
             # self._rewards = rlkit_data['rewards']
@@ -218,6 +218,7 @@ class NewReplayBuffer(object):
             self._discount_factor = discount_factor
         else:
             if f['obs'].shape[-1] != self.obs_dim:
+                import ipdb; ipdb.set_trace()
                 raise RuntimeError(f"Loaded data has different obs_dim from new buffer ({f['obs'].shape[-1]}, {self.obs_dim})")
             if f['actions'].shape[-1] != self.action_dim:
                 raise RuntimeError(f"Loaded data has different action_dim from new buffer ({f['actions'].shape[-1]}, {self.action_dim})")
