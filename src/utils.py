@@ -260,7 +260,7 @@ class NewReplayBuffer(object):
 
                 if not is_rlkit_data:
                     f.close()
-            self._write_location = self._stored_steps % self._size
+        self._write_location = self._stored_steps % self._size
 
         #self._valid = np.where(np.logical_and(~np.isnan(self._terminal_discounts[:,0]), self._terminal_discounts[:,0] < 0.35))[0]
 

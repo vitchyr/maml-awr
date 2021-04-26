@@ -12,6 +12,7 @@ import json
 
 from src.args import get_default_args
 from src.envs import HalfCheetahDirEnv, HalfCheetahVelEnv, AntDirEnv, AntGoalEnv, HumanoidDirEnv, WalkerRandParamsWrappedEnv, ML45Env
+from wrappers.easy_launch import save_doodad_config
 
 args = None
 
@@ -105,7 +106,7 @@ def get_gym_env(env: str):
     return env
 
 
-def run(args: argparse.Namespace, instance_idx: int = 0):
+def run(log_dir: str, args: argparse.Namespace, instance_idx: int = 0):
     # with open(args.task_config, 'r') as f:
     #     task_config = json.load(f, object_hook=lambda d: namedtuple('X', d.keys())(*d.values()))
 
@@ -155,6 +156,7 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
 
+    # hardcoded
     saved_tasks_path = '/data/tasks.pkl'
     import joblib
     task_data = joblib.load(saved_tasks_path)
@@ -178,7 +180,7 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
     if not args.td3ctx:
         model = MAMLRAWR(args,
                          # task_config,
-                         env, args.log_dir,
+                         env, log_dir,
                          inner_buffers=inner_buffers,
                          outer_buffers=outer_buffers,
                          test_buffers=test_buffers,
@@ -198,6 +200,7 @@ def run(args: argparse.Namespace, instance_idx: int = 0):
 def run_doodad_experiment(doodad_config, params):
     # print(params)
     # import ipdb; ipdb.set_trace()
+    save_doodad_config(doodad_config)
     global args
     set_start_method('spawn')
     args = get_default_args()
@@ -207,7 +210,7 @@ def run_doodad_experiment(doodad_config, params):
             import cProfile
             cProfile.runctx('run(args)', sort='cumtime', locals=locals(), globals=globals())
         else:
-            run(args)
+            run(doodad_config.output_dir, args)
     else:
         for instance_idx in range(args.instances):
             subprocess = Process(target=run, args=(args, instance_idx))

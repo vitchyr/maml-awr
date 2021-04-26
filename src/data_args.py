@@ -1,7 +1,7 @@
 import argparse
 
 
-def get_args() -> argparse.Namespace:
+def get_args(default=False) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument('--task_path', type=str)
     parser.add_argument('--alg', type=str, default='sac')
@@ -66,7 +66,7 @@ def get_args() -> argparse.Namespace:
     parser.add_argument('--vis_interval', type=int, default=1000)
     parser.add_argument('--log_dir', type=str, default='log')
     parser.add_argument('--include_goal', action='store_true')
-    parser.add_argument('--single_task', action='store_true')  
+    parser.add_argument('--single_task', action='store_true')
     parser.add_argument('--one_hot_goal', action='store_true')
     parser.add_argument('--task_idx', type=int, default=None)
     parser.add_argument('--instances', type=int, default=1)
@@ -101,4 +101,7 @@ def get_args() -> argparse.Namespace:
     parser.add_argument('--test_buffer_paths', type=str, nargs='+', default=None)
     parser.add_argument('--load_inner_buffer', action='store_true')
     parser.add_argument('--load_outer_buffer', action='store_true')
-    return parser.parse_args()
+    if default:
+        return parser.parse_args(args=[])
+    else:
+        return parser.parse_args()
