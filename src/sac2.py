@@ -68,8 +68,11 @@ class SAC(OffPolicyRLModel):
                  gradient_steps=1, target_entropy='auto', action_noise=None,
                  random_exploration=0.0, verbose=0, tensorboard_log=None, buffer_log = None,
                  _init_setup_model=True, policy_kwargs=None, full_tensorboard_log=False,
-                 seed=None, n_cpu_tf_sess=None):
+                 seed=None, n_cpu_tf_sess=None, log_dir=None):
 
+        if log_dir is not None:
+            logger.configure(log_dir, format_strs=['csv'])
+        self.log_dir = log_dir
         super(SAC, self).__init__(policy=policy, env=env, replay_buffer=None, verbose=verbose,
                                   policy_base=SACPolicy, requires_vec_env=False, policy_kwargs=policy_kwargs,
                                   seed=seed, n_cpu_tf_sess=n_cpu_tf_sess)
@@ -515,11 +518,11 @@ class SAC(OffPolicyRLModel):
                     logger.logkv('time_elapsed', int(time.time() - start_time))
                     if len(episode_successes) > 0:
                         logger.logkv("success rate", np.mean(episode_successes[-100:]))
-                        summary = tf.Summary(value=[tf.Summary.Value(tag='episode_reward/success_rate', 
+                        summary = tf.Summary(value=[tf.Summary.Value(tag='episode_reward/success_rate',
                                                                      simple_value=np.mean(episode_successes[-100:]))])
                         writer.add_summary(summary, self.num_timesteps)
-                
-                        
+
+
                     if len(infos_values) > 0:
                         for (name, val) in zip(self.infos_names, infos_values):
                             logger.logkv(name, val)
@@ -527,14 +530,32 @@ class SAC(OffPolicyRLModel):
                     logger.dumpkvs()
                     # Reset infos:
                     infos_values = []
-                
+                    from pathlib import Path
+                    base_path = Path(self.tensorboard_log)
+                    src_path = str(base_path)
+                    dst_path = str(
+                        base_path.parent / '{}'.format(base_path.stem + '_copy')
+                    )
+                    import os
+                    os.system("cp -rf {} {}".format(str(base_path), dst_path))
+
+                    base_path = Path(self.log_dir) / 'progress.csv'
+                    copy_path = str(
+                        base_path.parent / '{}{}'.format(
+                            base_path.stem + '_copy',
+                            base_path.suffix
+                        )
+                    )
+                    import shutil
+                    shutil.copy(str(base_path), copy_path)
+
                 if step % 100000==0:
                     self.full_buffer.save(self.buffer_log + 'sub_task_{}.hdf5'.format(0))
 
-            callback.on_training_end()          
+            callback.on_training_end()
             self.full_buffer.save(self.buffer_log + 'sub_task_{}.hdf5'.format(0))
 
-            
+
             return self
 
     def action_probability(self, observation, state=None, mask=None, actions=None, logp=False):

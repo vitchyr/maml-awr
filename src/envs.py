@@ -39,7 +39,7 @@ class ML45Env(object):
             args_kwargs['task'] = task
             env = _cls_dict[task](*args_kwargs['args'], **args_kwargs['kwargs'])
             self._envs.append(TimeLimit(env, max_episode_steps=self._max_episode_steps))
-        
+
         self.set_task_idx(0)
 
     @property
@@ -111,7 +111,7 @@ class HalfCheetahDirEnv(HalfCheetahDirEnv_):
         else:
             obs = super()._get_obs()
         return obs
-    
+
     def set_task(self, task):
         self._task = task
         self._goal_dir = self._task['direction']
@@ -119,7 +119,7 @@ class HalfCheetahDirEnv(HalfCheetahDirEnv_):
 
     def set_task_idx(self, idx):
         self.set_task(self.tasks[idx])
-        
+
 
 class HalfCheetahVelEnv(HalfCheetahVelEnv_):
     def __init__(self, tasks: List[dict] = None, include_goal: bool = False, one_hot_goal: bool = False, n_tasks: int = None):
@@ -146,7 +146,7 @@ class HalfCheetahVelEnv(HalfCheetahVelEnv_):
             obs = super()._get_obs()
 
         return obs
-        
+
     def set_task(self, task):
         self._task = task
         self._goal_vel = self._task['velocity']
@@ -157,9 +157,11 @@ class HalfCheetahVelEnv(HalfCheetahVelEnv_):
         self.set_task(self.tasks[idx])
 
 class AntDirEnv(AntDirEnv_):
-    def __init__(self, tasks: List[dict], n_tasks: int = None, include_goal: bool = False):
+    def __init__(self, tasks: List[dict], *args, n_tasks: int = None, include_goal: bool = False, **kwargs):
         self.include_goal = include_goal
-        super(AntDirEnv, self).__init__(forward_backward=n_tasks == 2)
+        super(AntDirEnv, self).__init__(
+            forward_backward=n_tasks == 2,
+        )
         if tasks is None:
             assert n_tasks is not None, "Either tasks or n_tasks must be non-None"
             tasks = self.sample_tasks(n_tasks)
@@ -167,7 +169,7 @@ class AntDirEnv(AntDirEnv_):
         self.n_tasks = len(self.tasks)
         self.set_task_idx(0)
         self._max_episode_steps = 200
-    
+
     def _get_obs(self):
         if self.include_goal:
             idx = 0
@@ -182,7 +184,7 @@ class AntDirEnv(AntDirEnv_):
         else:
             obs = super()._get_obs()
         return obs
-    
+
     def set_task(self, task):
         self._task = task
         self._goal = task['goal']
@@ -190,7 +192,7 @@ class AntDirEnv(AntDirEnv_):
 
     def set_task_idx(self, idx):
         self.set_task(self.tasks[idx])
-        
+
 
 ######################################################
 ######################################################
@@ -214,7 +216,7 @@ class AntGoalEnv(AntGoalEnv_):
         self._goal = self._task['goal']
         self._max_episode_steps = 200
         self.info_dim = 2
-    
+
     def _get_obs(self):
         if self.include_goal:
             obs = super()._get_obs()
@@ -222,7 +224,7 @@ class AntGoalEnv(AntGoalEnv_):
         else:
             obs = super()._get_obs()
         return obs
-    
+
     def set_task(self, task):
         self._task = task
         self._goal = task['goal']
@@ -230,9 +232,9 @@ class AntGoalEnv(AntGoalEnv_):
 
     def set_task_idx(self, idx):
         self._task = self.tasks[idx]
-        self._goal = self._task['goal']        
+        self._goal = self._task['goal']
         self.reset()
-        
+
 class HumanoidDirEnv(HumanoidDirEnv_):
     def __init__(self, tasks: List[dict] = None, task_idx: int = 0, single_task: bool = False, include_goal: bool = False):
         self.include_goal = include_goal
@@ -246,7 +248,7 @@ class HumanoidDirEnv(HumanoidDirEnv_):
         self._goal = self._task['goal']
         self._max_episode_steps = 200
         self.info_dim = 1
-        
+
     def _get_obs(self):
         if self.include_goal:
             obs = super()._get_obs()
@@ -254,14 +256,14 @@ class HumanoidDirEnv(HumanoidDirEnv_):
         else:
             obs = super()._get_obs()
         return obs
-    
+
     def step(self, action):
         obs, rew, done, info = super().step(action)
         if done == True:
             rew = rew - 5.0
             done = False
         return (obs, rew, done, info)
-    
+
     def set_task(self, task):
         self._task = task
         self._goal = task['goal']
@@ -281,12 +283,12 @@ class WalkerRandParamsWrappedEnv(WalkerRandParamsWrappedEnv_):
     def __init__(self, tasks: List[dict] = None, n_tasks: int = None, include_goal: bool = False):
         self.include_goal = include_goal
         self.n_tasks = len(tasks) if tasks is not None else n_tasks
-        
+
         super(WalkerRandParamsWrappedEnv, self).__init__(tasks, n_tasks)
 
         self.set_task_idx(0)
         self._max_episode_steps = 200
-        
+
     def _get_obs(self):
         if self.include_goal:
             idx = 0
@@ -301,11 +303,11 @@ class WalkerRandParamsWrappedEnv(WalkerRandParamsWrappedEnv_):
         else:
             obs = super()._get_obs()
         return obs
-        
+
     def set_task_idx(self, idx):
         self._task = self.tasks[idx]
         self._goal = idx
         self.set_task(self._task)
         self.reset()
-   
-     
+
+

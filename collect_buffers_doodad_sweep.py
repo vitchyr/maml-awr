@@ -62,7 +62,7 @@ def main(args):
 
     if args.env == 'ant_dir':
         ant_dir_tasks = pickle.load(open(f"{args.task_path}/ant_dir_tasks", "rb"))
-        env = AntDirEnv(tasks = ant_dir_tasks, include_goal = args.include_goal)
+        env = AntDirEnv(tasks=ant_dir_tasks, include_goal=args.include_goal)
     elif args.env == 'ant_goal':
         env = AntGoalEnv(include_goal = args.include_goal)
     elif args.env == 'cheetah_dir':
@@ -126,8 +126,10 @@ def main(args):
         from stable_baselines.sac.policies import FeedForwardPolicy
         from src.sac2 import SAC
 
+        env.set_task_idx(args.task_idx)
         model = SAC(MlpPolicy,
                     env,
+                    log_dir=args.log_dir,
                     verbose=1,
                     tensorboard_log = args.log_dir + '/tensorboard/log_{}_task_{}'.format(args.env, args.task_idx),
                     buffer_log = args.log_dir + '/buffers_{}_{}_'.format(args.env, args.task_idx),
@@ -169,7 +171,8 @@ def collect_buffers(doodad_config, variant):
 
 if __name__ == '__main__':
     params = {
-        'task_idx': list(range(32)),
+        # 'task_idx': list(range(32)),
+        'task_idx': [3],
         'full_buffer_size': [2000000],
         'replay_buffer_size': [50000],
         'alg': ['sac'],
@@ -179,8 +182,9 @@ if __name__ == '__main__':
     sweep_function(
         collect_buffers,
         params,
-        log_path='macaw_data_collection_ant_dir_32',
-        mode='azure',
+        log_path='macaw_data_collection_ant_dir_32_take2',
+        # mode='azure',
+        mode='local',
         docker_image='vitchyr/macaw-v1',
         code_dirs_to_mount=[
             '/home/vitchyr/git/macaw/',

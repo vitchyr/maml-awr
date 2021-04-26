@@ -7,14 +7,21 @@ from . import register_env
 @register_env('ant-dir')
 class AntDirEnv(MultitaskAntEnv):
 
-    def __init__(self, task={}, n_tasks=2, forward_backward=False, randomize_tasks=True, **kwargs):
+    def __init__(self, task=None, n_tasks=2, forward_backward=False, randomize_tasks=True, direction_in_degrees=True, **kwargs):
+        if task is None:
+            task = {}
         self.forward_backward = forward_backward
+        self.direction_in_degrees = direction_in_degrees
         super(AntDirEnv, self).__init__(task, n_tasks, **kwargs)
 
     def step(self, action):
         torso_xyz_before = np.array(self.get_body_com("torso"))
 
-        direct = (np.cos(self._goal), np.sin(self._goal))
+        if self.direction_in_degrees:
+            goal = self._goal / 180 * np.pi
+        else:
+            goal = self._goal
+        direct = (np.cos(goal), np.sin(goal))
 
         self.do_simulation(action, self.frame_skip)
 
@@ -43,13 +50,20 @@ class AntDirEnv(MultitaskAntEnv):
             reward_contact=-contact_cost,
             reward_survive=survive_reward,
             torso_velocity=torso_velocity,
+            torso_xy=self.sim.data.qpos.flat[:2].copy(),
         )
 
     def sample_tasks(self, num_tasks):
         if self.forward_backward:
             assert num_tasks == 2
-            velocities = np.array([0., np.pi])
+            if self.direction_in_degrees:
+                directions = np.array([0., 180])
+            else:
+                directions = np.array([0., np.pi])
         else:
-            velocities = np.random.uniform(0., 2.0 * np.pi, size=(num_tasks,))
-        tasks = [{'goal': velocity} for velocity in velocities]
+            if self.direction_in_degrees:
+                directions = np.random.uniform(0., 360, size=(num_tasks,))
+            else:
+                directions = np.random.uniform(0., 2.0 * np.pi, size=(num_tasks,))
+        tasks = [{'goal': desired_dir} for desired_dir in directions]
         return tasks
