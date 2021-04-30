@@ -1,7 +1,15 @@
+from pathlib import Path
+
 from doodad.wrappers.easy_launch import sweep_function
 from src.launcher import run_doodad_experiment
 
 if __name__ == '__main__':
+    base_dir = Path(__file__).parent.parent
+
+    path_parts = __file__.split('/')
+    exp_name = 'macaw-{}'.format(
+        path_parts[-1].split('.')[0]
+    )
     params = {
         'env': ['ant_dir'],
         'use_rlkit': [
@@ -18,7 +26,7 @@ if __name__ == '__main__':
         run_doodad_experiment,
         params,
         default_params=default_params,
-        log_path='macaw_ant_5_dir',
+        log_path=exp_name,
         mode='azure',
         docker_image='vitchyr/macaw-v1',
         code_dirs_to_mount=[
