@@ -117,6 +117,7 @@ def run(
         saved_tasks_path: str = '',
         train_task_idxs: List[int] = (),
         test_task_idxs: List[int] = (),
+        seed=0,
 ):
     # with open(args.task_config, 'r') as f:
     #     task_config = json.load(f, object_hook=lambda d: namedtuple('X', d.keys())(*d.values()))
@@ -137,7 +138,6 @@ def run(
     #if args.task_idx is not None:
     #    tasks = [tasks[args.task_idx]]
 
-    seed = args.seed if args.seed is not None else instance_idx
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
