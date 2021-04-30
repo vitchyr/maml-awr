@@ -1,4 +1,5 @@
 from typing import Optional, List
+import joblib
 import argparse
 import gym
 import pickle
@@ -12,7 +13,7 @@ import json
 
 from src.args import get_default_args
 from src.envs import HalfCheetahDirEnv, HalfCheetahVelEnv, AntDirEnv, AntGoalEnv, HumanoidDirEnv, WalkerRandParamsWrappedEnv, ML45Env
-from wrappers.easy_launch import save_doodad_config
+from doodad.wrappers.easy_launch import save_doodad_config, DoodadConfig
 
 args = None
 
@@ -106,9 +107,21 @@ def get_gym_env(env: str):
     return env
 
 
-def run(log_dir: str, args: argparse.Namespace, instance_idx: int = 0):
+def run(
+        log_dir: str,
+        args: argparse.Namespace,
+        env: str,
+        instance_idx: int = 0,
+        use_rlkit: bool = True,
+        buffer_path_template: str = '',
+        saved_tasks_path: str = '',
+        train_task_idxs: List[int] = (),
+        test_task_idxs: List[int] = (),
+):
     # with open(args.task_config, 'r') as f:
     #     task_config = json.load(f, object_hook=lambda d: namedtuple('X', d.keys())(*d.values()))
+    if env != 'ant_dir':
+        import ipdb; ipdb.set_trace()
 
     if args.advantage_head_coef == 0:
         args.advantage_head_coef = None
@@ -157,13 +170,10 @@ def run(log_dir: str, args: argparse.Namespace, instance_idx: int = 0):
     torch.cuda.manual_seed(seed)
 
     # hardcoded
-    saved_tasks_path = '/data/tasks.pkl'
-    import joblib
-    task_data = joblib.load(saved_tasks_path)
-    tasks = task_data['tasks']
-    train_task_idxs = task_data['train_task_indices']
-    test_task_idxs = task_data['eval_task_indices']
-    buffer_path_template = '/data/converted_task_{}.npy'
+    tasks = pickle.load(open(saved_tasks_path, 'rb'))
+    # tasks = task_data['tasks']
+    # train_task_idxs = task_data['train_task_indices']
+    # test_task_idxs = task_data['eval_task_indices']
     inner_buffers = [buffer_path_template.format(idx) for idx in train_task_idxs]
     outer_buffers = [buffer_path_template.format(idx) for idx in train_task_idxs]
     # test_buffers = [buffer_path_template.format(idx) for idx in test_task_idxs]
@@ -189,7 +199,9 @@ def run(log_dir: str, args: argparse.Namespace, instance_idx: int = 0):
                          name=name, training_iterations=args.train_steps,
                          visualization_interval=args.vis_interval, silent=instance_idx > 0, instance_idx=instance_idx,
                          gradient_steps_per_iteration=args.gradient_steps_per_iteration,
-                         replay_buffer_length=args.replay_buffer_size, discount_factor=args.discount_factor, seed=seed)
+                         replay_buffer_length=args.replay_buffer_size, discount_factor=args.discount_factor, seed=seed,
+                         is_rlkit_data=use_rlkit,
+                         )
     else:
         # model = TD3Context(args, task_config, env, args.log_dir, name, 30, training_iterations=args.train_steps, silent=instance_idx > 0)
         pass
@@ -197,12 +209,11 @@ def run(log_dir: str, args: argparse.Namespace, instance_idx: int = 0):
     model.train()
 
 
-def run_doodad_experiment(doodad_config, params):
+def run_doodad_experiment(doodad_config: DoodadConfig, params):
     # print(params)
     # import ipdb; ipdb.set_trace()
     save_doodad_config(doodad_config)
     global args
-    set_start_method('spawn')
     args = get_default_args()
 
     if args.instances == 1:
@@ -210,7 +221,11 @@ def run_doodad_experiment(doodad_config, params):
             import cProfile
             cProfile.runctx('run(args)', sort='cumtime', locals=locals(), globals=globals())
         else:
-            run(doodad_config.output_dir, args)
+            run(
+                doodad_config.output_directory,
+                args,
+                **params
+            )
     else:
         for instance_idx in range(args.instances):
             subprocess = Process(target=run, args=(args, instance_idx))

@@ -77,6 +77,7 @@ class MAMLRAWR(object):
             gradient_steps_per_iteration: int = 1,
             discount_factor: float = 0.99,
             seed: int = 0,
+            is_rlkit_data=False,
     ):
         self._env = env
         self._log_dir = log_dir
@@ -190,14 +191,14 @@ class MAMLRAWR(object):
         self._test_buffers = [NewReplayBuffer(args.inner_buffer_size, self._observation_dim, env_action_dim(self._env),
                                               discount_factor=discount_factor,
                                               immutable=test_buffers[i] is not None, load_from=test_buffers[i], silent=silent, skip=args.inner_buffer_skip,
-                                              stream_to_disk=args.from_disk, mode=args.buffer_mode, is_rlkit_data=True)
+                                              stream_to_disk=args.from_disk, mode=args.buffer_mode, is_rlkit_data=is_rlkit_data)
                                for i, task in enumerate(test_tasks)]
 
         if not self._args.online_ft:
             self._inner_buffers = [NewReplayBuffer(args.inner_buffer_size, self._observation_dim, env_action_dim(self._env),
                                                    discount_factor=discount_factor,
                                                    immutable=args.offline or args.offline_inner, load_from=inner_buffers[i], silent=silent, skip=args.inner_buffer_skip,
-                                                   stream_to_disk=args.from_disk, mode=args.buffer_mode, is_rlkit_data=True)
+                                                   stream_to_disk=args.from_disk, mode=args.buffer_mode, is_rlkit_data=is_rlkit_data)
                                    for i, task in enumerate(train_tasks)]
 
             if args.offline and args.load_inner_buffer and args.load_outer_buffer and (args.replay_buffer_size == args.inner_buffer_size) and (args.buffer_skip == args.inner_buffer_skip) and args.buffer_mode == 'end':
@@ -206,7 +207,7 @@ class MAMLRAWR(object):
                 self._outer_buffers = [NewReplayBuffer(args.replay_buffer_size, self._observation_dim, env_action_dim(self._env),
                                                        discount_factor=discount_factor, immutable=args.offline or args.offline_outer,
                                                        load_from=outer_buffers[i], silent=silent, skip=args.buffer_skip,
-                                                       stream_to_disk=args.from_disk, is_rlkit_data=True)
+                                                       stream_to_disk=args.from_disk, is_rlkit_data=is_rlkit_data)
                                        for i, task in enumerate(train_tasks)]
 
         self._training_iterations = training_iterations

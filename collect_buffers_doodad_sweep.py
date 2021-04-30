@@ -171,8 +171,8 @@ def collect_buffers(doodad_config, variant):
 
 if __name__ == '__main__':
     params = {
-        # 'task_idx': list(range(32)),
-        'task_idx': [3],
+        'task_idx': list(range(32)),
+        # 'task_idx': [3],
         'full_buffer_size': [2000000],
         'replay_buffer_size': [50000],
         'alg': ['sac'],
@@ -182,9 +182,9 @@ if __name__ == '__main__':
     sweep_function(
         collect_buffers,
         params,
-        log_path='macaw_data_collection_ant_dir_32_take2',
-        # mode='azure',
-        mode='local',
+        log_path='macaw_data_collection_ant_dir_32_take3',
+        mode='azure',
+        # mode='local',
         docker_image='vitchyr/macaw-v1',
         code_dirs_to_mount=[
             '/home/vitchyr/git/macaw/',
