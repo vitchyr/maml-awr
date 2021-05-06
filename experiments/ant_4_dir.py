@@ -1,5 +1,4 @@
 import click
-from pathlib import Path
 
 from doodad.wrappers.easy_launch import sweep_function
 from src.launcher import run_doodad_experiment
@@ -11,8 +10,6 @@ from src.launcher import run_doodad_experiment
 @click.option('--nseeds', default=1)
 @click.option('--mode', default='local')
 def main(debug, suffix, nseeds, mode):
-    base_dir = Path(__file__).parent.parent
-
     path_parts = __file__.split('/')
     suffix = '' if suffix is None else '--{}'.format(suffix)
     exp_name = 'macaw-{}{}'.format(

@@ -42,8 +42,13 @@ class HalfCheetahVelEnv(HalfCheetahEnv):
         observation = self._get_obs()
         reward = forward_reward - ctrl_cost
         done = False
-        infos = dict(reward_forward=forward_reward,
-            reward_ctrl=-ctrl_cost, task=self._task)
+        infos = dict(
+            reward_forward=forward_reward,
+            reward_ctrl=-ctrl_cost,
+            goal_vel=self._goal_vel,
+            forward_vel=forward_vel,
+            xposbefore=xposbefore,
+        )
         return (observation, reward, done, infos)
 
     def sample_tasks(self, num_tasks, seed: int = 1337):
