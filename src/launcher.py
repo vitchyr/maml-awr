@@ -1,19 +1,21 @@
-from typing import Optional, List
-import joblib
 import argparse
-import gym
-import pickle
-import numpy as np
-from torch.multiprocessing import Process, set_start_method
-import random
-import torch
-import metaworld
-from collections import namedtuple
 import json
+import os.path as osp
+import pickle
+import random
+import uuid
+from enum import Enum
+from typing import Optional, List
 
-from src.args import get_default_args
-from src.envs import HalfCheetahDirEnv, HalfCheetahVelEnv, AntDirEnv, AntGoalEnv, HumanoidDirEnv, WalkerRandParamsWrappedEnv, ML45Env
+import gym
+import numpy as np
+import torch
+from torch.multiprocessing import Process
+
 from doodad.wrappers.easy_launch import save_doodad_config, DoodadConfig
+from src import pythonplusplus as ppp
+from src.args import get_default_args
+from src.envs import AntDirEnv
 
 args = None
 
@@ -64,9 +66,6 @@ def get_metaworld_tasks(env_id: str = 'ml10'):
 
 
 def get_ml45():
-    from gym.wrappers import TimeLimit
-    from metaworld.benchmarks.base import Benchmark
-    from metaworld.envs.mujoco.multitask_env import MultiClassMultiTaskEnv
     from metaworld.envs.mujoco.env_dict import HARD_MODE_ARGS_KWARGS, HARD_MODE_CLS_DICT
 
     args.type = 'train'
@@ -186,7 +185,6 @@ def run(
         env._max_episode_steps = args.episode_length
 
     from src.maml_rawr import MAMLRAWR
-    from src.mql.td3 import TD3Context
     if not args.td3ctx:
         model = MAMLRAWR(args,
                          # task_config,
@@ -209,10 +207,43 @@ def run(
     model.train()
 
 
+class MyEncoder(json.JSONEncoder):
+    def default(self, o):
+        if isinstance(o, type):
+            return {'$class': o.__module__ + "." + o.__name__}
+        elif isinstance(o, Enum):
+            return {
+                '$enum': o.__module__ + "." + o.__class__.__name__ + '.' + o.name
+            }
+        elif callable(o):
+            return {
+                '$function': o.__module__ + "." + o.__name__
+            }
+        return json.JSONEncoder.default(self, o)
+
+
+def save_variant(log_dir, variant):
+    exp_name = log_dir.split('/')[-2]
+    unique_id = str(uuid.uuid4())
+
+    variant_to_save = variant.copy()
+    variant_to_save['unique_id'] = unique_id
+    variant_to_save['exp_name'] = exp_name
+    variant_to_save['trial_name'] = log_dir.split('/')[-1]
+    print(
+        json.dumps(ppp.dict_to_safe_json(variant_to_save, sort=True), indent=2)
+    )
+    variant_log_path = osp.join(log_dir, 'variant.json')
+    with open(variant_log_path, "w") as f:
+        json.dump(variant_to_save, f, indent=2, sort_keys=True, cls=MyEncoder)
+
+
 def run_doodad_experiment(doodad_config: DoodadConfig, params):
     # print(params)
     # import ipdb; ipdb.set_trace()
     save_doodad_config(doodad_config)
+    log_dir = doodad_config.output_directory
+    save_variant(log_dir, params)
     global args
     args = get_default_args()
 
@@ -221,11 +252,7 @@ def run_doodad_experiment(doodad_config: DoodadConfig, params):
             import cProfile
             cProfile.runctx('run(args)', sort='cumtime', locals=locals(), globals=globals())
         else:
-            run(
-                doodad_config.output_directory,
-                args,
-                **params
-            )
+            run(log_dir, args, **params)
     else:
         for instance_idx in range(args.instances):
             subprocess = Process(target=run, args=(args, instance_idx))
