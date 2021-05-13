@@ -1,4 +1,5 @@
 import argparse
+import joblib
 import json
 import os.path as osp
 import pickle
@@ -12,10 +13,11 @@ import numpy as np
 import torch
 from torch.multiprocessing import Process
 
+from rlkit.data_management.offline_dataset.util import rlkit_buffer_to_macaw_format
 from doodad.wrappers.easy_launch import save_doodad_config, DoodadConfig
 from src import pythonplusplus as ppp
 from src.args import get_default_args
-from src.envs import AntDirEnv
+from src.envs import AntDirEnv, HalfCheetahVelEnv
 
 args = None
 
@@ -110,18 +112,17 @@ def run(
         log_dir: str,
         args: argparse.Namespace,
         env: str,
+        pretrain_buffer_path: str,
         instance_idx: int = 0,
         use_rlkit: bool = True,
-        buffer_path_template: str = '',
+        # buffer_path_template: str = '',
         saved_tasks_path: str = '',
-        train_task_idxs: List[int] = (),
-        test_task_idxs: List[int] = (),
+        # train_task_idxs: List[int] = (),
+        # test_task_idxs: List[int] = (),
         seed=0,
 ):
     # with open(args.task_config, 'r') as f:
     #     task_config = json.load(f, object_hook=lambda d: namedtuple('X', d.keys())(*d.values()))
-    if env != 'ant_dir':
-        import ipdb; ipdb.set_trace()
 
     if args.advantage_head_coef == 0:
         args.advantage_head_coef = None
@@ -169,22 +170,36 @@ def run(
     torch.cuda.manual_seed(seed)
 
     # hardcoded
-    tasks = pickle.load(open(saved_tasks_path, 'rb'))
-    # tasks = task_data['tasks']
-    # train_task_idxs = task_data['train_task_indices']
-    # test_task_idxs = task_data['eval_task_indices']
-    inner_buffers = [buffer_path_template.format(idx) for idx in train_task_idxs]
-    outer_buffers = [buffer_path_template.format(idx) for idx in train_task_idxs]
-    # test_buffers = [buffer_path_template.format(idx) for idx in test_task_idxs]
-    # TODO: return to test_task_idx
-    test_buffers = [buffer_path_template.format(idx) for idx in train_task_idxs]
+    # tasks = pickle.load(open(saved_tasks_path, 'rb'))
+    task_data = joblib.load(saved_tasks_path)
+    tasks = task_data['tasks']
+    train_task_idxs = task_data['train_task_indices']
+    test_task_idxs = task_data['eval_task_indices']
+    # inner_buffers = [buffer_path_template.format(idx) for idx in train_task_idxs]
+    # outer_buffers = [buffer_path_template.format(idx) for idx in train_task_idxs]
+    # # test_buffers = [buffer_path_template.format(idx) for idx in test_task_idxs]
+    # # TODO: return to test_task_idx
+    # test_buffers = [buffer_path_template.format(idx) for idx in train_task_idxs]
 
-    env = AntDirEnv(tasks, args.n_tasks, include_goal = args.include_goal or args.multitask)
+    args.load_inner_buffer = True
+    args.load_outer_buffer = True
+
+    idx_to_buffer = load_buffers(pretrain_buffer_path)
+
+    if env == 'ant_dir':
+        env = AntDirEnv(tasks, args.n_tasks, include_goal = args.include_goal or args.multitask)
+    elif env == 'cheetah_vel':
+        env = HalfCheetahVelEnv(tasks, include_goal = args.include_goal or args.multitask, one_hot_goal=args.one_hot_goal or args.multitask)
+    else:
+        import ipdb; ipdb.set_trace()
+
 
     if args.episode_length is not None:
         env._max_episode_steps = args.episode_length
 
     from src.maml_rawr import MAMLRAWR
+
+    inner_buffers = outer_buffers = test_buffers = idx_to_buffer
     if not args.td3ctx:
         model = MAMLRAWR(args,
                          # task_config,
@@ -205,6 +220,36 @@ def run(
         pass
 
     model.train()
+
+
+def load_buffers(pretrain_buffer_path, discount_factor=0.99, path_length=200):
+    # pretrain_buffer_path = "/home/vitchyr/mnt2/log2/21-02-22-ant-awac--exp7-ant-dir-4-eval-4-train-sac-to-get-buffer-longer/21-02-22-ant-awac--exp7-ant-dir-4-eval-4-train-sac-to-get-buffer-longer_2021_02_23_06_09_23_id000--s270987/extra_snapshot_itr400.cpkl"
+    # save_dir = Path(pretrain_buffer_path).parent
+    # save_dir = Path(save_dir) / '{}_buffer'.format(output_format)
+    # save_dir.mkdir(parents=True, exist_ok=True)
+    # saved_replay_buffer = data['replay_buffer']
+    # save_dir = Path(
+    #     local_path_from_s3_or_local_path(pretrain_buffer_path)
+    # ).parent / 'macaw_buffer'
+    # save_dir.mkdir(exist_ok=True)
+    # for k in saved_replay_buffer.task_buffers:
+    #     buffer = saved_replay_buffer.task_buffers[k]
+    #     data = rlkit_buffer_to_macaw_format(buffer, discount_factor, path_length)
+    #     save_path = save_dir / 'macaw_buffer_task_{}.npy'.format(k)
+    #     print('saving to', save_path)
+    #     np.save(save_path, data)
+
+    snapshot = joblib.load(pretrain_buffer_path)
+    task_idx_to_buffer = {}
+    key = 'replay_buffer'
+    saved_replay_buffer = snapshot[key]
+    for task_idx in saved_replay_buffer.task_buffers:
+        rlkit_buffer = saved_replay_buffer.task_buffers[task_idx]
+        buffer = rlkit_buffer_to_macaw_format(
+            rlkit_buffer, discount_factor, path_length=path_length,
+        )
+        task_idx_to_buffer[task_idx] = buffer
+    return task_idx_to_buffer
 
 
 class MyEncoder(json.JSONEncoder):

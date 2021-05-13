@@ -102,6 +102,11 @@ class NewReplayBuffer(object):
     def __init__(self, size: int, obs_dim: int, action_dim: int, discount_factor: float = 0.99,
                  immutable: bool = False, load_from: str = None, silent: bool = False, skip: int = 1,
                  stream_to_disk: bool = False, mode: str = 'end', is_rlkit_data=False):
+        if isinstance(load_from, dict):
+            loaded_data = load_from
+            load_from = 'rlkit-buffer'
+        else:
+            loaded_data = None
         if size == -1 and load_from is None:
             print("Can't have size == -1 and no offline buffer - defaulting to 1M steps")
             size = 1000000
@@ -113,52 +118,10 @@ class NewReplayBuffer(object):
         self.immutable = immutable
         self.stream_to_disk = stream_to_disk
 
-        if load_from and is_rlkit_data:
+        if loaded_data and is_rlkit_data:
+            f = loaded_data
+        elif load_from and is_rlkit_data:
             f = np.load(load_from, allow_pickle=True).item()
-            # f = dict(
-            #     obs=rlkit_data['observations'],
-            #     actions=rlkit_data['actions'],
-            #     rewards=rlkit_data['rewards'],
-            #     mc_rewards=rlkit_data['mc_rewards'],
-            #     terminals=rlkit_data['terminals'],
-            #     terminal_obs=rlkit_data['terminal_observations'],
-            #     terminal_discounts=rlkit_data['terminal_discounts'],
-            #     next_obs=rlkit_data['next_observations'],
-            #     discount_factor=0.99,
-            # )
-            # self._obs = rlkit_data['observations']
-            # self._actions = rlkit_data['actions']
-            # self._rewards = rlkit_data['rewards']
-            # self._mc_rewards = rlkit_data['mc_rewards']
-            # self._terminals = rlkit_data['terminals']
-            # self._terminal_obs = rlkit_data['terminal_observations']
-            # self._terminal_discounts = rlkit_data['terminal_discounts']
-            # self._next_obs = rlkit_data['next_observations']
-            # size = self._next_obs.shape[0]
-            # self._write_location = self._size
-            #
-            # self._obs = np.full((size, obs_dim), float('nan'), dtype=np.float32)
-            # self._actions = np.full((size, action_dim), float('nan'),
-            #                         dtype=np.float32)
-            # self._rewards = np.full((size, 1), float('nan'), dtype=np.float32)
-            # self._mc_rewards = np.full((size, 1), float('nan'),
-            #                            dtype=np.float32)
-            # self._terminals = np.full((size, 1), False, dtype=np.bool)
-            # self._terminal_obs = np.full((size, obs_dim), float('nan'),
-            #                              dtype=np.float32)
-            # self._terminal_discounts = np.full((size, 1), float('nan'),
-            #                                    dtype=np.float32)
-            # self._next_obs = np.full((size, obs_dim), float('nan'),
-            #                          dtype=np.float32)
-            #
-            # self._obs[:size, ...] = rlkit_data['observations']
-            # self._actions[:size, ...] = rlkit_data['actions']
-            # self._rewards[:size, ...] = rlkit_data['rewards']
-            # self._mc_rewards[:size, ...] = rlkit_data['mc_rewards']
-            # self._terminals[:size, ...] = rlkit_data['terminals']
-            # self._terminal_obs[:size, ...] = rlkit_data['terminal_observations']
-            # self._terminal_discounts[:size, ...] = rlkit_data['terminal_discounts']
-            # self._next_obs[:size, ...] = rlkit_data['next_observations']
         else:
             if load_from is not None:
                 f = h5py.File(load_from, 'r')
