@@ -122,6 +122,8 @@ def run(
     #     task_config = json.load(f, object_hook=lambda d: namedtuple('X', d.keys())(*d.values()))
     if env != 'ant_dir':
         import ipdb; ipdb.set_trace()
+    env = HARDCODE ENV HERE
+
 
     if args.advantage_head_coef == 0:
         args.advantage_head_coef = None
@@ -178,8 +180,6 @@ def run(
     # test_buffers = [buffer_path_template.format(idx) for idx in test_task_idxs]
     # TODO: return to test_task_idx
     test_buffers = [buffer_path_template.format(idx) for idx in train_task_idxs]
-
-    env = AntDirEnv(tasks, args.n_tasks, include_goal = args.include_goal or args.multitask)
 
     if args.episode_length is not None:
         env._max_episode_steps = args.episode_length
