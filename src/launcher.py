@@ -120,10 +120,14 @@ def run(
         # train_task_idxs: List[int] = (),
         # test_task_idxs: List[int] = (),
         seed=0,
+        path_length=200,
+        load_buffer_kwargs=None,
 ):
     # with open(args.task_config, 'r') as f:
     #     task_config = json.load(f, object_hook=lambda d: namedtuple('X', d.keys())(*d.values()))
 
+    if load_buffer_kwargs is None:
+        load_buffer_kwargs = {}
     if args.advantage_head_coef == 0:
         args.advantage_head_coef = None
 
@@ -184,7 +188,7 @@ def run(
     args.load_inner_buffer = True
     args.load_outer_buffer = True
 
-    idx_to_buffer = load_buffers(pretrain_buffer_path)
+    idx_to_buffer = load_buffers(pretrain_buffer_path, path_length=path_length, **load_buffer_kwargs)
 
     if env == 'ant_dir':
         env = AntDirEnv(tasks, args.n_tasks, include_goal = args.include_goal or args.multitask)
@@ -222,7 +226,7 @@ def run(
     model.train()
 
 
-def load_buffers(pretrain_buffer_path, discount_factor=0.99, path_length=200):
+def load_buffers(pretrain_buffer_path, discount_factor=0.99, **kwargs):
     # pretrain_buffer_path = "/home/vitchyr/mnt2/log2/21-02-22-ant-awac--exp7-ant-dir-4-eval-4-train-sac-to-get-buffer-longer/21-02-22-ant-awac--exp7-ant-dir-4-eval-4-train-sac-to-get-buffer-longer_2021_02_23_06_09_23_id000--s270987/extra_snapshot_itr400.cpkl"
     # save_dir = Path(pretrain_buffer_path).parent
     # save_dir = Path(save_dir) / '{}_buffer'.format(output_format)
@@ -246,7 +250,7 @@ def load_buffers(pretrain_buffer_path, discount_factor=0.99, path_length=200):
     for task_idx in saved_replay_buffer.task_buffers:
         rlkit_buffer = saved_replay_buffer.task_buffers[task_idx]
         buffer = rlkit_buffer_to_macaw_format(
-            rlkit_buffer, discount_factor, path_length=path_length,
+            rlkit_buffer, discount_factor, **kwargs
         )
         task_idx_to_buffer[task_idx] = buffer
     return task_idx_to_buffer

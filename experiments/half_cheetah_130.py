@@ -32,6 +32,10 @@ def main(debug, suffix, nseeds, mode):
     default_params = {
         'pretrain_buffer_path': "/preloaded_data/21-05-05_pearl-awac-ant-awac--exp59-half-cheetah-130-online-pearl/16h-02m-49s_run2/extra_snapshot_itr50.cpkl",
         'saved_tasks_path': "/preloaded_data/21-05-05_pearl-awac-ant-awac--exp59-half-cheetah-130-online-pearl/16h-02m-49s_run2/tasks_description.joblib",
+        'load_buffer_kwargs': {
+            'start_idx': 0,
+            'end_idx': 1200,
+        },
     }
 
     if mode == 'local':
