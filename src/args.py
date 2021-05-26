@@ -54,9 +54,9 @@ def get_parser() -> argparse.ArgumentParser():
     parser.add_argument('--train_exploration', action='store_true')
     parser.add_argument('--sample_exploration_inner', action='store_true')
     parser.add_argument('--cvae', action='store_true')
-    parser.add_argument('--latent_dim', type=int, default=64)
-    parser.add_argument('--train_steps', type=int, default=1000000)
-    parser.add_argument('--batch_size', type=int, default=256)
+    parser.add_argument('--latent_dim', type=int, default=5)
+    parser.add_argument('--train_steps', type=int, default=100000)
+    parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--inner_batch_size', type=int, default=32)
     parser.add_argument('--eval_batch_size', type=int, default=32)
     parser.add_argument('--inner_policy_lr', type=float, default=0.01)
@@ -64,7 +64,7 @@ def get_parser() -> argparse.ArgumentParser():
     parser.add_argument('--outer_policy_lr', type=float, default=1e-3)
     parser.add_argument('--outer_value_lr', type=float, default=1e-3)
     parser.add_argument('--exploration_lr', type=float, default=1e-4)
-    parser.add_argument('--device', type=str, default='cpu')
+    parser.add_argument('--device', type=str, default='cuda:0')
     parser.add_argument('--vis_interval', type=int, default=250)
     parser.add_argument('--log_dir', type=str, default='log')
     parser.add_argument('--include_goal', action='store_true')
@@ -74,6 +74,7 @@ def get_parser() -> argparse.ArgumentParser():
     parser.add_argument('--instances', type=int, default=1)
     parser.add_argument('--name', type=str, default=None)
     parser.add_argument('--render', action='store_true')
+    # parser.add_argument('--gradient_steps_per_iteration', type=int, default=1)
     parser.add_argument('--gradient_steps_per_iteration', type=int, default=50)
     parser.add_argument('--replay_buffer_size', type=int, default=20000)
     parser.add_argument('--inner_buffer_size', type=int, default=20000)
@@ -101,9 +102,9 @@ def get_parser() -> argparse.ArgumentParser():
     return parser
 
 
-def get_default_args() -> dict:
+def get_default_args(extra_args) -> dict:
     parser = get_parser()
-    return parser.parse_args(args=[])
+    return parser.parse_args(args=extra_args)
 
 
 def get_args() -> argparse.Namespace:

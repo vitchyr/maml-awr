@@ -17,7 +17,8 @@ from rlkit.data_management.offline_dataset.util import rlkit_buffer_to_macaw_for
 from doodad.wrappers.easy_launch import save_doodad_config, DoodadConfig
 from src import pythonplusplus as ppp
 from src.args import get_default_args
-from src.envs import AntDirEnv, HalfCheetahVelEnv
+from src.envs import AntDirEnv, HalfCheetahVelEnv, TimeLimit
+from src.logging import setup_logger, logger
 
 args = None
 
@@ -105,12 +106,13 @@ def get_gym_env(env: str):
         return one_hot
     env.task_description = task_description
 
+    # env = TimeLimit(env, max_episode_steps=200)
+
     return env
 
 
 def run(
         log_dir: str,
-        args: argparse.Namespace,
         env: str,
         pretrain_buffer_path: str,
         instance_idx: int = 0,
@@ -122,7 +124,14 @@ def run(
         seed=0,
         path_length=200,
         load_buffer_kwargs=None,
+        **kwargs
 ):
+    global args
+    extra_args = []
+    for k, v in kwargs.items():
+        extra_args.append('--{}'.format(k))
+        extra_args.append(str(v))
+    args = get_default_args(extra_args)
     # with open(args.task_config, 'r') as f:
     #     task_config = json.load(f, object_hook=lambda d: namedtuple('X', d.keys())(*d.values()))
 
@@ -196,7 +205,6 @@ def run(
         env = HalfCheetahVelEnv(tasks, include_goal = args.include_goal or args.multitask, one_hot_goal=args.one_hot_goal or args.multitask)
     else:
         import ipdb; ipdb.set_trace()
-
 
     if args.episode_length is not None:
         env._max_episode_steps = args.episode_length
@@ -293,16 +301,8 @@ def run_doodad_experiment(doodad_config: DoodadConfig, params):
     save_doodad_config(doodad_config)
     log_dir = doodad_config.output_directory
     save_variant(log_dir, params)
-    global args
-    args = get_default_args()
 
-    if args.instances == 1:
-        if args.profile:
-            import cProfile
-            cProfile.runctx('run(args)', sort='cumtime', locals=locals(), globals=globals())
-        else:
-            run(log_dir, args, **params)
-    else:
-        for instance_idx in range(args.instances):
-            subprocess = Process(target=run, args=(args, instance_idx))
-            subprocess.start()
+    log_dir = doodad_config.output_directory
+    exp_name = log_dir.split('/')[-2]
+    setup_logger(logger, variant=params, base_log_dir=None, exp_name=exp_name, log_dir=log_dir)
+    run(log_dir, **params)

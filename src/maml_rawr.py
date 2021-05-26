@@ -22,7 +22,7 @@ import torch.optim as O
 import torch.distributions as D
 
 warnings.filterwarnings('ignore',category=FutureWarning)
-from torch.utils.tensorboard import SummaryWriter
+from src.logging import SummaryWriter, logger
 
 from src.nn import MLP, CVAE
 from src.utils import NewReplayBuffer, Experience, argmax, kld, RunningEstimator
@@ -79,13 +79,14 @@ class MAMLRAWR(object):
             seed: int = 0,
             is_rlkit_data=False,
     ):
+        self._num_outer_updates = 0
         self._env = env
         self._log_dir = log_dir
         self._name = name if name is not None else 'throwaway_test_run'
         self._args = args
         self._start_time = time.time()
         self.train_tasks = train_tasks
-        self.test_tasks = test_tasks
+        self.test_tasks = test_tasks[:4]  # TODO: remove hack
         self.total_tasks = len(set(train_tasks).union(set(test_tasks)))
         self._instance_idx = instance_idx
 
@@ -248,6 +249,7 @@ class MAMLRAWR(object):
     #################################################################
     #@profile
     def _rollout_policy(self, policy: MLP, env, sample_mode: bool = False, random: bool = False, render: bool = False) -> List[Experience]:
+        print("rolling out policy")
         env.seed(self._env_seeds[self._rollout_counter].item())
         self._rollout_counter += 1
         trajectory = []
@@ -492,6 +494,8 @@ class MAMLRAWR(object):
 
     def eval_macaw(self, train_step_idx: int, writer: SummaryWriter, ft: str = 'offline',
                    ft_steps: int = 19, steps_per_rollout: int = 1, log_path: str = None):
+        ft_steps = 2  # TODO: remove hack
+        print("eval_macaw starting")
         trajectories, successes = [], []
         rewards = np.full((len(self.test_tasks), 2 + ft_steps // steps_per_rollout), float('nan'))
         successes = np.full((len(self.test_tasks), 2 + ft_steps // steps_per_rollout), float('nan'))
@@ -554,6 +558,7 @@ class MAMLRAWR(object):
                 ft_p_opt = O.Adam(adapted_policy.parameters(), lr=1e-5)
                 buf_size = 50000 #self._env._max_episode_steps * (ft_steps // steps_per_rollout)
                 replay_buffer = NewReplayBuffer.from_dict(buf_size, value_batch_dict, self._silent)
+                print("starting eval loop")
                 if not self._args.imitation:
                     for eval_step in range(ft_steps):
                         if eval_step % steps_per_rollout == 0:
@@ -600,6 +605,7 @@ class MAMLRAWR(object):
                                 writer.add_scalar(f'FTStep_Value_Loss/Task_{test_task_idx}', loss.item(), eval_step // steps_per_rollout)
                                 writer.add_scalar(f'FTStep_Policy_Loss/Task_{test_task_idx}', policy_loss.item(), eval_step // steps_per_rollout)
 
+                print("finished eval loop")
                 writer.add_scalar(f'Eval_Reward/Task_{test_task_idx}', rewards[i,1], train_step_idx)
                 writer.add_scalar(f'Eval_Reward_FT/Task_{test_task_idx}', rewards[i,-1], train_step_idx)
 
@@ -711,6 +717,7 @@ class MAMLRAWR(object):
 
                 # Sample adapted policy trajectory, add to replay buffer i [L12]
                 if train_step_idx % self._gradient_steps_per_iteration == 0:
+                    print("a")
                     adapted_trajectory, adapted_reward, success = self._rollout_policy(self._adaptation_policy, self._env, sample_mode=self._args.offline)
                     train_rewards.append(adapted_reward)
                     successes.append(success)
@@ -798,6 +805,7 @@ class MAMLRAWR(object):
 
                         # Sample adapted policy trajectory, add to replay buffer i [L12]
                         if train_step_idx % self._gradient_steps_per_iteration == 0:
+                            print("b")
                             adapted_trajectory, adapted_reward, success = self._rollout_policy(f_adaptation_policy, self._env, sample_mode=self._args.offline)
                             train_rewards.append(adapted_reward)
                             successes.append(success)
@@ -863,6 +871,7 @@ class MAMLRAWR(object):
 
         # Meta-update adaptation policy [L15]
         grad = self.update_model(self._adaptation_policy, self._adaptation_policy_optimizer, clip=self._grad_clip)
+        self._num_outer_updates += 1
         writer.add_scalar(f'Policy_Outer_Grad', grad, train_step_idx)
 
         if self._args.lrlr > 0:
@@ -920,6 +929,7 @@ class MAMLRAWR(object):
                     self._env.set_task_idx(self.train_tasks[i])
                     if self._args.render_exploration:
                         print_(f'Task {task_idx}, trajectory {j}', self._silent)
+                    print("c")
                     trajectory, reward, success = self._rollout_policy(behavior_policy, self._env, random=self._args.random)
                     if self._args.render_exploration:
                         print_(f'Reward: {reward} {success}', self._silent)
@@ -936,6 +946,7 @@ class MAMLRAWR(object):
                     while test_buffer._stored_steps < self._args.initial_test_interacts:
                         task_idx = self.test_tasks[i]
                         self._env.set_task_idx(task_idx)
+                        print("d")
                         random_trajectory, _, _ = self._rollout_policy(behavior_policy, self._env, random=self._args.random)
                         test_buffer.add_trajectory(random_trajectory, force=True)
                         tq.update(len(random_trajectory))
@@ -957,6 +968,11 @@ class MAMLRAWR(object):
                     print_(f'Mean Value Function Outer Loss: {np.mean(value)}', self._silent)
                     print_(f'Mean Policy Outer Loss: {np.mean(policy)}', self._silent)
                     print_(f'Elapsed time (secs): {time.time() - self._start_time}', self._silent)
+                    logger.record_tabular('mean test rewards', np.mean(test_rewards))
+                    logger.record_tabular('mean value function outer loss', np.mean(value))
+                    logger.record_tabular('mean policy outer loss', np.mean(policy))
+                    logger.record_tabular('num outer updates', self._num_outer_updates)
+                    logger.record_tabular('elapsed time', time.time() - self._start_time)
 
                     if self._args.eval:
                         if reward_count == 0:
@@ -1017,4 +1033,5 @@ class MAMLRAWR(object):
                         inner_buffer.save(f'{log_path}/inner_buffer_{i}.h5')
                         outer_buffer.save(f'{log_path}/outer_buffer_{i}.h5')
                         #full_buffer.save(f'{log_path}/full_buffer_{i}.h5')
+            # summary_writer.finish_iteration()
 
