@@ -85,8 +85,11 @@ class MAMLRAWR(object):
         self._name = name if name is not None else 'throwaway_test_run'
         self._args = args
         self._start_time = time.time()
+        # TODO: remove hard-code
+        self._args.offline = True
+        self._args.task_batch_size = 10
         self.train_tasks = train_tasks
-        self.test_tasks = test_tasks[:4]  # TODO: remove hack
+        self.test_tasks = test_tasks
         self.total_tasks = len(set(train_tasks).union(set(test_tasks)))
         self._instance_idx = instance_idx
 
@@ -249,7 +252,6 @@ class MAMLRAWR(object):
     #################################################################
     #@profile
     def _rollout_policy(self, policy: MLP, env, sample_mode: bool = False, random: bool = False, render: bool = False) -> List[Experience]:
-        print("rolling out policy")
         env.seed(self._env_seeds[self._rollout_counter].item())
         self._rollout_counter += 1
         trajectory = []
@@ -494,8 +496,8 @@ class MAMLRAWR(object):
 
     def eval_macaw(self, train_step_idx: int, writer: SummaryWriter, ft: str = 'offline',
                    ft_steps: int = 19, steps_per_rollout: int = 1, log_path: str = None):
-        ft_steps = 2  # TODO: remove hack
         print("eval_macaw starting")
+        start_time = time.time()
         trajectories, successes = [], []
         rewards = np.full((len(self.test_tasks), 2 + ft_steps // steps_per_rollout), float('nan'))
         successes = np.full((len(self.test_tasks), 2 + ft_steps // steps_per_rollout), float('nan'))
@@ -558,7 +560,6 @@ class MAMLRAWR(object):
                 ft_p_opt = O.Adam(adapted_policy.parameters(), lr=1e-5)
                 buf_size = 50000 #self._env._max_episode_steps * (ft_steps // steps_per_rollout)
                 replay_buffer = NewReplayBuffer.from_dict(buf_size, value_batch_dict, self._silent)
-                print("starting eval loop")
                 if not self._args.imitation:
                     for eval_step in range(ft_steps):
                         if eval_step % steps_per_rollout == 0:
@@ -605,7 +606,6 @@ class MAMLRAWR(object):
                                 writer.add_scalar(f'FTStep_Value_Loss/Task_{test_task_idx}', loss.item(), eval_step // steps_per_rollout)
                                 writer.add_scalar(f'FTStep_Policy_Loss/Task_{test_task_idx}', policy_loss.item(), eval_step // steps_per_rollout)
 
-                print("finished eval loop")
                 writer.add_scalar(f'Eval_Reward/Task_{test_task_idx}', rewards[i,1], train_step_idx)
                 writer.add_scalar(f'Eval_Reward_FT/Task_{test_task_idx}', rewards[i,-1], train_step_idx)
 
@@ -625,6 +625,7 @@ class MAMLRAWR(object):
             writer.add_scalar(f'Eval_Reward_FTStep/Mean', mean_rewards[rollout_idx], rollout_idx)
             writer.add_scalar(f'Eval_Success_FTStep/Mean', mean_successes[rollout_idx], rollout_idx)
 
+        print("eval_macaw done. time: {}".format(time.time() - start_time))
         return trajectories, rewards[:,-1], successes
 
     def eval(self, train_step_idx: int, writer: SummaryWriter):
@@ -717,7 +718,6 @@ class MAMLRAWR(object):
 
                 # Sample adapted policy trajectory, add to replay buffer i [L12]
                 if train_step_idx % self._gradient_steps_per_iteration == 0:
-                    print("a")
                     adapted_trajectory, adapted_reward, success = self._rollout_policy(self._adaptation_policy, self._env, sample_mode=self._args.offline)
                     train_rewards.append(adapted_reward)
                     successes.append(success)
@@ -805,7 +805,6 @@ class MAMLRAWR(object):
 
                         # Sample adapted policy trajectory, add to replay buffer i [L12]
                         if train_step_idx % self._gradient_steps_per_iteration == 0:
-                            print("b")
                             adapted_trajectory, adapted_reward, success = self._rollout_policy(f_adaptation_policy, self._env, sample_mode=self._args.offline)
                             train_rewards.append(adapted_reward)
                             successes.append(success)
@@ -929,7 +928,6 @@ class MAMLRAWR(object):
                     self._env.set_task_idx(self.train_tasks[i])
                     if self._args.render_exploration:
                         print_(f'Task {task_idx}, trajectory {j}', self._silent)
-                    print("c")
                     trajectory, reward, success = self._rollout_policy(behavior_policy, self._env, random=self._args.random)
                     if self._args.render_exploration:
                         print_(f'Reward: {reward} {success}', self._silent)
@@ -946,7 +944,6 @@ class MAMLRAWR(object):
                     while test_buffer._stored_steps < self._args.initial_test_interacts:
                         task_idx = self.test_tasks[i]
                         self._env.set_task_idx(task_idx)
-                        print("d")
                         random_trajectory, _, _ = self._rollout_policy(behavior_policy, self._env, random=self._args.random)
                         test_buffer.add_trajectory(random_trajectory, force=True)
                         tq.update(len(random_trajectory))

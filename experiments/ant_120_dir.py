@@ -23,18 +23,18 @@ def main(debug, suffix, nseeds, mode):
         nseeds = 1
 
     params = {
-        'env': ['cheetah_vel'],
+        'env': ['ant_dir'],
         'use_rlkit': [
             True,
         ],
         'seed': list(range(nseeds)),
     }
     default_params = {
-        'pretrain_buffer_path': "/preloaded_data/21-05-05_pearl-awac-ant-awac--exp59-half-cheetah-130-online-pearl/16h-02m-49s_run2/extra_snapshot_itr50.cpkl",
-        'saved_tasks_path': "/preloaded_data/21-05-05_pearl-awac-ant-awac--exp59-half-cheetah-130-online-pearl/16h-02m-49s_run2/tasks_description.joblib",
+        'pretrain_buffer_path': "/preloaded_data/21-05-16_pearl-awac-ant-awac--exp84-ant-dir-120-online-pearl-redo-with-direction-in-degrees/22h-45m-25s_run0/extra_snapshot_itr100.cpkl",
+        'saved_tasks_path': "/preloaded_data/21-05-16_pearl-awac-ant-awac--exp84-ant-dir-120-online-pearl-redo-with-direction-in-degrees/22h-45m-25s_run0/tasks_description.joblib",
         'load_buffer_kwargs': {
-            'start_idx': 0,
-            'end_idx': 1200,
+            'start_idx': -1200,
+            'end_idx': None,
         },
         'device': 'cuda:1',
     }
