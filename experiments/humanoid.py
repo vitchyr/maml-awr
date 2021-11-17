@@ -8,7 +8,7 @@ from src.launcher import run_doodad_experiment
 @click.option('--debug', is_flag=True, default=False)
 @click.option('--suffix', default=None)
 @click.option('--nseeds', default=1)
-@click.option('--mode', default='here_no_doodad')
+@click.option('--mode', default='azure')
 def main(debug, suffix, nseeds, mode):
     path_parts = __file__.split('/')
     suffix = '' if suffix is None else '--{}'.format(suffix)
@@ -72,12 +72,12 @@ def main(debug, suffix, nseeds, mode):
         mode=mode,
         docker_image='vitchyr/macaw-v2',
         code_dirs_to_mount=[
-            '/Users/vitchyr/git/maml-awr/',
-            '/Users/vitchyr/git/metaworld/',
-            '/Users/vitchyr/git/multiworld/',
-            '/Users/vitchyr/git/rand_param_envs/',
-            '/Users/vitchyr/git/doodad/',
-            '/Users/vitchyr/git/railrl-private/',
+            '/Users/vitchyr/code/maml-awr/',
+            '/Users/vitchyr/code/metaworld/',
+            '/Users/vitchyr/code/multiworld/',
+            '/Users/vitchyr/code/rand_param_envs/',
+            '/Users/vitchyr/code/doodad/',
+            '/Users/vitchyr/code/railrl-private/',
         ],
         use_gpu=use_gpu,
         remote_mount_configs=remote_mount_configs,
