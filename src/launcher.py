@@ -17,7 +17,13 @@ from rlkit.data_management.offline_dataset.util import rlkit_buffer_to_macaw_for
 from doodad.wrappers.easy_launch import save_doodad_config, DoodadConfig
 from src import pythonplusplus as ppp
 from src.args import get_default_args
-from src.envs import AntDirEnv, HalfCheetahVelEnv, TimeLimit
+from src.envs import (
+    AntDirEnv,
+    HalfCheetahVelEnv,
+    WalkerRandParamsWrappedEnv,
+    HopperRandParamsWrappedEnv,
+    HumanoidDirEnv,
+)
 from src.logging import setup_logger, logger
 
 args = None
@@ -203,6 +209,12 @@ def run(
         env = AntDirEnv(tasks, args.n_tasks, include_goal = args.include_goal or args.multitask)
     elif env == 'cheetah_vel':
         env = HalfCheetahVelEnv(tasks, include_goal = args.include_goal or args.multitask, one_hot_goal=args.one_hot_goal or args.multitask)
+    elif env == 'walker_params':
+        env = WalkerRandParamsWrappedEnv(tasks, include_goal = args.include_goal or args.multitask)
+    elif env == 'hopper_params':
+        env = HopperRandParamsWrappedEnv(tasks, include_goal=args.include_goal or args.multitask)
+    elif env == 'humanoid_dir':
+        env = HumanoidDirEnv(tasks, include_goal=args.include_goal or args.multitask)
     else:
         import ipdb; ipdb.set_trace()
 
@@ -254,6 +266,8 @@ def load_buffers(pretrain_buffer_path, discount_factor=0.99, **kwargs):
     snapshot = joblib.load(pretrain_buffer_path)
     task_idx_to_buffer = {}
     key = 'replay_buffer'
+    if key not in snapshot:
+        snapshot[key] = snapshot['algorithm'].replay_buffer
     saved_replay_buffer = snapshot[key]
     for task_idx in saved_replay_buffer.task_buffers:
         rlkit_buffer = saved_replay_buffer.task_buffers[task_idx]

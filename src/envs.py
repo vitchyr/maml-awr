@@ -6,9 +6,10 @@ from src.tp_envs.ant_dir import AntDirEnv as AntDirEnv_
 from src.tp_envs.ant_goal import AntGoalEnv as AntGoalEnv_
 from src.tp_envs.humanoid_dir import HumanoidDirEnv as HumanoidDirEnv_
 from src.tp_envs.walker_rand_params_wrapper import WalkerRandParamsWrappedEnv as WalkerRandParamsWrappedEnv_
+from src.tp_envs.hopper_rand_params_wrapper import HopperRandParamsWrappedEnv as HopperRandParamsWrappedEnv_
 from gym.spaces import Box
-from metaworld.benchmarks.base import Benchmark
-from metaworld.envs.mujoco.multitask_env import MultiClassMultiTaskEnv
+# from metaworld.benchmarks.base import Benchmark
+# from metaworld.envs.mujoco.multitask_env import MultiClassMultiTaskEnv
 from metaworld.envs.mujoco.env_dict import HARD_MODE_ARGS_KWARGS, HARD_MODE_CLS_DICT
 from gym.wrappers import TimeLimit
 from copy import deepcopy
@@ -285,6 +286,38 @@ class WalkerRandParamsWrappedEnv(WalkerRandParamsWrappedEnv_):
         self.n_tasks = len(tasks) if tasks is not None else n_tasks
 
         super(WalkerRandParamsWrappedEnv, self).__init__(tasks, n_tasks)
+
+        self.set_task_idx(0)
+        self._max_episode_steps = 200
+
+    def _get_obs(self):
+        if self.include_goal:
+            idx = 0
+            try:
+                idx = self._goal
+            except:
+                pass
+            one_hot = np.zeros(self.n_tasks, dtype=np.float32)
+            one_hot[idx] = 1.0
+            obs = super()._get_obs()
+            obs = np.concatenate([obs, one_hot])
+        else:
+            obs = super()._get_obs()
+        return obs
+
+    def set_task_idx(self, idx):
+        self._task = self.tasks[idx]
+        self._goal = idx
+        self.set_task(self._task)
+        self.reset()
+
+
+class HopperRandParamsWrappedEnv(HopperRandParamsWrappedEnv_):
+    def __init__(self, tasks: List[dict] = None, n_tasks: int = None, include_goal: bool = False):
+        self.include_goal = include_goal
+        self.n_tasks = len(tasks) if tasks is not None else n_tasks
+
+        super(HopperRandParamsWrappedEnv, self).__init__(tasks, n_tasks)
 
         self.set_task_idx(0)
         self._max_episode_steps = 200
